@@ -39,10 +39,34 @@ from core.hand_evaluator import (
     compare_hands,
     dealer_qualifies,
     HandEval,
+    HAND_NAMES,
     STRAIGHT_FLUSH,
     THREE_OF_A_KIND,
     STRAIGHT,
 )
+
+# Identifies this game to GameStatsManager (core/game_stats.py) and the
+# Stats screen (ui/stats_screen.py), which reads BET_TYPES to know what bet
+# types to show a breakdown row for and in what order -- see ui.py's
+# _resolved_bet_totals, which reports one round's bets under these same keys.
+GAME_KEY = "three_card_poker"
+GAME_LABEL = "Three Card Poker"
+BET_TYPES = [
+    ("play", "Play"),
+    ("ante", "Ante"),
+    ("pair_plus", "Pair Plus"),
+    ("prime", "Prime"),
+    ("jackpot", "Jackpot"),
+]
+
+# Stats screen's "Hands Made" breakdown: every possible outcome for a round,
+# weakest to strongest -- HAND_NAMES already sorts that way by rank value,
+# so this just brackets it with "Fold" (the player never got to a hand rank
+# that round) and "Royal Flush" broken out from the plain "Straight Flush"
+# bucket it would otherwise fall into, since it's the one hand Three Card
+# Poker itself singles out (see the jackpot payouts below). See
+# hand_outcome_label, which sorts one round's result into one of these.
+HAND_OUTCOME_LABELS = ["Fold"] + [HAND_NAMES[rank] for rank in sorted(HAND_NAMES)] + ["Royal Flush"]
 
 ANTE_BONUS_MULTIPLIERS = {
     STRAIGHT_FLUSH: 5,
@@ -79,6 +103,19 @@ _ROYAL_HIGH_CARD = 14
 def _is_royal(player_eval: HandEval) -> bool:
     rank, _, tiebreak = player_eval
     return rank == STRAIGHT_FLUSH and tiebreak[0] == _ROYAL_HIGH_CARD
+
+
+def hand_outcome_label(player_eval: HandEval, folded: bool) -> str:
+    """One of HAND_OUTCOME_LABELS for a resolved round -- "Fold" if the
+    player folded (before their hand would otherwise be evaluated),
+    otherwise their hand's rank name, with a Royal Flush broken out from an
+    ordinary Straight Flush. Used for the Stats screen's hand-frequency
+    breakdown -- see ui.py's _finish_round."""
+    if folded:
+        return "Fold"
+    if _is_royal(player_eval):
+        return "Royal Flush"
+    return player_eval[1]
 
 
 def jackpot_payout(player_eval: HandEval, player_cards, jackpot_amount):

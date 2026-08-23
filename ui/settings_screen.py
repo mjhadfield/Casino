@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import messagebox
 
 from core.settings import TABLE_THEMES
+from ui.scrollable import ScrollableFrame
 
 BG = "#0b0b0b"
 PANEL_BG = "#0e2a1a"    # matches the game's paytable/payout plaques
@@ -32,7 +33,13 @@ class SettingsFrame(tk.Frame):
         tk.Label(top_bar, text="Settings", bg="#111111", fg=GOLD,
                  font=("Georgia", 18, "bold")).pack(side="left", padx=10)
 
-        body = tk.Frame(self, bg=BG)
+        # Scrollable -- the Preferences/Jackpot/Danger Zone panels plus the
+        # Save/Cancel row can add up to more height than the window
+        # comfortably fits (they used to just get cut off, Save included,
+        # with no indication there was more below); see ui/scrollable.py.
+        scroll = ScrollableFrame(self, bg=BG)
+        scroll.pack(fill="both", expand=True)
+        body = tk.Frame(scroll.inner, bg=BG)
         body.pack(fill="both", expand=True, padx=40, pady=30)
 
         panel = tk.Frame(body, bg=PANEL_BG, highlightbackground=PANEL_BORDER, highlightthickness=2)
@@ -232,9 +239,11 @@ class SettingsFrame(tk.Frame):
     def _reset_stats(self):
         if messagebox.askyesno(
             "Reset Statistics",
-            "This will reset lifetime statistics. Your balance will not change. Continue?",
+            "This will reset lifetime statistics, including the per-game breakdown on the "
+            "Stats screen. Your balance will not change. Continue?",
         ):
             self.app.finance.reset_stats_only()
+            self.app.game_stats.reset()
             self.app.on_balance_changed()
             messagebox.showinfo("Done", "Lifetime statistics have been reset.")
 

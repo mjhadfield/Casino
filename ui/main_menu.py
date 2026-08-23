@@ -59,13 +59,24 @@ class MainMenuFrame(tk.Frame):
             font=("Georgia", 18, "bold"),
         ).pack(side="left", padx=20, pady=14)
 
+        # Packed right-to-left (side="right" stacks inward from the right
+        # edge, each new one landing left of the previous), so this order --
+        # Cashier, then Stats, then Settings -- reads left-to-right on
+        # screen as Settings, Stats, Cashier.
         self.balance_btn = tk.Button(
-            top_bar, text="Bank Balance: £0.00", bg="#1c1c1c", fg="#4be36b",
+            top_bar, text="Cashier: £0.00", bg="#1c1c1c", fg="#4be36b",
             activebackground="#2a2a2a", activeforeground="#4be36b",
             font=("Helvetica", 12, "bold"), relief="flat", padx=14, pady=8,
             cursor="hand2", command=lambda: app.show_frame("finances"),
         )
         self.balance_btn.pack(side="right", padx=(6, 20), pady=14)
+
+        tk.Button(
+            top_bar, text="\U0001F4CA Stats", bg="#1c1c1c", fg="#cccccc",
+            activebackground="#2a2a2a", activeforeground="#ffffff",
+            font=("Helvetica", 12), relief="flat", padx=14, pady=8,
+            cursor="hand2", command=lambda: app.show_frame("stats"),
+        ).pack(side="right", padx=6, pady=14)
 
         tk.Button(
             top_bar, text="\u2699 Settings", bg="#1c1c1c", fg="#cccccc",
@@ -136,4 +147,4 @@ class MainMenuFrame(tk.Frame):
         self.refresh_balance()
 
     def refresh_balance(self):
-        self.balance_btn.configure(text=f"Bank Balance: £{self.app.finance.balance:,.2f}")
+        self.balance_btn.configure(text=f"Cashier: £{self.app.finance.balance:,.2f}")

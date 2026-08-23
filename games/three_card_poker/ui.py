@@ -8,6 +8,8 @@ from core.hand_evaluator import HAND_NAMES
 from core.persistence import load_json, save_json
 from games.three_card_poker.logic import (
     ANTE_BONUS_MULTIPLIERS,
+    GAME_KEY,
+    hand_outcome_label,
     JACKPOT_BET_AMOUNT,
     JACKPOT_ROYAL_NON_SPADES_PAYOUT,
     JACKPOT_STRAIGHT_FLUSH_PAYOUT,
@@ -876,9 +878,16 @@ class ThreeCardPokerFrame(tk.Frame):
                 self.app.finance.place_wager(play_bet)
 
         result = self.game.resolve(folded, jackpot_amount=self.app.jackpot.amount)
+        # resolve() always populates player_eval before returning (see its
+        # own assert in logic.py) -- re-asserted here since that narrowing
+        # doesn't carry across the function boundary.
+        assert result.player_eval is not None
         if result.total_returned > 0:
             self.app.finance.add_return(result.total_returned)
         self.app.finance.record_round_played(result.net_result)
+        for key, bet, ret in self._resolved_bet_totals(result):
+            self.app.game_stats.record_bet(GAME_KEY, key, bet, ret)
+        self.app.game_stats.record_hand(GAME_KEY, hand_outcome_label(result.player_eval, result.folded))
         if result.jackpot_won:
             self.app.jackpot.win()  # resets it to its floor -- see JackpotManager.win
         self._refresh_balance()
@@ -1312,36 +1321,47 @@ class ThreeCardPokerFrame(tk.Frame):
         self._run_staggered(3, 130, flip_one)
 
     # ------------------------------------------------------------------ payout chip animation
-    def _payout_chip_items(self, result):
-        """Ordered (Play, Ante, Pair Plus, Prime, Jackpot) description of
-        every bet actually placed this round, for the payout chip animation.
-        `ret` combines a bet's main return with any return that doesn't have
-        its own strip spot -- the Ante Bonus rides on the Ante spot's chips,
-        since it's paid alongside the Ante rather than as a separate wager
-        -- so the animation reflects the net chip change at each physical
-        spot, not each payout line item in the result panel."""
-        items = []
+    def _resolved_bet_totals(self, result):
+        """(key, bet, ret) for every bet actually placed this round, in the
+        canonical Play/Ante/Pair Plus/Prime/Jackpot order (see logic.py's
+        BET_TYPES). `ret` combines a bet's main return with any return that
+        doesn't have its own separate stake -- the Ante Bonus rides on the
+        Ante, since it's paid alongside it rather than as its own wager --
+        so this reflects the net change in value at each bet, not each
+        payout line item in the result panel.
+
+        Shared by the payout chip animation, which adds on-table layout
+        info on top (see _payout_chip_items below), and by the lifetime
+        stats recorded once a round settles (see _finish_round)."""
+        totals = []
         if not result.folded and result.play_bet:
-            items.append(dict(key="play", bet=result.play_bet, ret=result.play_return,
-                               cx=STACK_CX, cy=PLAY_BOX_CY, spot_tag="strip_play",
-                               max_r=18, budget=PLAY_BOX_H * 0.55))
+            totals.append(("play", result.play_bet, result.play_return))
         if result.ante_bet:
-            items.append(dict(key="ante", bet=result.ante_bet,
-                               ret=result.ante_return + result.ante_bonus_return,
-                               cx=STACK_CX, cy=ANTE_STRIP_CY, spot_tag="strip_ante",
-                               max_r=20, budget=ANTE_STRIP_R * 1.7))
+            totals.append(("ante", result.ante_bet, result.ante_return + result.ante_bonus_return))
         if result.pair_plus_bet:
-            items.append(dict(key="pair_plus", bet=result.pair_plus_bet, ret=result.pair_plus_return,
-                               cx=PAIR_PLUS_STRIP_CX, cy=PLAY_BOX_CY, spot_tag="strip_pair_plus",
-                               max_r=20, budget=PAIR_PLUS_STRIP_R * 1.7))
+            totals.append(("pair_plus", result.pair_plus_bet, result.pair_plus_return))
         if result.prime_bet:
-            items.append(dict(key="prime", bet=result.prime_bet, ret=result.prime_return,
-                               cx=PRIME_STRIP_CX, cy=PLAY_BOX_CY, spot_tag="strip_prime",
-                               max_r=20, budget=PRIME_STRIP_R * 1.7))
+            totals.append(("prime", result.prime_bet, result.prime_return))
         if result.jackpot_bet:
-            items.append(dict(key="jackpot", bet=result.jackpot_bet, ret=result.jackpot_return,
-                               cx=JACKPOT_STRIP_CX, cy=PLAY_BOX_CY, spot_tag="strip_jackpot",
-                               max_r=20, budget=JACKPOT_STRIP_R * 1.7))
+            totals.append(("jackpot", result.jackpot_bet, result.jackpot_return))
+        return totals
+
+    def _payout_chip_items(self, result):
+        """_resolved_bet_totals, with each bet's on-table spot (where its
+        chips actually sit -- position, tag, sizing) attached, for the
+        payout chip animation."""
+        layout = {
+            "play": (STACK_CX, PLAY_BOX_CY, "strip_play", 18, PLAY_BOX_H * 0.55),
+            "ante": (STACK_CX, ANTE_STRIP_CY, "strip_ante", 20, ANTE_STRIP_R * 1.7),
+            "pair_plus": (PAIR_PLUS_STRIP_CX, PLAY_BOX_CY, "strip_pair_plus", 20, PAIR_PLUS_STRIP_R * 1.7),
+            "prime": (PRIME_STRIP_CX, PLAY_BOX_CY, "strip_prime", 20, PRIME_STRIP_R * 1.7),
+            "jackpot": (JACKPOT_STRIP_CX, PLAY_BOX_CY, "strip_jackpot", 20, JACKPOT_STRIP_R * 1.7),
+        }
+        items = []
+        for key, bet, ret in self._resolved_bet_totals(result):
+            cx, cy, spot_tag, max_r, budget = layout[key]
+            items.append(dict(key=key, bet=bet, ret=ret, cx=cx, cy=cy, spot_tag=spot_tag,
+                               max_r=max_r, budget=budget))
         return items
 
     def _chip_move_away(self, item, on_done):

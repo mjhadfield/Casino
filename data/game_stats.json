@@ -1,0 +1,48 @@
+{
+  "three_card_poker": {
+    "bets": {
+      "play": {
+        "wagered": 1240.0,
+        "returned": 1180.0,
+        "wins": 83,
+        "losses": 95,
+        "pushes": 70
+      },
+      "ante": {
+        "wagered": 1710.0,
+        "returned": 1560.0,
+        "wins": 153,
+        "losses": 189,
+        "pushes": 0
+      },
+      "pair_plus": {
+        "wagered": 1710.0,
+        "returned": 1265.0,
+        "wins": 86,
+        "losses": 256,
+        "pushes": 0
+      },
+      "prime": {
+        "wagered": 1710.0,
+        "returned": 1470.0,
+        "wins": 71,
+        "losses": 271,
+        "pushes": 0
+      },
+      "jackpot": {
+        "wagered": 342.0,
+        "returned": 36.0,
+        "wins": 6,
+        "losses": 336,
+        "pushes": 0
+      }
+    },
+    "hands": {
+      "Pair": 61,
+      "High Card": 147,
+      "Fold": 90,
+      "Flush": 15,
+      "Straight": 5
+    }
+  }
+}
