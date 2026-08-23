@@ -275,8 +275,8 @@ class ThreeCardPokerFrame(tk.Frame):
 
         # --- action buttons (contents swapped by state) -- sits right under the
         # instructions text, with only a small, constant gap: Deal, Play+Fold and
-        # New Round are all single-row layouts of the same height, so this needs
-        # no space reservation of its own to stay put between states.
+        # New Deal+Change Bets are all single-row layouts of the same height, so
+        # this needs no space reservation of its own to stay put between states.
         self.action_frame = tk.Frame(game_col, bg=theme["felt"])
         self.action_frame.pack(pady=(8, 0))
 
@@ -295,8 +295,16 @@ class ThreeCardPokerFrame(tk.Frame):
             font=("Helvetica", 13, "bold"), relief="flat", padx=30, pady=10, cursor="hand2",
             command=lambda: self._finish_round(folded=True),
         )
-        self.new_round_btn = tk.Button(
-            self.action_frame, text="New Round", bg="#d4af37", fg="#111111",
+        # Round-over controls: a quick rebet (same bets, dealt immediately)
+        # is the common case, so it gets the primary gold styling; Change
+        # Bets -- back to the betting screen -- is the secondary option.
+        self.new_deal_btn = tk.Button(
+            self.action_frame, text="New Deal", bg="#d4af37", fg="#111111",
+            font=("Helvetica", 13, "bold"), relief="flat", padx=30, pady=10, cursor="hand2",
+            command=self._new_deal,
+        )
+        self.change_bets_btn = tk.Button(
+            self.action_frame, text="Change Bets", bg="#333333", fg="#cccccc",
             font=("Helvetica", 13, "bold"), relief="flat", padx=30, pady=10, cursor="hand2",
             command=self._new_round,
         )
@@ -606,11 +614,12 @@ class ThreeCardPokerFrame(tk.Frame):
         self.play_btn.pack(side="left", padx=8)
         self.fold_btn.pack(side="left", padx=8)
 
-    def _show_new_round_control(self):
+    def _show_round_over_controls(self):
         self.chip_frame.pack_forget()
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
-        self.new_round_btn.pack(side="left", padx=8)
+        self.new_deal_btn.pack(side="left", padx=8)
+        self.change_bets_btn.pack(side="left", padx=8)
 
     def _show_no_controls(self):
         """No action buttons visible -- used during the brief pause/animation
@@ -758,10 +767,20 @@ class ThreeCardPokerFrame(tk.Frame):
         else:
             self._sort_player_cards(on_settled)
 
+    def _new_deal(self):
+        """New Deal: skips the betting screen entirely and deals again
+        straight away with the same bets as last round -- _on_deal() reads
+        straight from self.bets, which round-over never clears, and does
+        its own affordability check, so this is exactly the Deal button's
+        handler with no state transition of its own beforehand."""
+        self._on_deal()
+
     def _new_round(self):
+        """Change Bets: back to the betting screen to adjust before dealing
+        again. Bets carry over so it's a starting point, not a blank slate --
+        Clear Bets is there if they want £0 instead."""
         self.state = "betting"
         self.result_lbl.configure(text="Place your Ante bet to begin.", fg="#f0f0f0")
-        # Bets carry over for a quick rebet -- Clear Bets is there if they want £0 instead.
         self._sanitize_bets()
         self._show_betting_controls()
 
@@ -960,7 +979,7 @@ class ThreeCardPokerFrame(tk.Frame):
 
     def _on_round_settled(self, result):
         self._show_result(result)
-        self._show_new_round_control()
+        self._show_round_over_controls()
         self.state = "resolved"
 
     def _show_result(self, result):
