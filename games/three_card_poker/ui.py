@@ -42,10 +42,10 @@ CHIP_DENOMINATIONS = [
 CHIP_COLORS_BY_VALUE = {value: (face, rim) for value, face, rim in CHIP_DENOMINATIONS}
 CHIP_SIZE = 58
 CANVAS_WIDTH = 760
-# 324 (where the Ante box ends -- see ANTE_BOX_BOTTOM below) + 18px margin
-# below it, half the original 36px, so the result text/buttons right below
-# the canvas sit closer to it.
-CANVAS_HEIGHT = 342
+# 360 (where the Ante circle ends -- see ANTE_STRIP_BOTTOM below) + 18px
+# margin below it -- half the original 36px, so the result text/buttons
+# right below the canvas sit closer to it.
+CANVAS_HEIGHT = 378
 
 # A single chip's on-table size -- identical everywhere it's placed (Ante,
 # Pair Plus, Prime) so a £25 chip looks the same size on every spot. Sized to
@@ -101,31 +101,31 @@ DEALER_MAT_X2 = CARD_ROW_START_X + CARD_ROW_WIDTH + DEALER_MAT_SIDE_MARGIN
 
 # Bet indicator strip -- a deliberately larger gap below the dealer mat than
 # any other gap in this view, so the dealer's area and the player's clearly
-# read as two separate zones. Play and Ante are stacked (Play on top,
-# bigger) on the shared centreline; Pair Plus/Prime/Jackpot flank them,
-# vertically centred on the stack -- mirroring their relative positions on
-# the betting screen, just condensed into one row instead of two.
+# read as two separate zones. Play sits on top (bigger, sized for the played
+# hand's cards); Ante is a circle directly below it, on the shared
+# centreline, the same size as Pair Plus/Prime/Jackpot rather than a
+# separate small box -- so its chip stack isn't stuck at a noticeably
+# smaller scale than the side bets sitting right next to it.
 GAP_DEALER_TO_STRIP = 34
 STRIP_TOP = DEALER_MAT_BOTTOM + GAP_DEALER_TO_STRIP
 STACK_CX = CANVAS_WIDTH / 2
 
 PLAY_BOX_W = 182   # 140 * 1.3
 PLAY_BOX_H = 94    # 72 * 1.3
-ANTE_BOX_W = 85
-ANTE_BOX_H = 38
-STACK_GAP = 4
-STRIP_LABEL_H = 16  # Ante's label sits inside its own top edge, not above it
-                     # -- Play's label instead sits dead centre (see
-                     # _draw_strip_rect's label_at_center), since the played
-                     # hand's cards land centred on the box and are meant to
-                     # cover it, the same way cards cover a printed felt spot.
+# Big enough that Ante's label (drawn above its circle, like Pair Plus/
+# Prime/Jackpot) clears the Play box's bottom edge rather than overlapping
+# it -- a plain gap wouldn't need to be this wide, but the label eats into
+# it from below.
+STACK_GAP = 18
 
 PLAY_BOX_TOP = STRIP_TOP
 PLAY_BOX_BOTTOM = PLAY_BOX_TOP + PLAY_BOX_H
 PLAY_BOX_CY = (PLAY_BOX_TOP + PLAY_BOX_BOTTOM) / 2
-ANTE_BOX_TOP = PLAY_BOX_BOTTOM + STACK_GAP
-ANTE_BOX_BOTTOM = ANTE_BOX_TOP + ANTE_BOX_H
-STACK_CY = (PLAY_BOX_TOP + ANTE_BOX_BOTTOM) / 2
+
+ANTE_STRIP_R = 30  # matches PAIR_PLUS_STRIP_R/PRIME_STRIP_R below
+ANTE_STRIP_CY = PLAY_BOX_BOTTOM + STACK_GAP + ANTE_STRIP_R
+ANTE_STRIP_BOTTOM = ANTE_STRIP_CY + ANTE_STRIP_R
+STACK_CY = (PLAY_BOX_TOP + ANTE_STRIP_BOTTOM) / 2
 
 PAIR_PLUS_STRIP_CX = 233
 PAIR_PLUS_STRIP_R = 30
@@ -614,7 +614,7 @@ class ThreeCardPokerFrame(tk.Frame):
             outline_color = "#d4af37"
         self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill="#0e4a2c",
                                  outline=outline_color, width=3, tags=(tag,))
-        self.canvas.create_text(cx, cy - r - 12, text="JACKPOT £1", fill="#cfead9",
+        self.canvas.create_text(cx, cy - r - 12, text="JACKPOT", fill="#cfead9",
                                  font=("Helvetica", 9, "bold"), tags=(tag,))
         if placed:
             face, rim = CHIP_COLORS_BY_VALUE[1]
@@ -910,58 +910,50 @@ class ThreeCardPokerFrame(tk.Frame):
 
     def _draw_bet_strip(self):
         """The bet-indicator strip between the dealer's mat and the
-        player's fan: Play stacked above Ante (Play starts empty -- an
-        outline printed on the felt, like a real table's permanent Play
-        spot, until Play is chosen), Pair Plus/Prime/Jackpot off to the
-        sides, only if actually wagered. Drawn once, right after dealing --
-        cards+chips are added to individual spots afterwards (see
-        _settle_played_hand/_settle_folded_hand) rather than redrawing the
-        whole strip, so those additions can layer on top in the right order."""
-        self._draw_strip_rect("play", PLAY_BOX_TOP, PLAY_BOX_W, PLAY_BOX_H, "PLAY", label_at_center=True)
-        self._draw_strip_rect("ante", ANTE_BOX_TOP, ANTE_BOX_W, ANTE_BOX_H, "ANTE")
+        player's fan: Play on top (Play starts empty -- an outline printed
+        on the felt, like a real table's permanent Play spot, until Play is
+        chosen), Ante directly below it as a circle the same size as Pair
+        Plus/Prime/Jackpot (which flank the pair, only if actually
+        wagered). Drawn once, right after dealing -- cards+chips are added
+        to individual spots afterwards (see _settle_played_hand/
+        _settle_folded_hand) rather than redrawing the whole strip, so
+        those additions can layer on top in the right order."""
+        self._draw_strip_rect("play", PLAY_BOX_TOP, PLAY_BOX_W, PLAY_BOX_H, "PLAY")
+        self._draw_strip_circle("ante", STACK_CX, ANTE_STRIP_CY, ANTE_STRIP_R, "ANTE")
         if self.bets["pair_plus"]:
-            self._draw_strip_circle("pair_plus", PAIR_PLUS_STRIP_CX, PAIR_PLUS_STRIP_R, "PAIR PLUS")
+            self._draw_strip_circle("pair_plus", PAIR_PLUS_STRIP_CX, STACK_CY, PAIR_PLUS_STRIP_R, "PAIR PLUS")
         if self.bets["prime"]:
-            self._draw_strip_circle("prime", PRIME_STRIP_CX, PRIME_STRIP_R, "PRIME")
+            self._draw_strip_circle("prime", PRIME_STRIP_CX, STACK_CY, PRIME_STRIP_R, "PRIME")
         if self.bets["jackpot"]:
-            self._draw_strip_circle("jackpot", JACKPOT_STRIP_CX, JACKPOT_STRIP_R, "JACKPOT £1")
+            self._draw_strip_circle("jackpot", JACKPOT_STRIP_CX, STACK_CY, JACKPOT_STRIP_R, "JACKPOT")
 
-    def _draw_strip_rect(self, key, top, w, h, label, label_at_center=False):
-        """One rectangular strip spot (Play/Ante), centred on STACK_CX --
-        `key` looked up in self.bets for its chip stack; "play" isn't a real
-        bet key, so it's always 0 here and drawn as an empty outline until
-        the played hand's chips are added separately once Play is chosen.
-
-        Ante's label sits inside the box's own top edge, out of the way of
-        its (much smaller) chip stack. Play's label instead sits dead
-        centre, the same point the played hand's cards land on and the
-        chips on top of them -- it's meant to end up covered, the way a
-        printed felt spot does once something's placed on it."""
+    def _draw_strip_rect(self, key, top, w, h, label):
+        """The Play spot, centred on STACK_CX -- "play" isn't a real bet
+        key, so its chip stack is always 0 here, drawn as an empty outline
+        until the played hand's chips are added separately once Play is
+        chosen. Its label sits dead centre, the same point the played
+        hand's cards land on and the chips on top of them -- it's meant to
+        end up covered, the way a printed felt spot does once something's
+        placed on it."""
         tag = f"strip_{key}"
         self.canvas.delete(tag)
         amount = self.bets.get(key, 0)
         x1, y1, x2, y2 = STACK_CX - w / 2, top, STACK_CX + w / 2, top + h
         self._draw_rounded_rect(self.canvas, x1, y1, x2, y2, radius=10, fill="#0e4a2c", outline="#d4af37",
                                  width=2, tags=(tag,))
-        if label_at_center:
-            label_y, chip_cy, chip_budget = (y1 + y2) / 2, (y1 + y2) / 2, h * 0.85
-        else:
-            label_y = y1 + 9
-            chip_cy = y1 + STRIP_LABEL_H + (h - STRIP_LABEL_H) / 2
-            chip_budget = (h - STRIP_LABEL_H) * 0.9
-        self.canvas.create_text(STACK_CX, label_y, text=label, fill="#cfead9",
+        cy = (y1 + y2) / 2
+        self.canvas.create_text(STACK_CX, cy, text=label, fill="#cfead9",
                                  font=("Helvetica", 9, "bold"), tags=(tag,))
         if amount:
-            self._draw_chip_stack(tag, STACK_CX, chip_cy, amount, max_r=20, budget=chip_budget)
+            self._draw_chip_stack(tag, STACK_CX, cy, amount, max_r=20, budget=h * 0.85)
 
-    def _draw_strip_circle(self, key, cx, r, label):
-        """One circular strip spot (Pair Plus/Prime/Jackpot), vertically
-        centred on the Play+Ante stack -- only drawn at all when that bet is
-        active (see _draw_bet_strip), so it's always shown with its chip
-        stack."""
+    def _draw_strip_circle(self, key, cx, cy, r, label):
+        """One circular strip spot -- Ante (always) or Pair Plus/Prime/
+        Jackpot (only when actually wagered, see _draw_bet_strip) -- all
+        the same size, so none of their chip stacks reads as smaller than
+        the others."""
         tag = f"strip_{key}"
         self.canvas.delete(tag)
-        cy = STACK_CY
         self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill="#0e4a2c", outline="#d4af37",
                                  width=2, tags=(tag,))
         self.canvas.create_text(cx, cy - r - 10, text=label, fill="#cfead9",
