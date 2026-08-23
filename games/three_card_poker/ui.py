@@ -42,10 +42,10 @@ CHIP_DENOMINATIONS = [
 CHIP_COLORS_BY_VALUE = {value: (face, rim) for value, face, rim in CHIP_DENOMINATIONS}
 CHIP_SIZE = 58
 CANVAS_WIDTH = 760
-# 360 (where the Ante circle ends -- see ANTE_STRIP_BOTTOM below) + 18px
+# 366 (where the Ante circle ends -- see ANTE_STRIP_BOTTOM below) + 18px
 # margin below it -- half the original 36px, so the result text/buttons
 # right below the canvas sit closer to it.
-CANVAS_HEIGHT = 378
+CANVAS_HEIGHT = 384
 
 # A single chip's on-table size -- identical everywhere it's placed (Ante,
 # Pair Plus, Prime) so a £25 chip looks the same size on every spot. Sized to
@@ -113,10 +113,10 @@ STACK_CX = CANVAS_WIDTH / 2
 PLAY_BOX_W = 182   # 140 * 1.3
 PLAY_BOX_H = 94    # 72 * 1.3
 # Big enough that Ante's label (drawn above its circle, like Pair Plus/
-# Prime/Jackpot) clears the Play box's bottom edge rather than overlapping
-# it -- a plain gap wouldn't need to be this wide, but the label eats into
-# it from below.
-STACK_GAP = 18
+# Prime/Jackpot) clears the Play box's bottom edge with a bit of daylight,
+# not just clears it -- a plain gap wouldn't need to be this wide, but the
+# label eats into it from below.
+STACK_GAP = 24
 
 PLAY_BOX_TOP = STRIP_TOP
 PLAY_BOX_BOTTOM = PLAY_BOX_TOP + PLAY_BOX_H
@@ -125,7 +125,6 @@ PLAY_BOX_CY = (PLAY_BOX_TOP + PLAY_BOX_BOTTOM) / 2
 ANTE_STRIP_R = 30  # matches PAIR_PLUS_STRIP_R/PRIME_STRIP_R below
 ANTE_STRIP_CY = PLAY_BOX_BOTTOM + STACK_GAP + ANTE_STRIP_R
 ANTE_STRIP_BOTTOM = ANTE_STRIP_CY + ANTE_STRIP_R
-STACK_CY = (PLAY_BOX_TOP + ANTE_STRIP_BOTTOM) / 2
 
 PAIR_PLUS_STRIP_CX = 233
 PAIR_PLUS_STRIP_R = 30
@@ -921,11 +920,11 @@ class ThreeCardPokerFrame(tk.Frame):
         self._draw_strip_rect("play", PLAY_BOX_TOP, PLAY_BOX_W, PLAY_BOX_H, "PLAY")
         self._draw_strip_circle("ante", STACK_CX, ANTE_STRIP_CY, ANTE_STRIP_R, "ANTE")
         if self.bets["pair_plus"]:
-            self._draw_strip_circle("pair_plus", PAIR_PLUS_STRIP_CX, STACK_CY, PAIR_PLUS_STRIP_R, "PAIR PLUS")
+            self._draw_strip_circle("pair_plus", PAIR_PLUS_STRIP_CX, PLAY_BOX_CY, PAIR_PLUS_STRIP_R, "PAIR PLUS")
         if self.bets["prime"]:
-            self._draw_strip_circle("prime", PRIME_STRIP_CX, STACK_CY, PRIME_STRIP_R, "PRIME")
+            self._draw_strip_circle("prime", PRIME_STRIP_CX, PLAY_BOX_CY, PRIME_STRIP_R, "PRIME")
         if self.bets["jackpot"]:
-            self._draw_strip_circle("jackpot", JACKPOT_STRIP_CX, STACK_CY, JACKPOT_STRIP_R, "JACKPOT")
+            self._draw_strip_circle("jackpot", JACKPOT_STRIP_CX, PLAY_BOX_CY, JACKPOT_STRIP_R, "JACKPOT")
 
     def _draw_strip_rect(self, key, top, w, h, label):
         """The Play spot, centred on STACK_CX -- "play" isn't a real bet
@@ -1202,7 +1201,7 @@ class ThreeCardPokerFrame(tk.Frame):
             self._muck_player_cards(on_done)
             return
 
-        rest_cy = STACK_CY
+        rest_cy = PLAY_BOX_CY  # matches where the Prime/Pair Plus circles themselves are drawn
 
         def after_flip():
             self._animate_to_rest(result.player_cards, rest_cx, rest_cy, "folded_hand",
