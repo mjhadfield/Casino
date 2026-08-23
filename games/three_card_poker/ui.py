@@ -133,6 +133,18 @@ PRIME_STRIP_R = 30
 JACKPOT_STRIP_CX = 603
 JACKPOT_STRIP_R = 22
 
+# Payout animation (see _animate_payouts): after the dealer's cards are
+# revealed, a lost bet's chips slide to the dealer's centre and a won bet's
+# extra chips slide out from it -- "the dealer's centre" is simply the
+# midpoint of their own card row.
+DEALER_CENTER_X = CANVAS_WIDTH / 2
+DEALER_CENTER_Y = DEALER_Y + CARD_HEIGHT / 2
+
+# A winning bet's payout lands a little above its spot's existing stake
+# stack rather than directly on it, so it visibly reads as an addition to
+# what's already there instead of just replacing it.
+PAYOUT_WIN_LANDING_OFFSET_Y = -20
+
 # fan_canvas: the player's own small canvas, below the Play/Fold buttons --
 # overlapping, with the outer two cards riding slightly lower than the
 # middle one, like a hand of cards held with a gentle arc.
@@ -645,7 +657,14 @@ class ThreeCardPokerFrame(tk.Frame):
 
         `budget` is the vertical space available for the stack; the chip
         radius shrinks below `max_r` if needed so a stack of several different
-        denominations never overflows a small spot."""
+        denominations never overflows a small spot.
+
+        `tag` is usually a single string, but the payout animation
+        (_animate_payouts) needs to delete/redraw just the chips on a strip
+        spot without touching that spot's own box+label -- it passes a
+        (shell_tag, chips_tag) pair instead so both are still there for
+        anything (e.g. tag_lower) that expects the whole spot as one unit."""
+        tags = (tag,) if isinstance(tag, str) else tuple(tag)
         breakdown = _chip_breakdown(amount)  # largest denomination first
         n = len(breakdown)
         layer_r = min(max_r, budget / (2 + 0.85 * (n - 1)))
@@ -655,18 +674,18 @@ class ThreeCardPokerFrame(tk.Frame):
             layer_cy = base_cy - i * dy
             face, rim = CHIP_COLORS_BY_VALUE[value]
             self.canvas.create_oval(cx - layer_r, layer_cy - layer_r, cx + layer_r, layer_cy + layer_r,
-                                     fill=face, outline=rim, width=2, tags=(tag,))
+                                     fill=face, outline=rim, width=2, tags=tags)
             self.canvas.create_oval(cx - layer_r + 4, layer_cy - layer_r + 4, cx + layer_r - 4, layer_cy + layer_r - 4,
-                                     outline="#ffffff", width=1, tags=(tag,))
+                                     outline="#ffffff", width=1, tags=tags)
             self.canvas.create_text(cx, layer_cy, text=f"£{value}", fill="#ffffff",
-                                     font=("Helvetica", max(7, int(layer_r * 0.38)), "bold"), tags=(tag,))
+                                     font=("Helvetica", max(7, int(layer_r * 0.38)), "bold"), tags=tags)
             if count > 1:
                 badge_r = max(7, layer_r * 0.42)
                 bx, by = cx + layer_r * 0.62, layer_cy + layer_r * 0.62
                 self.canvas.create_oval(bx - badge_r, by - badge_r, bx + badge_r, by + badge_r,
-                                         fill="#111111", outline="#d4af37", width=1, tags=(tag,))
+                                         fill="#111111", outline="#d4af37", width=1, tags=tags)
                 self.canvas.create_text(bx, by, text=f"×{count}", fill="#ffffff",
-                                         font=("Helvetica", max(7, int(badge_r * 0.85)), "bold"), tags=(tag,))
+                                         font=("Helvetica", max(7, int(badge_r * 0.85)), "bold"), tags=tags)
 
     def _bind_spot(self, tag, key):
         self.canvas.tag_bind(tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
@@ -875,9 +894,22 @@ class ThreeCardPokerFrame(tk.Frame):
         """New Deal: skips the betting screen entirely and deals again
         straight away with the same bets as last round -- _on_deal() reads
         straight from self.bets, which round-over never clears, and does
-        its own affordability check, so this is exactly the Deal button's
-        handler with no state transition of its own beforehand."""
-        self._on_deal()
+        its own affordability check. The last round's chips have been
+        sitting in place on the strip since payout (see _animate_payouts) --
+        swept away here, right as the new hand is about to be dealt, rather
+        than the moment the previous round resolved."""
+        assert self.result is not None, "_new_deal called before a round was ever dealt"
+        if not self.app.finance.can_afford(_max_round_cost(self.bets)):
+            # Mirrors _on_deal's own affordability check -- checked here too,
+            # before touching the controls, so a balance too low to rebet
+            # just shows the warning and leaves New Deal/Change Bets exactly
+            # as they were rather than hiding them for a sweep that's about
+            # to be aborted anyway (_on_deal would hit this same check and
+            # bail, but only after the controls were already hidden).
+            self._on_deal()
+            return
+        self._show_no_controls()
+        self._sweep_remaining_chips(self._payout_chip_items(self.result), self._on_deal)
 
     def _new_round(self):
         """Change Bets: back to the betting screen to adjust before dealing
@@ -957,7 +989,10 @@ class ThreeCardPokerFrame(tk.Frame):
                                  width=2, tags=(tag,))
         self.canvas.create_text(cx, cy - r - 10, text=label, fill="#cfead9",
                                  font=("Helvetica", 9, "bold"), tags=(tag,))
-        self._draw_chip_stack(tag, cx, cy, self.bets.get(key, 0), max_r=20, budget=r * 1.7)
+        # Chips get their own extra tag alongside the shared one, so the
+        # payout animation can delete/redraw just the chips later without
+        # touching this spot's own circle+label -- see _draw_chip_stack.
+        self._draw_chip_stack((tag, f"{tag}_chips"), cx, cy, self.bets.get(key, 0), max_r=20, budget=r * 1.7)
 
     def _draw_rounded_rect(self, canvas, x1, y1, x2, y2, radius, **kwargs):
         points = [
@@ -1045,6 +1080,22 @@ class ThreeCardPokerFrame(tk.Frame):
         else:
             for i in range(count):
                 fn(i)
+
+    def _run_sequential(self, fns, on_done=None):
+        """Calls each fn(cb) in turn, only starting the next once the
+        current one calls its own cb -- unlike _run_staggered's fixed-delay
+        overlap, this is for steps that must strictly follow one another
+        (the payout animation's stages -- see _animate_payouts). Each fn is
+        expected to internally use _animate, which already collapses to an
+        instant call when animations are off, so a whole chain built from
+        this still resolves synchronously in that case."""
+        def step(i):
+            if i >= len(fns):
+                if on_done:
+                    on_done()
+                return
+            fns[i](lambda: step(i + 1))
+        step(0)
 
     def _animate_flip(self, canvas, tag, cx_slot, y, card, reveal, duration, on_done=None):
         """Flips a card in place by narrowing it to a sliver and back out,
@@ -1173,7 +1224,7 @@ class ThreeCardPokerFrame(tk.Frame):
             # Smaller than the usual strip chip stack -- these sit on top of
             # the played cards, not an empty spot, so a smaller stack leaves
             # the middle card's own index actually readable.
-            self._draw_chip_stack("strip_play", STACK_CX, play_cy, result.play_bet,
+            self._draw_chip_stack(("strip_play", "strip_play_chips"), STACK_CX, play_cy, result.play_bet,
                                    max_r=18, budget=PLAY_BOX_H * 0.55)
             if on_done:
                 on_done()
@@ -1246,14 +1297,169 @@ class ThreeCardPokerFrame(tk.Frame):
         self._flip_fan_face_down(lambda: self._run_staggered(3, 70, slide_one))
 
     def _reveal_dealer(self, result):
+        # Once all 3 dealer cards are face up, the payout chip animation
+        # runs (see _animate_payouts), and only once *that's* finished does
+        # the round actually settle -- see _on_round_settled.
+        after_reveal = lambda: self._animate_payouts(result, lambda: self._on_round_settled(result))
+
         def flip_one(i):
             cx_slot = self._dealer_slot_x(i) + CARD_WIDTH / 2
             self._animate_flip(
                 self.canvas, f"dealer_card_{i}", cx_slot, DEALER_Y, result.dealer_cards[i], reveal=True, duration=200,
-                on_done=(lambda: self._on_round_settled(result)) if i == 2 else None,
+                on_done=after_reveal if i == 2 else None,
             )
 
         self._run_staggered(3, 130, flip_one)
+
+    # ------------------------------------------------------------------ payout chip animation
+    def _payout_chip_items(self, result):
+        """Ordered (Play, Ante, Pair Plus, Prime, Jackpot) description of
+        every bet actually placed this round, for the payout chip animation.
+        `ret` combines a bet's main return with any return that doesn't have
+        its own strip spot -- the Ante Bonus rides on the Ante spot's chips,
+        since it's paid alongside the Ante rather than as a separate wager
+        -- so the animation reflects the net chip change at each physical
+        spot, not each payout line item in the result panel."""
+        items = []
+        if not result.folded and result.play_bet:
+            items.append(dict(key="play", bet=result.play_bet, ret=result.play_return,
+                               cx=STACK_CX, cy=PLAY_BOX_CY, spot_tag="strip_play",
+                               max_r=18, budget=PLAY_BOX_H * 0.55))
+        if result.ante_bet:
+            items.append(dict(key="ante", bet=result.ante_bet,
+                               ret=result.ante_return + result.ante_bonus_return,
+                               cx=STACK_CX, cy=ANTE_STRIP_CY, spot_tag="strip_ante",
+                               max_r=20, budget=ANTE_STRIP_R * 1.7))
+        if result.pair_plus_bet:
+            items.append(dict(key="pair_plus", bet=result.pair_plus_bet, ret=result.pair_plus_return,
+                               cx=PAIR_PLUS_STRIP_CX, cy=PLAY_BOX_CY, spot_tag="strip_pair_plus",
+                               max_r=20, budget=PAIR_PLUS_STRIP_R * 1.7))
+        if result.prime_bet:
+            items.append(dict(key="prime", bet=result.prime_bet, ret=result.prime_return,
+                               cx=PRIME_STRIP_CX, cy=PLAY_BOX_CY, spot_tag="strip_prime",
+                               max_r=20, budget=PRIME_STRIP_R * 1.7))
+        if result.jackpot_bet:
+            items.append(dict(key="jackpot", bet=result.jackpot_bet, ret=result.jackpot_return,
+                               cx=JACKPOT_STRIP_CX, cy=PLAY_BOX_CY, spot_tag="strip_jackpot",
+                               max_r=20, budget=JACKPOT_STRIP_R * 1.7))
+        return items
+
+    def _chip_move_away(self, item, on_done):
+        """Stage 1 -- one call per losing bet, chained by _animate_payouts:
+        the spot's existing stake chips slide from the spot towards the
+        dealer's centre, shrinking away to nothing as they travel so they
+        sink out of view before ever reaching the dealer's cards -- never
+        passing on top of them -- rather than arriving at full size and
+        having to be tucked behind them."""
+        chips_tag = f"{item['spot_tag']}_chips"
+        self.canvas.delete(chips_tag)
+        travel_tag = f"chip_travel_{item['key']}"
+        from_cx, from_cy = item["cx"], item["cy"]
+
+        def frame(t):
+            cx = from_cx + (DEALER_CENTER_X - from_cx) * t
+            cy = from_cy + (DEALER_CENTER_Y - from_cy) * t
+            self.canvas.delete(travel_tag)
+            r = item["max_r"] * (1 - t)
+            if r > 2:
+                self._draw_chip_stack(travel_tag, cx, cy, item["bet"], r, item["budget"] * (1 - t))
+
+        def arrived():
+            self.canvas.delete(travel_tag)
+            if on_done:
+                on_done()
+
+        self._animate(260, frame, on_done=arrived)
+
+    def _chip_move_in(self, item, on_done):
+        """Stage 2 -- one call per winning bet, chained by _animate_payouts:
+        a new stack for just the win portion (return minus stake -- the
+        stake itself never left the spot) appears at the dealer's centre
+        and slides out to land just above the spot's existing stack,
+        growing in size as it travels so it reads as being dealt out rather
+        than sliding in already full-size."""
+        win_amount = item["ret"] - item["bet"]
+        travel_tag = f"chip_travel_{item['key']}"
+        to_cx, to_cy = item["cx"], item["cy"] + PAYOUT_WIN_LANDING_OFFSET_Y
+
+        def frame(t):
+            cx = DEALER_CENTER_X + (to_cx - DEALER_CENTER_X) * t
+            cy = DEALER_CENTER_Y + (to_cy - DEALER_CENTER_Y) * t
+            self.canvas.delete(travel_tag)
+            if item["max_r"] * t > 2:
+                self._draw_chip_stack(travel_tag, cx, cy, win_amount, item["max_r"] * t, item["budget"] * t)
+
+        self._animate(260, frame, on_done=on_done)
+
+    def _sweep_remaining_chips(self, items, on_done):
+        """Called from _new_deal, right as the player deals the next hand --
+        not part of _animate_payouts' own chain (see its docstring): every
+        spot that still holds chips (pushes, untouched since Stage 1/2;
+        wins, with their Stage 2 addition sitting alongside the original
+        stake) slides away together towards the round result panel below
+        the canvas. A literal slide into that separate widget isn't
+        possible (see the fan_canvas/self.canvas split in the module
+        docstring above), so this just shrinks everything to a point
+        heading that way -- the same trick _animate_to_rest's vanish phase
+        uses."""
+        remaining = [it for it in items if it["ret"] > 0]
+        if not remaining:
+            if on_done:
+                on_done()
+            return
+        target_x, target_y = CANVAS_WIDTH / 2, CANVAS_HEIGHT
+
+        def frame(t):
+            for it in remaining:
+                r = it["max_r"] * (1 - t)
+                budget = it["budget"] * (1 - t)
+
+                base_tag = f"{it['spot_tag']}_chips"
+                bcx, bcy = it["cx"], it["cy"]
+                ncx, ncy = bcx + (target_x - bcx) * t, bcy + (target_y - bcy) * t
+                self.canvas.delete(base_tag)
+                if r > 2:
+                    self._draw_chip_stack(base_tag, ncx, ncy, it["bet"], r, budget)
+
+                win_amount = it["ret"] - it["bet"]
+                if win_amount > 0:
+                    travel_tag = f"chip_travel_{it['key']}"
+                    wcx, wcy = it["cx"], it["cy"] + PAYOUT_WIN_LANDING_OFFSET_Y
+                    nwcx, nwcy = wcx + (target_x - wcx) * t, wcy + (target_y - wcy) * t
+                    self.canvas.delete(travel_tag)
+                    if r > 2:
+                        self._draw_chip_stack(travel_tag, nwcx, nwcy, win_amount, r, budget)
+
+        def finish():
+            for it in remaining:
+                self.canvas.delete(f"{it['spot_tag']}_chips")
+                self.canvas.delete(f"chip_travel_{it['key']}")
+            if on_done:
+                on_done()
+
+        self._animate(280, frame, on_done=finish)
+
+    def _animate_payouts(self, result, on_done):
+        """The payout choreography once the dealer's cards are revealed:
+        losing bets swept to the dealer one at a time, then winning bets
+        paid out from the dealer one at a time -- see _chip_move_away/
+        _chip_move_in. Whatever's left (pushes, and wins with their payout
+        now sitting alongside the original stake) just stays in place on
+        the table after that, through the round result panel and all, until
+        the player deals again -- see _new_deal, which sweeps it away then.
+        Respects the animations toggle the same way the rest of the app
+        does: each stage is built on _animate, which already collapses to
+        an instant final frame when animations are off, so this whole
+        chain just resolves synchronously in that case."""
+        items = self._payout_chip_items(result)
+        losing = [it for it in items if it["ret"] == 0]
+        winning = [it for it in items if it["ret"] > it["bet"]]
+
+        stages = (
+            [lambda cb, it=it: self._chip_move_away(it, cb) for it in losing]
+            + [lambda cb, it=it: self._chip_move_in(it, cb) for it in winning]
+        )
+        self._run_sequential(stages, on_done)
 
     def _on_round_settled(self, result):
         # The hand's already moved onto the strip (or been mucked) by this
