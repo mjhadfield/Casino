@@ -98,6 +98,21 @@ def _ease_out_cubic(t):
     return 1 - (1 - t) ** 3
 
 
+# Jackpot spot glow: a slow "breathing" red that shifts mostly in brightness
+# rather than size -- see _draw_spot_jackpot / _pulse_jackpot.
+JACKPOT_GLOW_DIM = "#5a1414"
+JACKPOT_GLOW_BRIGHT = "#ff4136"
+
+
+def _lerp_color(c1, c2, t):
+    """Blends two "#rrggbb" colours -- t=0 -> c1, t=1 -> c2. Used to animate
+    the jackpot glow/sheen by brightness rather than by resizing shapes."""
+    t = max(0.0, min(1.0, t))
+    r1, g1, b1 = int(c1[1:3], 16), int(c1[3:5], 16), int(c1[5:7], 16)
+    r2, g2, b2 = int(c2[1:3], 16), int(c2[3:5], 16), int(c2[5:7], 16)
+    return f"#{round(r1 + (r2 - r1) * t):02x}{round(g1 + (g2 - g1) * t):02x}{round(b1 + (b2 - b1) * t):02x}"
+
+
 # Paytable rows, read straight from the game rules in logic.py/hand_evaluator.py
 # so the panel can never drift out of sync with what actually gets paid out.
 _ANTE_BONUS_ROWS = sorted(
@@ -469,20 +484,30 @@ class ThreeCardPokerFrame(tk.Frame):
 
     def _draw_spot_jackpot(self, cx, cy, r):
         """The £1 jackpot side bet: an on/off spot rather than a chip stack
-        (it's always exactly £1, never stacked higher). Placed, it gets a
-        tight red glow -- pulsing gently, driven by _pulse_jackpot -- so it
-        reads as the fancier, higher-stakes bet on the table, while the chip
-        itself stays the same blue as every other £1 chip in the tray."""
+        (it's always exactly £1, never stacked higher). Placed, it breathes
+        a soft neon glow -- driven by _pulse_jackpot, mostly brightening and
+        dimming rather than growing, plus a faint sheen on the chip -- so it
+        reads as a premium bet, not a warning light. The chip itself stays
+        the same blue as every other £1 chip in the tray."""
         tag = "spot_jackpot"
         placed = bool(self.bets["jackpot"])
+        t = 0.5 + 0.5 * math.sin(self._jackpot_pulse_t)  # 0 -> 1 -> 0, one slow breath
         if placed:
-            pulse = 0.5 + 0.5 * math.sin(self._jackpot_pulse_t)
-            for base_dr, color in ((10, "#3a0808"), (6, "#7a1414"), (3, "#c0201f")):
-                dr = base_dr + pulse * 2.5
+            glow = _lerp_color(JACKPOT_GLOW_DIM, JACKPOT_GLOW_BRIGHT, t)
+            # A soft halo: two thin rings that barely grow (~1.5px) -- almost
+            # all the motion is the colour brightening, not the outline
+            # expanding -- with the outer ring faded towards the felt so it
+            # reads as a glow fading out, not a hard second outline.
+            for base_dr, fade in ((2, 0.0), (5, 0.55)):
+                dr = base_dr + t * 1.5
+                ring = _lerp_color(glow, self._current_felt, fade)
                 self.canvas.create_oval(cx - r - dr, cy - r - dr, cx + r + dr, cy + r + dr,
-                                         outline=color, width=3, tags=(tag,))
+                                         outline=ring, width=2, tags=(tag,))
+            outline_color = glow
+        else:
+            outline_color = "#d4af37"
         self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill="#0e4a2c",
-                                 outline=("#ff4136" if placed else "#d4af37"), width=3, tags=(tag,))
+                                 outline=outline_color, width=3, tags=(tag,))
         self.canvas.create_text(cx, cy - r - 12, text="JACKPOT £1", fill="#cfead9",
                                  font=("Helvetica", 9, "bold"), tags=(tag,))
         if placed:
@@ -492,6 +517,14 @@ class ThreeCardPokerFrame(tk.Frame):
                                      fill=face, outline=rim, width=2, tags=(tag,))
             self.canvas.create_oval(cx - token_r + 7, cy - token_r + 7, cx + token_r - 7, cy + token_r - 7,
                                      outline="#ffffff", width=1, tags=(tag,))
+            # A faint sheen near the chip's edge that brightens with the same
+            # breath as the glow -- subtle enough to read as light catching
+            # the chip rather than an animated shape of its own.
+            sheen_r = token_r * 0.25
+            sx, sy = cx - token_r * 0.4, cy - token_r * 0.45
+            sheen_color = _lerp_color(face, "#ffffff", 0.12 + 0.18 * t)
+            self.canvas.create_oval(sx - sheen_r, sy - sheen_r, sx + sheen_r, sy + sheen_r,
+                                     fill=sheen_color, outline="", tags=(tag,))
             self.canvas.create_text(cx, cy, text="£1", fill="#ffffff",
                                      font=("Helvetica", 11, "bold"), tags=(tag,))
         else:
