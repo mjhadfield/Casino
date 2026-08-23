@@ -1,0 +1,83 @@
+"""
+Hadfield Casino
+=================
+A small, extensible casino games library. Currently ships Three Card Poker;
+built so future games (Blackjack, Roulette, Baccarat, ...) can be dropped in
+as another entry in games/ plus a UI frame, reusing the same core deck,
+hand-evaluation, finance, and settings modules.
+
+Run with:  python3 main.py
+Requires only the Python standard library (tkinter).
+"""
+import os
+import sys
+import tkinter as tk
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from core.finances import FinanceManager
+from core.settings import SettingsManager
+from ui.main_menu import MainMenuFrame
+from ui.finances_screen import FinancesFrame
+from ui.settings_screen import SettingsFrame
+from games.three_card_poker.ui import ThreeCardPokerFrame
+
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(APP_DIR, "data")
+FINANCE_SAVE_PATH = os.path.join(DATA_DIR, "finances.json")
+SETTINGS_SAVE_PATH = os.path.join(DATA_DIR, "settings.json")
+
+APP_TITLE = "Hadfield Casino"
+
+
+class CasinoApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title(APP_TITLE)
+        self.geometry("1200x820")
+        self.minsize(1120, 760)
+        self.configure(bg="#0b0b0b")
+
+        self.data_dir = DATA_DIR
+        self.finance = FinanceManager(FINANCE_SAVE_PATH)
+        self.settings = SettingsManager(SETTINGS_SAVE_PATH)
+
+        container = tk.Frame(self, bg="#0b0b0b")
+        container.pack(fill="both", expand=True)
+        container.grid_rowconfigure(0, weight=1)
+        container.grid_columnconfigure(0, weight=1)
+
+        self.frames = {}
+        for frame_class, name in (
+            (MainMenuFrame, "menu"),
+            (FinancesFrame, "finances"),
+            (SettingsFrame, "settings"),
+            (ThreeCardPokerFrame, "three_card_poker"),
+        ):
+            frame = frame_class(parent=container, app=self)
+            self.frames[name] = frame
+            frame.grid(row=0, column=0, sticky="nsew")
+
+        self.show_frame("menu")
+
+    def show_frame(self, name):
+        frame = self.frames[name]
+        if hasattr(frame, "on_show"):
+            frame.on_show()
+        frame.tkraise()
+
+    def on_balance_changed(self):
+        """Called by any screen that changes the balance/stats, so the menu
+        and finances screen stay in sync without polling."""
+        self.frames["menu"].refresh_balance()
+        self.frames["finances"].refresh()
+
+
+def main():
+    os.makedirs(DATA_DIR, exist_ok=True)
+    app = CasinoApp()
+    app.mainloop()
+
+
+if __name__ == "__main__":
+    main()
