@@ -22,39 +22,52 @@ def _card_tags(tags):
 
 def draw_card(canvas, x, y, card, width=CARD_WIDTH, height=CARD_HEIGHT, tags=()):
     """Draws a face-up card at (x, y) on the given tkinter Canvas: the rank in
-    two opposite corners and one decent-sized suit icon in the centre."""
+    two opposite corners and one decent-sized suit icon in the centre.
+
+    Text size and corner margins scale with `height`/`width` relative to the
+    default CARD_WIDTH/CARD_HEIGHT (identical output at the defaults -- the
+    scaling is a no-op there), so a smaller card -- e.g. Three Card Poker's
+    bet-indicator "resting" cards -- still reads cleanly instead of full-size
+    rank/suit text overflowing a shrunken rectangle."""
     tags = _card_tags(tags)
     text_color = "#c0392b" if card.color == "red" else "#1a1a1a"
+    corner_font = max(8, round(13 * height / CARD_HEIGHT))
+    symbol_font = max(10, round(55 * height / CARD_HEIGHT))
+    margin_x = 6 * width / CARD_WIDTH
+    margin_y = 5 * height / CARD_HEIGHT
     canvas.create_rectangle(
         x, y, x + width, y + height,
         fill="#fdfdf5", outline="#222222", width=2, tags=tags,
     )
     canvas.create_text(
-        x + 6, y + 5, text=card.rank, font=("Helvetica", 13, "bold"),
+        x + margin_x, y + margin_y, text=card.rank, font=("Helvetica", corner_font, "bold"),
         fill=text_color, anchor="nw", tags=tags,
     )
     canvas.create_text(
-        x + width - 6, y + height - 5, text=card.rank,
-        font=("Helvetica", 13, "bold"), fill=text_color, anchor="se", tags=tags,
+        x + width - margin_x, y + height - margin_y, text=card.rank,
+        font=("Helvetica", corner_font, "bold"), fill=text_color, anchor="se", tags=tags,
     )
     canvas.create_text(
         x + width / 2, y + height / 2, text=card.symbol,
-        font=("Helvetica", 55), fill=text_color, tags=tags,
+        font=("Helvetica", symbol_font), fill=text_color, tags=tags,
     )
 
 
 def draw_card_back(canvas, x, y, accent="#d4af37", width=CARD_WIDTH, height=CARD_HEIGHT, tags=()):
-    """Draws a face-down card back at (x, y)."""
+    """Draws a face-down card back at (x, y). Scales the same way draw_card
+    does -- see its docstring."""
     tags = _card_tags(tags)
+    inset = 6 * min(width / CARD_WIDTH, height / CARD_HEIGHT)
+    symbol_font = max(8, round(20 * height / CARD_HEIGHT))
     canvas.create_rectangle(
         x, y, x + width, y + height,
         fill="#0b3d24", outline=accent, width=2, tags=tags,
     )
     canvas.create_rectangle(
-        x + 6, y + 6, x + width - 6, y + height - 6,
+        x + inset, y + inset, x + width - inset, y + height - inset,
         outline=accent, width=1, tags=tags,
     )
     canvas.create_text(
         x + width / 2, y + height / 2, text="♠",
-        font=("Helvetica", 20), fill=accent, tags=tags,
+        font=("Helvetica", symbol_font), fill=accent, tags=tags,
     )

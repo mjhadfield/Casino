@@ -42,7 +42,15 @@ CHIP_DENOMINATIONS = [
 CHIP_COLORS_BY_VALUE = {value: (face, rim) for value, face, rim in CHIP_DENOMINATIONS}
 CHIP_SIZE = 58
 CANVAS_WIDTH = 760
-CANVAS_HEIGHT = 360
+CANVAS_HEIGHT = 490
+
+# The betting screen's own layout (_draw_table) is pinned to this fixed
+# reference height rather than the shared CANVAS_HEIGHT above, so it always
+# renders exactly as it did before the post-Deal view grew taller to fit a
+# dealer mat, a bigger Play box, etc. -- the two screens share one Canvas
+# widget, but nothing about the taller widget should visibly change the
+# betting screen itself, just leave more (unused, by it) room below.
+BETTING_TABLE_HEIGHT = 360
 
 # A single chip's on-table size -- identical everywhere it's placed (Ante,
 # Pair Plus, Prime) so a £25 chip looks the same size on every spot. Sized to
@@ -65,33 +73,101 @@ JACKPOT_SPOT_R = 32
 CONTENT_TOP_MARGIN = 35
 
 # --- Card-view (post-Deal) geometry ----------------------------------------
-# A row of 3 cards, centred on the canvas -- shared by the dealer's row, the
-# player's settled/sorted row, and used as the x-baseline for the player's fan.
+# Three stacked rows, dealer at the top: the dealer's cards, then a compact
+# strip of bet indicators -- Play stacked above Ante (Play gets top billing:
+# it's the bet the player is actively choosing to make, sized generously so
+# the played hand stays legible under its chips), with Pair Plus/Prime/
+# Jackpot off to the sides -- and the player's fanned hand at the bottom,
+# right above the Play/Fold buttons. Choosing Play then visibly moves the
+# hand *up* onto the Play spot -- the same direction a player pushes their
+# cards forward on a real table -- and a fold onto Prime/Pair Plus likewise
+# moves up, not down.
 CARD_ROW_GAP = CARD_WIDTH + 15
 CARD_ROW_WIDTH = 2 * CARD_ROW_GAP + CARD_WIDTH
 CARD_ROW_START_X = CANVAS_WIDTH / 2 - CARD_ROW_WIDTH / 2
 
-DEALER_Y = 54                                    # dealer cards' top-left y
-DEALER_ZONE_TOP = DEALER_Y - 34
-DEALER_ZONE_BOTTOM = DEALER_Y + CARD_HEIGHT + 16
-DEALER_ZONE_X1 = CARD_ROW_START_X - 26
-DEALER_ZONE_X2 = CARD_ROW_START_X + CARD_ROW_WIDTH + 26
+# Dealer mat: a rounded-rectangle felt behind the dealer's row, the same
+# "printed felt" language the bet strip below uses -- drawn first so the
+# card spots/cards themselves sit on top of it. Margins are kept well clear
+# of the corner radius so a card is never clipped by the rounding.
+DEALER_MAT_RADIUS = 14
+DEALER_MAT_TOP = 10
+DEALER_MAT_LABEL_Y = DEALER_MAT_TOP + 9
+DEALER_Y = DEALER_MAT_TOP + 24                   # dealer cards' top-left y
+DEALER_MAT_BOTTOM = DEALER_Y + CARD_HEIGHT + 20
+DEALER_MAT_SIDE_MARGIN = 40
+DEALER_MAT_X1 = CARD_ROW_START_X - DEALER_MAT_SIDE_MARGIN
+DEALER_MAT_X2 = CARD_ROW_START_X + CARD_ROW_WIDTH + DEALER_MAT_SIDE_MARGIN
 
-# Player zone: same width/height as the dealer's (matched pair), but a
-# rounded rectangle instead of an oval so it reads as "similar, but different".
-PLAYER_ZONE_TOP = DEALER_ZONE_BOTTOM + 20
-PLAYER_ZONE_BOTTOM = PLAYER_ZONE_TOP + (DEALER_ZONE_BOTTOM - DEALER_ZONE_TOP)
-PLAYER_ZONE_X1 = DEALER_ZONE_X1
-PLAYER_ZONE_X2 = DEALER_ZONE_X2
-PLAYER_ZONE_CY = (PLAYER_ZONE_TOP + PLAYER_ZONE_BOTTOM) / 2
-PLAYER_Y_SETTLED = PLAYER_ZONE_CY - CARD_HEIGHT / 2   # the flat, sorted resting row
+# Bet indicator strip -- a deliberately larger gap below the dealer mat than
+# any other gap in this view, so the dealer's area and the player's clearly
+# read as two separate zones. Play and Ante are stacked (Play on top,
+# bigger) on the shared centreline; Pair Plus/Prime/Jackpot flank them,
+# vertically centred on the stack -- mirroring their relative positions on
+# the betting screen, just condensed into one row instead of two.
+GAP_DEALER_TO_STRIP = 34
+STRIP_TOP = DEALER_MAT_BOTTOM + GAP_DEALER_TO_STRIP
+STACK_CX = CANVAS_WIDTH / 2
+
+PLAY_BOX_W = 182   # 140 * 1.3
+PLAY_BOX_H = 94    # 72 * 1.3
+ANTE_BOX_W = 85
+ANTE_BOX_H = 38
+STACK_GAP = 4
+STRIP_LABEL_H = 16  # Ante's label sits inside its own top edge, not above it
+                     # -- Play's label instead sits dead centre (see
+                     # _draw_strip_rect's label_at_center), since the played
+                     # hand's cards land centred on the box and are meant to
+                     # cover it, the same way cards cover a printed felt spot.
+
+PLAY_BOX_TOP = STRIP_TOP
+PLAY_BOX_BOTTOM = PLAY_BOX_TOP + PLAY_BOX_H
+PLAY_BOX_CY = (PLAY_BOX_TOP + PLAY_BOX_BOTTOM) / 2
+ANTE_BOX_TOP = PLAY_BOX_BOTTOM + STACK_GAP
+ANTE_BOX_BOTTOM = ANTE_BOX_TOP + ANTE_BOX_H
+STACK_CY = (PLAY_BOX_TOP + ANTE_BOX_BOTTOM) / 2
+
+PAIR_PLUS_STRIP_CX = 233
+PAIR_PLUS_STRIP_R = 30
+PRIME_STRIP_CX = 527
+PRIME_STRIP_R = 30
+JACKPOT_STRIP_CX = 603
+JACKPOT_STRIP_R = 22
 
 # The fan the player's cards land in while Play/Fold is being decided:
 # overlapping, with the outer two cards riding slightly lower than the middle
-# one, like a hand of cards held with a gentle arc.
-FAN_GAP = 42
-FAN_ARC_OFFSET = 14
-FAN_Y = PLAYER_ZONE_CY - CARD_HEIGHT / 2
+# one, like a hand of cards held with a gentle arc. The gap above it matches
+# GAP_DEALER_TO_STRIP -- the same margin on both sides of the bet strip.
+FAN_Y = ANTE_BOX_BOTTOM + GAP_DEALER_TO_STRIP
+FAN_GAP = 46
+FAN_ARC_OFFSET = 8
+
+# The canvas is shrunk to this height once a round resolves -- everything
+# settled (the dealer's reveal, the strip, the played/folded hand) sits
+# above FAN_Y, so cropping there removes the now-empty space where the fan
+# used to be instead of leaving a dead gap before the result text/buttons
+# below the canvas. Restored to the full CANVAS_HEIGHT for the next deal.
+RESOLVED_CANVAS_HEIGHT = FAN_Y + 12
+
+# Cards that come to rest on a bet-indicator spot -- the played hand landing
+# on Play, or a folded hand resting on Prime/Pair Plus to show there's still
+# something to collect -- are drawn at this reduced scale: big enough to
+# read, small enough to fit on the same spot the chips already sit on.
+REST_CARD_SCALE = 0.55
+REST_CARD_WIDTH = CARD_WIDTH * REST_CARD_SCALE
+REST_CARD_HEIGHT = CARD_HEIGHT * REST_CARD_SCALE
+REST_CARD_FAN_OFFSET = 30  # horizontal spread of the 3 resting cards -- wide
+                            # enough that the middle card's own index isn't
+                            # fully swallowed by the outer two plus the chips
+
+# The played hand gets its own, bigger scale -- the Play box has plenty of
+# room to spare (see PLAY_BOX_W/H above), so its cards fill more of it
+# instead of sitting at the same modest size the smaller Prime/Pair Plus
+# fold spots need.
+PLAY_REST_CARD_SCALE = 0.75
+PLAY_REST_CARD_WIDTH = CARD_WIDTH * PLAY_REST_CARD_SCALE
+PLAY_REST_CARD_HEIGHT = CARD_HEIGHT * PLAY_REST_CARD_SCALE
+PLAY_REST_CARD_FAN_OFFSET = 34
 
 
 def _ease_out_cubic(t):
@@ -432,7 +508,7 @@ class ThreeCardPokerFrame(tk.Frame):
     # ------------------------------------------------------------------ betting table
     def _draw_table(self):
         self.canvas.delete("all")
-        w, h = CANVAS_WIDTH, CANVAS_HEIGHT
+        w, h = CANVAS_WIDTH, BETTING_TABLE_HEIGHT
         cx = w / 2
 
         # Ante spot is proportioned like a playing card (CARD_WIDTH:CARD_HEIGHT, scaled up).
@@ -598,6 +674,10 @@ class ThreeCardPokerFrame(tk.Frame):
 
     # ------------------------------------------------------------------ state transitions
     def _show_betting_controls(self):
+        # Restored to full height in case the previous round shrank it (see
+        # _on_round_settled) -- reached both from "Change Bets" on a
+        # resolved round and from the frame's own initial build.
+        self.canvas.configure(height=CANVAS_HEIGHT)
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
         self.deal_btn.pack()
@@ -731,6 +811,11 @@ class ThreeCardPokerFrame(tk.Frame):
         self.result_lbl.configure(text="Dealing...", fg="#f0f0f0")
         self._show_no_controls()
 
+        # Restored to full height in case the previous round shrank it (see
+        # _on_round_settled) -- New Deal jumps straight here from a resolved
+        # round without passing back through the betting screen.
+        self.canvas.configure(height=CANVAS_HEIGHT)
+
         # Only the play area appears at first: the dealer's cards (face down)
         # and an empty zone where the player's hand will land.
         self._draw_card_zones()
@@ -763,9 +848,9 @@ class ThreeCardPokerFrame(tk.Frame):
         self._show_no_controls()
         on_settled = lambda: self._reveal_dealer(result)
         if folded:
-            self._fold_player_cards(on_settled)
+            self._settle_folded_hand(on_settled)
         else:
-            self._sort_player_cards(on_settled)
+            self._settle_played_hand(on_settled)
 
     def _new_deal(self):
         """New Deal: skips the betting screen entirely and deals again
@@ -786,29 +871,82 @@ class ThreeCardPokerFrame(tk.Frame):
 
     # ------------------------------------------------------------------ card-view rendering
     def _draw_card_zones(self):
-        """Draws the static dealer + player felt zones and their labels for
-        the post-Deal view -- once per round. Individual cards are separate,
-        tagged canvas items drawn/animated on top of this background."""
+        """Draws the static post-Deal background for one round: a rounded-
+        rectangle felt mat behind the dealer's row (drawn first, so the
+        dealer's card spots/cards sit on top of it) and the bet-indicator
+        strip below it (see _draw_bet_strip) -- Ante, Play, and whichever of
+        Pair Plus/Prime/Jackpot are actually in play, so the active bonus
+        bets stay visible for the whole hand instead of vanishing the
+        moment betting ends. Individual cards are separate, tagged canvas
+        items drawn/animated on top of this background."""
         self.canvas.delete("all")
-        cx = CANVAS_WIDTH / 2
-
-        # Dealer zone: an oval, matching the betting screen's felt-and-gold look.
-        self.canvas.create_oval(
-            DEALER_ZONE_X1, DEALER_ZONE_TOP, DEALER_ZONE_X2, DEALER_ZONE_BOTTOM,
-            fill="#0e4a2c", outline="#d4af37", width=2, tags=("zone_bg",),
-        )
-        self.canvas.create_text(cx, DEALER_Y - 16, text="DEALER", fill="#dddddd",
-                                 font=("Helvetica", 10, "bold"), tags=("zone_bg",))
-
-        # Player zone: a rounded rectangle -- same felt/gold language and the
-        # same size as the dealer's, but a different shape so the two read as
-        # a matched pair rather than a plain duplicate.
         self._draw_rounded_rect(
-            PLAYER_ZONE_X1, PLAYER_ZONE_TOP, PLAYER_ZONE_X2, PLAYER_ZONE_BOTTOM, radius=34,
+            DEALER_MAT_X1, DEALER_MAT_TOP, DEALER_MAT_X2, DEALER_MAT_BOTTOM, radius=DEALER_MAT_RADIUS,
             fill="#0e4a2c", outline="#d4af37", width=2, tags=("zone_bg",),
         )
-        self.canvas.create_text(cx, PLAYER_ZONE_TOP + 18, text="YOUR HAND", fill="#dddddd",
-                                 font=("Helvetica", 10, "bold"), tags=("zone_bg",))
+        self.canvas.create_text(CANVAS_WIDTH / 2, DEALER_MAT_LABEL_Y, text="DEALER", fill="#8fd6a8",
+                                 font=("Helvetica", 9, "bold"), tags=("zone_bg",))
+        self._draw_bet_strip()
+
+    def _draw_bet_strip(self):
+        """The bet-indicator strip between the dealer's mat and the
+        player's fan: Play stacked above Ante (Play starts empty -- an
+        outline printed on the felt, like a real table's permanent Play
+        spot, until Play is chosen), Pair Plus/Prime/Jackpot off to the
+        sides, only if actually wagered. Drawn once, right after dealing --
+        cards+chips are added to individual spots afterwards (see
+        _settle_played_hand/_settle_folded_hand) rather than redrawing the
+        whole strip, so those additions can layer on top in the right order."""
+        self._draw_strip_rect("play", PLAY_BOX_TOP, PLAY_BOX_W, PLAY_BOX_H, "PLAY", label_at_center=True)
+        self._draw_strip_rect("ante", ANTE_BOX_TOP, ANTE_BOX_W, ANTE_BOX_H, "ANTE")
+        if self.bets["pair_plus"]:
+            self._draw_strip_circle("pair_plus", PAIR_PLUS_STRIP_CX, PAIR_PLUS_STRIP_R, "PAIR PLUS")
+        if self.bets["prime"]:
+            self._draw_strip_circle("prime", PRIME_STRIP_CX, PRIME_STRIP_R, "PRIME")
+        if self.bets["jackpot"]:
+            self._draw_strip_circle("jackpot", JACKPOT_STRIP_CX, JACKPOT_STRIP_R, "JACKPOT £1")
+
+    def _draw_strip_rect(self, key, top, w, h, label, label_at_center=False):
+        """One rectangular strip spot (Play/Ante), centred on STACK_CX --
+        `key` looked up in self.bets for its chip stack; "play" isn't a real
+        bet key, so it's always 0 here and drawn as an empty outline until
+        the played hand's chips are added separately once Play is chosen.
+
+        Ante's label sits inside the box's own top edge, out of the way of
+        its (much smaller) chip stack. Play's label instead sits dead
+        centre, the same point the played hand's cards land on and the
+        chips on top of them -- it's meant to end up covered, the way a
+        printed felt spot does once something's placed on it."""
+        tag = f"strip_{key}"
+        self.canvas.delete(tag)
+        amount = self.bets.get(key, 0)
+        x1, y1, x2, y2 = STACK_CX - w / 2, top, STACK_CX + w / 2, top + h
+        self._draw_rounded_rect(x1, y1, x2, y2, radius=10, fill="#0e4a2c", outline="#d4af37",
+                                 width=2, tags=(tag,))
+        if label_at_center:
+            label_y, chip_cy, chip_budget = (y1 + y2) / 2, (y1 + y2) / 2, h * 0.85
+        else:
+            label_y = y1 + 9
+            chip_cy = y1 + STRIP_LABEL_H + (h - STRIP_LABEL_H) / 2
+            chip_budget = (h - STRIP_LABEL_H) * 0.9
+        self.canvas.create_text(STACK_CX, label_y, text=label, fill="#cfead9",
+                                 font=("Helvetica", 9, "bold"), tags=(tag,))
+        if amount:
+            self._draw_chip_stack(tag, STACK_CX, chip_cy, amount, max_r=20, budget=chip_budget)
+
+    def _draw_strip_circle(self, key, cx, r, label):
+        """One circular strip spot (Pair Plus/Prime/Jackpot), vertically
+        centred on the Play+Ante stack -- only drawn at all when that bet is
+        active (see _draw_bet_strip), so it's always shown with its chip
+        stack."""
+        tag = f"strip_{key}"
+        self.canvas.delete(tag)
+        cy = STACK_CY
+        self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill="#0e4a2c", outline="#d4af37",
+                                 width=2, tags=(tag,))
+        self.canvas.create_text(cx, cy - r - 10, text=label, fill="#cfead9",
+                                 font=("Helvetica", 9, "bold"), tags=(tag,))
+        self._draw_chip_stack(tag, cx, cy, self.bets.get(key, 0), max_r=20, budget=r * 1.7)
 
     def _draw_rounded_rect(self, x1, y1, x2, y2, radius, **kwargs):
         points = [
@@ -847,10 +985,6 @@ class ThreeCardPokerFrame(tk.Frame):
         centers_x = [cx - FAN_GAP, cx, cx + FAN_GAP]
         ys = [FAN_Y + FAN_ARC_OFFSET, FAN_Y, FAN_Y + FAN_ARC_OFFSET]
         return [(x - CARD_WIDTH / 2, y) for x, y in zip(centers_x, ys)]
-
-    def _flat_slots(self):
-        """Top-left (x, y) for the player's settled, sorted row of 3 cards."""
-        return [(CARD_ROW_START_X + i * CARD_ROW_GAP, PLAYER_Y_SETTLED) for i in range(3)]
 
     # ------------------------------------------------------------------ animation engine
     def _animate(self, duration_ms, on_frame, on_done=None):
@@ -932,40 +1066,132 @@ class ThreeCardPokerFrame(tk.Frame):
         self.result_lbl.configure(text="Your cards are dealt. Play or Fold?", fg="#f0f0f0")
         self._show_decision_controls()
 
-    def _sort_player_cards(self, on_done):
+    def _animate_to_rest(self, cards, target_cx, target_cy, group_tag, spot_tag=None,
+                          face_up=True, sort=False, on_done=None,
+                          rest_width=REST_CARD_WIDTH, rest_height=REST_CARD_HEIGHT,
+                          fan_offset=REST_CARD_FAN_OFFSET):
+        """Animates the player's 3 cards from their current fan position to
+        a small resting spot -- Play (on a win/push/lose decision to play)
+        or Prime/Pair Plus (folding with one of those still active) --
+        shrinking to `rest_width`/`rest_height` as they go (Play's own,
+        bigger PLAY_REST_CARD_* by default via _settle_played_hand; the
+        smaller module-level REST_CARD_* otherwise). `spot_tag`, if given,
+        is an existing spot already on the canvas that these cards should
+        end up BEHIND, so its chip stack stays on top and the cards just
+        peek out from underneath -- the "folded onto Prime/Pair Plus" look.
+        `sort` orders them highest-to-lowest, left to right, matching how
+        the hand reads once settled; folded cards stay in dealt order since
+        they land face-down anyway."""
         assert self.result is not None
-        cards = self.result.player_cards
-        order = sorted(range(3), key=lambda i: -cards[i].value)  # highest first, left to right
         fan_slots = self._fan_slots()
-        flat_slots = self._flat_slots()
+        order = sorted(range(3), key=lambda i: -cards[i].value) if sort else list(range(3))
+        offsets = [-fan_offset, 0, fan_offset]
 
         def frame(t):
             for new_pos, orig_i in enumerate(order):
                 sx, sy = fan_slots[orig_i]
-                tx, ty = flat_slots[new_pos]
-                self._draw_player_card_at(orig_i, cards[orig_i], sx + (tx - sx) * t, sy + (ty - sy) * t)
+                scx, scy = sx + CARD_WIDTH / 2, sy + CARD_HEIGHT / 2
+                tcx, tcy = target_cx + offsets[new_pos], target_cy
+                cx = scx + (tcx - scx) * t
+                cy = scy + (tcy - scy) * t
+                w = CARD_WIDTH + (rest_width - CARD_WIDTH) * t
+                h = CARD_HEIGHT + (rest_height - CARD_HEIGHT) * t
+                tag = f"player_card_{orig_i}"
+                self.canvas.delete(tag)
+                draw_tags = (tag, group_tag)
+                if face_up:
+                    draw_card(self.canvas, cx - w / 2, cy - h / 2, cards[orig_i], width=w, height=h, tags=draw_tags)
+                else:
+                    draw_card_back(self.canvas, cx - w / 2, cy - h / 2, width=w, height=h, tags=draw_tags)
+                if spot_tag:
+                    self.canvas.tag_lower(tag, spot_tag)
 
         self._animate(260, frame, on_done=on_done)
 
-    def _fold_player_cards(self, on_done):
+    def _settle_played_hand(self, on_done):
+        """Play: the hand comes to rest centred on the Play spot -- now
+        above the fan, so this moves the cards *up* -- sorted highest to
+        lowest, then the Play bet's chips are placed on top of the cards,
+        the traditional casino way of signalling "I'm playing this hand".
+        The "PLAY" label sits at this same centre point and ends up covered,
+        same as a printed felt spot would."""
+        assert self.result is not None
+        play_cy = PLAY_BOX_CY
+
+        def show_play_chips():
+            # Smaller than the usual strip chip stack -- these sit on top of
+            # the played cards, not an empty spot, so a smaller stack leaves
+            # the middle card's own index actually readable.
+            self._draw_chip_stack("strip_play", STACK_CX, play_cy, self.result.play_bet,
+                                   max_r=18, budget=PLAY_BOX_H * 0.55)
+            if on_done:
+                on_done()
+
+        self._animate_to_rest(self.result.player_cards, STACK_CX, play_cy, "played_hand",
+                               sort=True, on_done=show_play_chips,
+                               rest_width=PLAY_REST_CARD_WIDTH, rest_height=PLAY_REST_CARD_HEIGHT,
+                               fan_offset=PLAY_REST_CARD_FAN_OFFSET)
+
+    def _settle_folded_hand(self, on_done):
+        """Fold: if Prime or Pair Plus actually *won* (both pay regardless
+        of the Ante/Play decision, but a bet placed on one that lost has
+        nothing to show for itself), the folded hand is flipped face down
+        and tucked underneath that spot -- cards peeking out from under the
+        chips -- exactly the physical tell a real table gives that there's
+        still something to collect even though the hand isn't being played.
+        Otherwise it's just mucked away as before."""
+        assert self.result is not None
+        if self.result.prime_return > 0:
+            rest_cx, spot_tag = PRIME_STRIP_CX, "strip_prime"
+        elif self.result.pair_plus_return > 0:
+            rest_cx, spot_tag = PAIR_PLUS_STRIP_CX, "strip_pair_plus"
+        else:
+            self._muck_player_cards(on_done)
+            return
+
+        rest_cy = STACK_CY
+
+        def after_flip():
+            self._animate_to_rest(self.result.player_cards, rest_cx, rest_cy, "folded_hand",
+                                   spot_tag=spot_tag, face_up=False, on_done=on_done)
+
+        self._flip_fan_face_down(after_flip)
+
+    def _flip_fan_face_down(self, on_done):
+        """Flips each fanned card face down in place, staggered -- the first
+        step of folding, shared by both _settle_folded_hand (which then
+        tucks the hand under Prime/Pair Plus) and _muck_player_cards (which
+        then slides it away)."""
         assert self.result is not None
         cards = self.result.player_cards
         fan_slots = self._fan_slots()
 
-        def muck_one(i):
+        def flip_one(i):
             sx, sy = fan_slots[i]
             cx_slot = sx + CARD_WIDTH / 2
+            self._animate_flip(
+                f"player_card_{i}", cx_slot, sy, cards[i], reveal=False, duration=180,
+                on_done=(on_done if i == 2 else None),
+            )
+
+        self._run_staggered(3, 70, flip_one)
+
+    def _muck_player_cards(self, on_done):
+        """No active Pair Plus/Prime to show off on a fold -- flip face down
+        and slide the hand off-canvas, same as a real muck."""
+        assert self.result is not None
+        fan_slots = self._fan_slots()
+
+        def slide_one(i):
+            sx, sy = fan_slots[i]
 
             def slide(t, sx=sx, sy=sy):
                 tx, ty = CANVAS_WIDTH + 90, sy - 40  # forwards (up) and off to the side
                 self._draw_player_card_at(i, None, sx + (tx - sx) * t, sy + (ty - sy) * t, face_up=False)
 
-            self._animate_flip(
-                f"player_card_{i}", cx_slot, sy, cards[i], reveal=False, duration=180,
-                on_done=lambda: self._animate(220, slide, on_done=(on_done if i == 2 else None)),
-            )
+            self._animate(220, slide, on_done=(on_done if i == 2 else None))
 
-        self._run_staggered(3, 70, muck_one)
+        self._flip_fan_face_down(lambda: self._run_staggered(3, 70, slide_one))
 
     def _reveal_dealer(self, result):
         def flip_one(i):
@@ -978,6 +1204,12 @@ class ThreeCardPokerFrame(tk.Frame):
         self._run_staggered(3, 130, flip_one)
 
     def _on_round_settled(self, result):
+        # Everything settled (the dealer's reveal, the strip, the played/
+        # folded hand) sits above FAN_Y -- shrinking the canvas down to
+        # RESOLVED_CANVAS_HEIGHT crops away the now-empty space where the
+        # fan used to be, so the result text/buttons right below the canvas
+        # start where the cards did rather than leaving a dead gap.
+        self.canvas.configure(height=RESOLVED_CANVAS_HEIGHT)
         self._show_result(result)
         self._show_round_over_controls()
         self.state = "resolved"
