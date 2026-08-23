@@ -5,6 +5,7 @@ DEFAULT_SETTINGS = {
     "sound_enabled": True,
     "animations_enabled": True,
     "table_theme": "Emerald",
+    "jackpot_rate_per_second": 0.01,
 }
 
 TABLE_THEMES = {

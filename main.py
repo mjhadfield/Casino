@@ -16,6 +16,7 @@ import tkinter as tk
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.finances import FinanceManager
+from core.jackpot import JackpotManager
 from core.settings import SettingsManager
 from ui.main_menu import MainMenuFrame
 from ui.finances_screen import FinancesFrame
@@ -26,6 +27,7 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(APP_DIR, "data")
 FINANCE_SAVE_PATH = os.path.join(DATA_DIR, "finances.json")
 SETTINGS_SAVE_PATH = os.path.join(DATA_DIR, "settings.json")
+JACKPOT_SAVE_PATH = os.path.join(DATA_DIR, "jackpot.json")
 
 APP_TITLE = "Hadfield Casino"
 
@@ -41,6 +43,10 @@ class CasinoApp(tk.Tk):
         self.data_dir = DATA_DIR
         self.finance = FinanceManager(FINANCE_SAVE_PATH)
         self.settings = SettingsManager(SETTINGS_SAVE_PATH)
+        self.jackpot = JackpotManager(JACKPOT_SAVE_PATH, self.settings)
+        # Grows for as long as the app is open, independent of which screen
+        # is showing -- started here rather than by any one game's frame.
+        self.jackpot.start(self)
 
         container = tk.Frame(self, bg="#0b0b0b")
         container.pack(fill="both", expand=True)

@@ -19,6 +19,7 @@ class SettingsFrame(tk.Frame):
         self.sound_var = tk.BooleanVar(value=app.settings.get("sound_enabled"))
         self.anim_var = tk.BooleanVar(value=app.settings.get("animations_enabled"))
         self.theme_var = tk.StringVar(value=app.settings.get("table_theme"))
+        self.jackpot_rate_var = tk.StringVar(value=f"{app.settings.get('jackpot_rate_per_second'):.2f}")
         self._original = self._snapshot()
 
         top_bar = tk.Frame(self, bg="#111111")
@@ -48,6 +49,16 @@ class SettingsFrame(tk.Frame):
         tk.Frame(inner, bg="#3a6b4c", height=1).pack(fill="x", pady=16)
 
         self._make_theme_row(inner)
+
+        jackpot_panel = tk.Frame(body, bg=PANEL_BG, highlightbackground=PANEL_BORDER, highlightthickness=2)
+        jackpot_panel.pack(fill="x", pady=(24, 0))
+        jackpot_inner = tk.Frame(jackpot_panel, bg=PANEL_BG)
+        jackpot_inner.pack(fill="x", padx=26, pady=22)
+        tk.Label(jackpot_inner, text="PROGRESSIVE JACKPOT", bg=PANEL_BG, fg=GOLD,
+                 font=("Georgia", 13, "bold")).pack(anchor="w", pady=(0, 14))
+        self._make_jackpot_rate_row(jackpot_inner)
+        tk.Frame(jackpot_inner, bg="#3a6b4c", height=1).pack(fill="x", pady=16)
+        self._make_jackpot_debug_row(jackpot_inner)
 
         danger_panel = tk.Frame(body, bg="#1a0d0d", highlightbackground="#5a1c1c", highlightthickness=2)
         danger_panel.pack(fill="x", pady=(24, 0))
@@ -144,21 +155,71 @@ class SettingsFrame(tk.Frame):
         self.theme_var.set(name)
         self._draw_theme_swatches()
 
+    # ------------------------------------------------------------------ jackpot
+    def _make_jackpot_rate_row(self, parent):
+        row = tk.Frame(parent, bg=PANEL_BG)
+        row.pack(fill="x", pady=4)
+        tk.Label(row, text="Growth Rate", bg=PANEL_BG, fg="#f0f0f0", font=("Helvetica", 12)).pack(side="left")
+        tk.Label(row, text="£ / second", bg=PANEL_BG, fg="#999999", font=("Helvetica", 9)).pack(side="right")
+        tk.Entry(
+            row, textvariable=self.jackpot_rate_var, width=8, bg="#1c1c1c", fg="#f0f0f0",
+            insertbackground="#f0f0f0", relief="flat", justify="right",
+        ).pack(side="right", padx=8)
+
+    def _make_jackpot_debug_row(self, parent):
+        tk.Label(
+            parent, text="Manually set the jackpot amount -- for debugging, applies immediately.",
+            bg=PANEL_BG, fg="#999999", font=("Helvetica", 9),
+        ).pack(anchor="w", pady=(0, 8))
+        row = tk.Frame(parent, bg=PANEL_BG)
+        row.pack(fill="x")
+        tk.Label(row, text="Set Jackpot", bg=PANEL_BG, fg="#f0f0f0", font=("Helvetica", 12)).pack(side="left")
+        self.jackpot_debug_var = tk.StringVar(value=f"{self.app.jackpot.amount:.2f}")
+        tk.Button(
+            row, text="Set", bg="#333333", fg="#cccccc", relief="flat",
+            font=("Helvetica", 9, "bold"), padx=12, pady=4, cursor="hand2",
+            command=self._apply_jackpot_debug_value,
+        ).pack(side="right")
+        tk.Entry(
+            row, textvariable=self.jackpot_debug_var, width=10, bg="#1c1c1c", fg="#f0f0f0",
+            insertbackground="#f0f0f0", relief="flat", justify="right",
+        ).pack(side="right", padx=8)
+        tk.Label(row, text="£", bg=PANEL_BG, fg="#999999", font=("Helvetica", 9)).pack(side="right")
+
+    def _apply_jackpot_debug_value(self):
+        try:
+            amount = float(self.jackpot_debug_var.get().strip().replace("£", "").replace(",", ""))
+        except ValueError:
+            messagebox.showwarning("Invalid Amount", "Enter a valid £ amount for the jackpot.")
+            return
+        self.app.jackpot.set_amount(amount)
+        self.jackpot_debug_var.set(f"{self.app.jackpot.amount:.2f}")
+        messagebox.showinfo("Jackpot Updated", f"Jackpot set to £{self.app.jackpot.amount:,.2f}.")
+
     # ------------------------------------------------------------------ save / cancel
     def _snapshot(self):
         return {
             "sound_enabled": self.sound_var.get(),
             "animations_enabled": self.anim_var.get(),
             "table_theme": self.theme_var.get(),
+            "jackpot_rate_per_second": self.jackpot_rate_var.get(),
         }
 
     def _is_dirty(self):
         return self._snapshot() != self._original
 
     def _on_save(self):
+        try:
+            rate = float(self.jackpot_rate_var.get())
+            if rate < 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showwarning("Invalid Rate", "Enter a valid, non-negative £/second growth rate.")
+            return
         self.app.settings.set("sound_enabled", self.sound_var.get())
         self.app.settings.set("animations_enabled", self.anim_var.get())
         self.app.settings.set("table_theme", self.theme_var.get())
+        self.app.settings.set("jackpot_rate_per_second", rate)
         self._original = self._snapshot()
         self.app.show_frame("menu")
 
@@ -182,6 +243,8 @@ class SettingsFrame(tk.Frame):
         self.sound_var.set(self.app.settings.get("sound_enabled"))
         self.anim_var.set(self.app.settings.get("animations_enabled"))
         self.theme_var.set(self.app.settings.get("table_theme"))
+        self.jackpot_rate_var.set(f"{self.app.settings.get('jackpot_rate_per_second'):.2f}")
+        self.jackpot_debug_var.set(f"{self.app.jackpot.amount:.2f}")
         for redraw in self._toggle_redraws:
             redraw()
         self._draw_theme_swatches()

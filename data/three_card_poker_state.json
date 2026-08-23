@@ -2,7 +2,8 @@
   "bets": {
     "ante": 6,
     "pair_plus": 3,
-    "prime": 3
+    "prime": 3,
+    "jackpot": 1
   },
   "selected_chip": 1
 }

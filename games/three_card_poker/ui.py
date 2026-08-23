@@ -1,3 +1,4 @@
+import math
 import os
 import tkinter as tk
 from tkinter import messagebox
@@ -7,6 +8,11 @@ from core.hand_evaluator import HAND_NAMES
 from core.persistence import load_json, save_json
 from games.three_card_poker.logic import (
     ANTE_BONUS_MULTIPLIERS,
+    JACKPOT_BET_AMOUNT,
+    JACKPOT_ROYAL_NON_SPADES_PAYOUT,
+    JACKPOT_STRAIGHT_FLUSH_PAYOUT,
+    JACKPOT_STRAIGHT_PAYOUT,
+    JACKPOT_THREE_OF_A_KIND_PAYOUT,
     PAIR_PLUS_MULTIPLIERS,
     PRIME_SAME_COLOUR_3_MULTIPLIER,
     PRIME_SAME_COLOUR_6_MULTIPLIER,
@@ -14,9 +20,10 @@ from games.three_card_poker.logic import (
     ThreeCardPokerGame,
 )
 from ui.card_widgets import draw_card, draw_card_back, CARD_HEIGHT, CARD_WIDTH
+from ui.jackpot_display import JackpotDisplay
 
 STATE_FILENAME = "three_card_poker_state.json"
-DEFAULT_STATE = {"bets": {"ante": 0, "pair_plus": 0, "prime": 0}, "selected_chip": 5}
+DEFAULT_STATE = {"bets": {"ante": 0, "pair_plus": 0, "prime": 0, "jackpot": 0}, "selected_chip": 5}
 
 # Classic casino chip palette: (denomination, face colour, rim colour).
 CHIP_DENOMINATIONS = [
@@ -46,7 +53,12 @@ CHIP_LAYER_MAX_R = 36
 PAYTABLE_WIDTH = 240
 PAYTABLE_HEIGHT = 340
 PAYOUT_PANEL_WIDTH = 380
-PAYOUT_PANEL_HEIGHT = 190
+PAYOUT_PANEL_HEIGHT = 220  # tall enough for the extra Jackpot row on top of the usual bets
+
+# The jackpot side bet spot: a small circular token to the right of the Ante
+# box, sized noticeably smaller than Ante/Pair Plus/Prime since it's always
+# exactly £1 -- a flag to toggle, not a stack of chips to build up.
+JACKPOT_SPOT_R = 32
 
 # Fixed gap between the top bar and the table -- half of what plain vertical
 # centring in the window used to leave there.
@@ -103,6 +115,17 @@ PAYTABLE_SECTIONS = [
     ("PRIME", _PRIME_ROWS),
 ]
 
+# Rows for the jackpot meter's own mini paytable -- read from the same
+# constants logic.py actually pays out, so it can't drift out of sync.
+JACKPOT_PAYTABLE_ROWS = [
+    ("Straight", f"£{JACKPOT_STRAIGHT_PAYOUT:.0f}"),
+    ("Three of a Kind", f"£{JACKPOT_THREE_OF_A_KIND_PAYOUT:.0f}"),
+    ("Straight Flush", f"£{JACKPOT_STRAIGHT_FLUSH_PAYOUT:.0f}"),
+    ("Royal Flush (non-♠)", f"£{JACKPOT_ROYAL_NON_SPADES_PAYOUT:.0f}"),
+    ("Royal Flush (♠)", "100% JACKPOT"),
+]
+JACKPOT_PAYTABLE_HIGHLIGHT_ROW = len(JACKPOT_PAYTABLE_ROWS) - 1  # the spades Royal Flush
+
 
 def _chip_breakdown(amount):
     """Greedy denomination breakdown of `amount` -- e.g. £30 -> [(25, 1), (5, 1)].
@@ -126,17 +149,21 @@ def _max_round_cost(bets):
     (the Play bet always matches the Ante -- see ThreeCardPokerGame.resolve).
     A real casino would never let you place an Ante you couldn't back up with
     a matching Play bet, so bet placement is checked against this, not just
-    the upfront total."""
-    return bets["ante"] * 2 + bets["pair_plus"] + bets["prime"]
+    the upfront total. The jackpot side bet is flat, like Pair Plus/Prime --
+    never doubled by a Play bet."""
+    return bets["ante"] * 2 + bets["pair_plus"] + bets["prime"] + bets["jackpot"]
 
 
 def _format_signed(amount):
-    """£6 as +£6, -£6, or £0 -- amounts here are always whole pounds since
-    every bet and payout multiplier in this game is a whole number."""
+    """£6 as +£6, -£6, or £0. Every ordinary bet/payout here is a whole
+    number, but a jackpot win pays out the meter's exact pence value, so this
+    also handles fractional, comma-grouped amounts (e.g. +£17,432.87)."""
+    magnitude = abs(amount)
+    text = f"£{magnitude:,.0f}" if magnitude == int(magnitude) else f"£{magnitude:,.2f}"
     if amount > 0:
-        return f"+£{amount:.0f}"
+        return f"+{text}"
     if amount < 0:
-        return f"-£{abs(amount):.0f}"
+        return f"-{text}"
     return "£0"
 
 
@@ -163,13 +190,18 @@ class ThreeCardPokerFrame(tk.Frame):
             "ante": int(saved_bets.get("ante", 0)),
             "pair_plus": int(saved_bets.get("pair_plus", 0)),
             "prime": int(saved_bets.get("prime", 0)),
+            "jackpot": int(saved_bets.get("jackpot", 0)),
         }
         self.selected_chip = int(saved.get("selected_chip", DEFAULT_STATE["selected_chip"]))
         self._sanitize_bets(persist=False)
 
         self.chip_canvases = {}  # value -> (canvas, face colour, rim colour)
+        self._jackpot_pulse_t = 0.0  # phase for the jackpot spot's red glow, once a chip's placed
 
         self._build_ui()
+        self.app.jackpot.add_listener(self._on_jackpot_changed)
+        self.jackpot_display.set_value(self.app.jackpot.raw_amount)
+        self._pulse_jackpot()
 
     # ------------------------------------------------------------------ UI build
     def _build_ui(self):
@@ -208,6 +240,12 @@ class ThreeCardPokerFrame(tk.Frame):
 
         paytable_col = tk.Frame(content, bg=theme["felt"])
         paytable_col.pack(side="right", fill="y", padx=(10, 24), pady=10)
+
+        self.jackpot_display = JackpotDisplay(
+            paytable_col, rows=JACKPOT_PAYTABLE_ROWS, highlight_row=JACKPOT_PAYTABLE_HIGHLIGHT_ROW,
+        )
+        self.jackpot_display.pack(pady=(0, 14))
+
         self._build_paytable(paytable_col)
 
         self.canvas = tk.Canvas(game_col, bg=theme["felt"], highlightthickness=0,
@@ -396,6 +434,9 @@ class ThreeCardPokerFrame(tk.Frame):
         self._draw_spot_circle("prime", pr_cx, side_cy, side_r, "PRIME")
         self._draw_spot_rect("ante", ante_cx, ante_cy, ante_w, ante_h, "ANTE")
 
+        jp_cx = ante_cx + ante_w / 2 + 55 + JACKPOT_SPOT_R
+        self._draw_spot_jackpot(jp_cx, ante_cy, JACKPOT_SPOT_R)
+
     def _draw_spot_circle(self, key, cx, cy, r, label):
         tag = f"spot_{key}"
         amount = self.bets[key]
@@ -425,6 +466,38 @@ class ThreeCardPokerFrame(tk.Frame):
             self.canvas.create_text(cx, stack_cy, text="tap to bet", fill="#6f9c82",
                                      font=("Helvetica", 10, "bold"), tags=(tag,))
         self._bind_spot(tag, key)
+
+    def _draw_spot_jackpot(self, cx, cy, r):
+        """The £1 jackpot side bet: an on/off spot rather than a chip stack
+        (it's always exactly £1, never stacked higher). Placed, it gets a
+        tight red glow -- pulsing gently, driven by _pulse_jackpot -- so it
+        reads as the fancier, higher-stakes bet on the table, while the chip
+        itself stays the same blue as every other £1 chip in the tray."""
+        tag = "spot_jackpot"
+        placed = bool(self.bets["jackpot"])
+        if placed:
+            pulse = 0.5 + 0.5 * math.sin(self._jackpot_pulse_t)
+            for base_dr, color in ((10, "#3a0808"), (6, "#7a1414"), (3, "#c0201f")):
+                dr = base_dr + pulse * 2.5
+                self.canvas.create_oval(cx - r - dr, cy - r - dr, cx + r + dr, cy + r + dr,
+                                         outline=color, width=3, tags=(tag,))
+        self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill="#0e4a2c",
+                                 outline=("#ff4136" if placed else "#d4af37"), width=3, tags=(tag,))
+        self.canvas.create_text(cx, cy - r - 12, text="JACKPOT £1", fill="#cfead9",
+                                 font=("Helvetica", 9, "bold"), tags=(tag,))
+        if placed:
+            face, rim = CHIP_COLORS_BY_VALUE[1]
+            token_r = r - 10
+            self.canvas.create_oval(cx - token_r, cy - token_r, cx + token_r, cy + token_r,
+                                     fill=face, outline=rim, width=2, tags=(tag,))
+            self.canvas.create_oval(cx - token_r + 7, cy - token_r + 7, cx + token_r - 7, cy + token_r - 7,
+                                     outline="#ffffff", width=1, tags=(tag,))
+            self.canvas.create_text(cx, cy, text="£1", fill="#ffffff",
+                                     font=("Helvetica", 11, "bold"), tags=(tag,))
+        else:
+            self.canvas.create_text(cx, cy, text="tap to\nbet £1", fill="#6f9c82",
+                                     font=("Helvetica", 8, "bold"), justify="center", tags=(tag,))
+        self._bind_spot(tag, "jackpot")
 
     def _draw_chip_stack(self, tag, cx, cy, amount, max_r, budget):
         """Draws `amount` as a stack of chip icons (largest denomination at the
@@ -461,6 +534,26 @@ class ThreeCardPokerFrame(tk.Frame):
         self.canvas.tag_bind(tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
         self.canvas.tag_bind(tag, "<Enter>", lambda e: self.canvas.configure(cursor="hand2"))
         self.canvas.tag_bind(tag, "<Leave>", lambda e: self.canvas.configure(cursor=""))
+
+    # ------------------------------------------------------------------ jackpot meter / glow
+    def _on_jackpot_changed(self, raw_amount):
+        """Registered on the shared JackpotManager -- fires on every tick (and
+        on any manual change), so the meter stays live no matter which screen
+        is showing when the jackpot grows."""
+        self.jackpot_display.set_value(raw_amount)
+
+    def _pulse_jackpot(self):
+        """Keeps the jackpot spot's glow gently breathing while a bet's
+        placed on it. Self-perpetuating for the frame's whole lifetime (like
+        JackpotManager's own tick loop) -- cheap enough that it's not worth
+        starting/stopping around visibility, and redrawing the whole table
+        is safe here since nothing else animates during betting. Runs at the
+        same ~30fps as the rest of the app's animations (see _animate) so the
+        glow reads as smooth rather than a visible step between frames."""
+        if self.state == "betting" and self.bets.get("jackpot"):
+            self._jackpot_pulse_t += 0.055
+            self._draw_table()
+        self.after(33, self._pulse_jackpot)
 
     # ------------------------------------------------------------------ state transitions
     def _show_betting_controls(self):
@@ -499,14 +592,32 @@ class ThreeCardPokerFrame(tk.Frame):
     def _on_place_chip(self, key):
         if self.state != "betting":
             return
-        self._adjust_bet(key, self.selected_chip)
+        if key == "jackpot":
+            self._toggle_jackpot_bet()
+        else:
+            self._adjust_bet(key, self.selected_chip)
+
+    def _toggle_jackpot_bet(self):
+        """The jackpot spot is on/off, not a stack -- tapping it places or
+        removes exactly the one £1 bet, regardless of the selected chip."""
+        trial_bets = dict(self.bets)
+        trial_bets["jackpot"] = 0 if self.bets["jackpot"] else int(JACKPOT_BET_AMOUNT)
+        if trial_bets["jackpot"] and _max_round_cost(trial_bets) > self.app.finance.balance + 1e-9:
+            messagebox.showwarning(
+                "Insufficient Balance", "You don't have enough balance to place the £1 Jackpot bet.",
+            )
+            return
+        self.bets = trial_bets
+        self._draw_table()
+        self._update_total()
+        self._persist_state()
 
     def _adjust_bet(self, key, delta):
         trial_bets = dict(self.bets)
         trial_bets[key] += delta
         balance = self.app.finance.balance
         if _max_round_cost(trial_bets) > balance + 1e-9:
-            upfront = trial_bets["ante"] + trial_bets["pair_plus"] + trial_bets["prime"]
+            upfront = trial_bets["ante"] + trial_bets["pair_plus"] + trial_bets["prime"] + trial_bets["jackpot"]
             if upfront <= balance + 1e-9:
                 # They could afford to place it, just not to also match it with
                 # a Play bet later -- a casino wouldn't let you place an Ante
@@ -544,13 +655,15 @@ class ThreeCardPokerFrame(tk.Frame):
         Play bet) now exceed the balance -- keeps the player from being stuck
         with a remembered Ante they could no longer afford to play."""
         if _max_round_cost(self.bets) > self.app.finance.balance:
-            self.bets = {"ante": 0, "pair_plus": 0, "prime": 0}
+            self.bets = {"ante": 0, "pair_plus": 0, "prime": 0, "jackpot": 0}
             if persist:
                 self._persist_state()
 
     # ------------------------------------------------------------------ round flow
     def _on_deal(self):
-        ante, pair_plus, prime = self.bets["ante"], self.bets["pair_plus"], self.bets["prime"]
+        ante, pair_plus, prime, jackpot = (
+            self.bets["ante"], self.bets["pair_plus"], self.bets["prime"], self.bets["jackpot"],
+        )
         if ante <= 0:
             messagebox.showwarning("Ante Required", "You must place an Ante bet to deal.")
             return
@@ -566,11 +679,11 @@ class ThreeCardPokerFrame(tk.Frame):
             )
             return
 
-        total_upfront = ante + pair_plus + prime
+        total_upfront = ante + pair_plus + prime + jackpot
         self.app.finance.place_wager(total_upfront)
         self._refresh_balance()
 
-        self.result = self.game.play_round(ante, pair_plus, prime)
+        self.result = self.game.play_round(ante, pair_plus, prime, jackpot)
         self.state = "dealt"
 
         self.result_lbl.configure(text="Dealing...", fg="#f0f0f0")
@@ -597,10 +710,12 @@ class ThreeCardPokerFrame(tk.Frame):
             else:
                 self.app.finance.place_wager(play_bet)
 
-        result = self.game.resolve(folded)
+        result = self.game.resolve(folded, jackpot_amount=self.app.jackpot.amount)
         if result.total_returned > 0:
             self.app.finance.add_return(result.total_returned)
         self.app.finance.record_round_played(result.net_result)
+        if result.jackpot_won:
+            self.app.jackpot.win()  # resets it to its floor -- see JackpotManager.win
         self._refresh_balance()
 
         self._show_no_controls()
@@ -856,6 +971,9 @@ class ThreeCardPokerFrame(tk.Frame):
             rows.append((f"Pair Plus £{result.pair_plus_bet:.0f}", result.pair_plus_return - result.pair_plus_bet))
         if result.prime_bet:
             rows.append((f"Prime £{result.prime_bet:.0f}", result.prime_return - result.prime_bet))
+        if result.jackpot_bet:
+            label = "Jackpot \U0001F3B0 WON!" if result.jackpot_won else f"Jackpot £{result.jackpot_bet:.0f}"
+            rows.append((label, result.jackpot_return - result.jackpot_bet))
         return rows
 
     def _draw_payout_panel(self, result):
