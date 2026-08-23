@@ -41,7 +41,7 @@ class JackpotManager:
         self.data = load_json(save_path, DEFAULT_JACKPOT_DATA)
         self.data["amount"] = self._clamp(float(self.data.get("amount", JACKPOT_FLOOR)))
         self._listeners = []
-        self._last_tick = None
+        self._last_tick = time.monotonic()  # re-set by start(); never actually read before then
         self._save_accum = 0.0
 
     @staticmethod

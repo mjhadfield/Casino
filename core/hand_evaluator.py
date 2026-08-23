@@ -12,7 +12,7 @@ possible 3-card flushes than 3-card straights:
     Straight Flush > Three of a Kind > Straight > Flush > Pair > High Card
 """
 from collections import Counter
-from typing import Tuple
+from typing import Optional, Tuple
 
 # (rank_value, rank_name, tiebreaker_tuple) -- see evaluate_three_card_hand.
 HandEval = Tuple[int, str, Tuple[int, ...]]
@@ -36,8 +36,9 @@ HAND_NAMES = {
 DEALER_QUALIFY_MIN_VALUE = 12  # Queen high or better qualifies the dealer
 
 
-def _check_straight(values):
-    """values: list of the 3 card numeric values. Returns (is_straight, high_card)."""
+def _check_straight(values) -> Tuple[bool, Optional[int]]:
+    """values: list of the 3 card numeric values. Returns (is_straight, high_card)
+    -- high_card is only ever None when is_straight is False."""
     unique_values = sorted(set(values))
     if len(unique_values) != 3:
         return False, None
@@ -63,10 +64,12 @@ def evaluate_three_card_hand(cards) -> HandEval:
     count_sizes = sorted(counts.values(), reverse=True)
 
     if is_straight and is_flush:
+        assert straight_high is not None  # _check_straight always pairs True with a value
         return (STRAIGHT_FLUSH, HAND_NAMES[STRAIGHT_FLUSH], (straight_high,))
     if count_sizes[0] == 3:
         return (THREE_OF_A_KIND, HAND_NAMES[THREE_OF_A_KIND], (values[0],))
     if is_straight:
+        assert straight_high is not None  # _check_straight always pairs True with a value
         return (STRAIGHT, HAND_NAMES[STRAIGHT], (straight_high,))
     if is_flush:
         return (FLUSH, HAND_NAMES[FLUSH], tuple(values))
