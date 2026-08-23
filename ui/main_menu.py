@@ -1,8 +1,48 @@
 import tkinter as tk
 
+from ui import game_icons
+
 BG = "#0b0b0b"
 BAR_BG = "#111111"
 GOLD = "#d4af37"
+
+# One row per game tile: (icon, name, subtitle, enabled, frame_name).
+# `icon` is either a single glyph string, rendered as text (the way Three
+# Card Poker's is -- its icon is kept exactly as it was), or one of
+# game_icons.draw_*, rendered as a small vector icon on a fixed-size canvas
+# so every tile's icon reads as the same size regardless of what emoji font
+# support happens to be installed (see game_icons.py). `frame_name` is
+# looked up in app.frames via show_frame when the tile's enabled; leave it
+# None for a "Coming soon" placeholder.
+#
+# To add a new game later: add one row here (and, once it's implemented, an
+# icon in game_icons.py and a real frame_name) -- the grid below lays itself
+# out automatically, no layout code to touch.
+GAMES = [
+    ("\U0001F0A1", "Three Card Poker", "Ante, Play, Pair Plus & Prime side bets",
+     True, "three_card_poker"),
+    (game_icons.draw_blackjack_icon, "Blackjack", "Perfect Pairs & 21+3 side bets",
+     False, None),
+    (game_icons.draw_pai_gow_icon, "Pai Gow Poker", "Fortune Bonus & Pai Gow Insurance",
+     False, None),
+    (game_icons.draw_mississippi_stud_icon, "Mississippi Stud", "3 Card Bonus side bet",
+     False, None),
+    (game_icons.draw_baccarat_icon, "Baccarat", "Perfect Pair & Dragon Bonus side bets",
+     False, None),
+    (game_icons.draw_let_it_ride_icon, "Let It Ride", "3 starter bets -- pull back or let it ride",
+     False, None),
+]
+GAMES_PER_ROW = 3
+
+ICON_CANVAS_SIZE = 64  # fixed footprint every icon (glyph or vector) sits in
+ICON_DRAW_SIZE = 44    # the size passed to a vector icon's draw_* function
+
+# Every tile is forced to exactly this size (see _make_game_tile) so a
+# longer subtitle on one game can never make its tile taller or wider than
+# the rest.
+TILE_WIDTH = 220
+TILE_HEIGHT = 190
+TILE_TEXT_WRAP = 190
 
 
 class MainMenuFrame(tk.Frame):
@@ -45,37 +85,50 @@ class MainMenuFrame(tk.Frame):
         grid = tk.Frame(body, bg=BG)
         grid.pack(pady=10)
 
-        self._make_game_tile(
-            grid, 0, 0, "\U0001F0A1", "Three Card Poker",
-            "Ante, Play, Pair Plus & Prime side bets",
-            enabled=True, command=lambda: app.show_frame("three_card_poker"),
-        )
-        self._make_game_tile(grid, 0, 1, "\U0001F3B2", "Blackjack", "Coming soon", enabled=False)
-        self._make_game_tile(grid, 0, 2, "\U0001F3A1", "Roulette", "Coming soon", enabled=False)
-        self._make_game_tile(grid, 1, 0, "\U0001F004", "Baccarat", "Coming soon", enabled=False)
-        self._make_game_tile(grid, 1, 1, "\U0001F3C6", "Jackpots", "Unlocked at milestones", enabled=False)
-        self._make_game_tile(grid, 1, 2, "\u2795", "More Tables", "New games added over time", enabled=False)
+        for i, (icon, name, subtitle, enabled, frame_name) in enumerate(GAMES):
+            row, col = divmod(i, GAMES_PER_ROW)
+            command = (lambda f=frame_name: app.show_frame(f)) if (enabled and frame_name) else None
+            self._make_game_tile(grid, row, col, icon, name, subtitle, enabled, command=command)
 
     def _make_game_tile(self, grid, row, col, icon, name, subtitle, enabled, command=None):
         bg = "#15321f" if enabled else "#161616"
         fg = "#f2f2f2" if enabled else "#555555"
         border = GOLD if enabled else "#333333"
 
-        tile = tk.Frame(grid, bg=bg, width=220, height=170, highlightbackground=border, highlightthickness=2)
+        tile = tk.Frame(grid, bg=bg, width=TILE_WIDTH, height=TILE_HEIGHT,
+                         highlightbackground=border, highlightthickness=2)
         tile.grid(row=row, column=col, padx=14, pady=14)
-        tile.grid_propagate(False)
+        # Contents are placed with pack() -- pack_propagate (not
+        # grid_propagate, which only governs *grid*-managed children) is
+        # what stops a longer wrapped subtitle from growing this particular
+        # tile taller/wider than the fixed size every tile is given above.
+        tile.pack_propagate(False)
 
-        icon_lbl = tk.Label(tile, text=icon, bg=bg, fg=fg, font=("Helvetica", 36))
-        icon_lbl.pack(pady=(18, 4))
+        if callable(icon):
+            # A vector icon (game_icons.draw_*): fixed-size canvas so it's
+            # guaranteed the same footprint as every other tile's icon.
+            icon_widget = tk.Canvas(tile, width=ICON_CANVAS_SIZE, height=ICON_CANVAS_SIZE,
+                                     bg=bg, highlightthickness=0)
+            icon(icon_widget, ICON_CANVAS_SIZE / 2, ICON_CANVAS_SIZE / 2, ICON_DRAW_SIZE, fg)
+        else:
+            icon_widget = tk.Label(tile, text=icon, bg=bg, fg=fg, font=("Helvetica", 36))
+        icon_widget.pack(pady=(16, 4))
         name_lbl = tk.Label(tile, text=name, bg=bg, fg=fg, font=("Helvetica", 13, "bold"),
-                             wraplength=190, justify="center")
+                             wraplength=TILE_TEXT_WRAP, justify="center")
         name_lbl.pack()
+        # height=2 reserves the same two-line footprint whether this
+        # particular subtitle wraps to one line or two -- otherwise the
+        # "Coming soon" tag below would land at a different height on
+        # almost every tile depending on how its subtitle happened to wrap.
         sub_lbl = tk.Label(tile, text=subtitle, bg=bg, fg=("#888888" if enabled else "#444444"),
-                            font=("Helvetica", 9), wraplength=190, justify="center")
+                            font=("Helvetica", 9), wraplength=TILE_TEXT_WRAP, justify="center", height=2)
         sub_lbl.pack(pady=(4, 0))
+        status_lbl = tk.Label(tile, text=("" if enabled else "COMING SOON"), bg=bg, fg="#8a7328",
+                               font=("Helvetica", 8, "bold"))
+        status_lbl.pack(pady=(4, 0))
 
         if enabled and command:
-            for widget in (tile, icon_lbl, name_lbl, sub_lbl):
+            for widget in (tile, icon_widget, name_lbl, sub_lbl, status_lbl):
                 widget.configure(cursor="hand2")
                 widget.bind("<Button-1>", lambda _e: command())
 
