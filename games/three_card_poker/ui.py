@@ -325,13 +325,12 @@ class ThreeCardPokerFrame(tk.Frame):
         # table felt is selected (see ui/theme.py's module docstring).
         top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
         top_bar.pack(fill="x")
-        theme.traffic_lights(top_bar, bg=theme.BG_ELEVATED).pack(side="left", padx=(20, 10), pady=10)
         tk.Button(
             top_bar, text="← Menu", bg=theme.BG_ELEVATED, fg=theme.FG_DIM, relief="flat",
             font=theme.font(11), padx=12, pady=6, cursor="hand2",
             highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
             command=lambda: self.app.show_frame("menu"),
-        ).pack(side="left", padx=(0, 10), pady=10)
+        ).pack(side="left", padx=(20, 10), pady=10)
         tk.Label(top_bar, text="Three Card Poker", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
                  font=theme.font(16, weight="bold")).pack(side="left", padx=10)
         self.balance_lbl = tk.Label(top_bar, text="£0.00", bg=theme.BG_ELEVATED, fg=theme.WIN_COLOR,

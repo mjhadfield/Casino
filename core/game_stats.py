@@ -124,5 +124,16 @@ class GameStatsManager:
         self.data = {}
         self._save()
 
+    def reset_game(self, game_key):
+        """Wipes just one game's entry (bets/hands/strategy all together) --
+        e.g. Settings' per-game "Reset" buttons, which are meant to clear a
+        single game's breakdown without touching any other game's data or
+        the lifetime finance totals (see FinanceManager.reset_stats_only,
+        a separate reset for that). A no-op if the game has no data yet --
+        harmless to call for a game that isn't implemented yet, like
+        Blackjack, whose key simply isn't present."""
+        if self.data.pop(game_key, None) is not None:
+            self._save()
+
     def _save(self):
         save_json(self.save_path, self.data)

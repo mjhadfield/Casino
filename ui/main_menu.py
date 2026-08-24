@@ -44,27 +44,34 @@ TILE_HEIGHT = 190
 TILE_TEXT_WRAP = 190
 
 
+SPADE_CANVAS_SIZE = 28  # fixed footprint for the title's flanking spade accents
+
+
 class MainMenuFrame(tk.Frame):
     def __init__(self, parent, app):
-        super().__init__(parent, bg=theme.BG)
+        super().__init__(parent, bg=theme.MENU_BG)
         self.app = app
 
-        # --- top bar ---
-        top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
+        # --- top bar --- MENU_BG throughout, not theme.BG_ELEVATED -- this
+        # screen alone uses the lighter "terminal" background (see
+        # ui/theme.py's MENU_BG docstring); every other screen's top bar
+        # still uses the app-wide BG_ELEVATED.
+        top_bar = tk.Frame(self, bg=theme.MENU_BG)
         top_bar.pack(fill="x", side="top")
 
-        theme.traffic_lights(top_bar, bg=theme.BG_ELEVATED).pack(side="left", padx=(20, 10), pady=14)
+        self._make_spade(top_bar).pack(side="left", padx=(20, 8), pady=14)
         tk.Label(
-            top_bar, text="HADFIELD CASINO", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
+            top_bar, text="HADFIELD CASINO", bg=theme.MENU_BG, fg=theme.SECONDARY,
             font=theme.font(18, weight="bold"),
         ).pack(side="left")
+        self._make_spade(top_bar).pack(side="left", padx=(8, 0), pady=14)
 
         # Packed right-to-left (side="right" stacks inward from the right
         # edge, each new one landing left of the previous), so this order --
         # Cashier, then Stats, then Settings -- reads left-to-right on
         # screen as Settings, Stats, Cashier.
         self.balance_btn = tk.Button(
-            top_bar, text="Cashier: £0.00", bg=theme.BG_ELEVATED, fg=theme.WIN_COLOR,
+            top_bar, text="Cashier: £0.00", bg=theme.MENU_BG, fg=theme.WIN_COLOR,
             activebackground=theme.ACCENT_DIM_BG_ELEVATED, activeforeground=theme.WIN_COLOR,
             font=theme.font(12, weight="bold"), relief="flat", padx=14, pady=8,
             highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
@@ -72,30 +79,39 @@ class MainMenuFrame(tk.Frame):
         )
         self.balance_btn.pack(side="right", padx=(6, 20), pady=14)
 
+        # Stats/Settings get the SECONDARY (gold) treatment rather than
+        # ACCENT -- a second, warmer highlight so the top bar isn't just the
+        # one mint accent everywhere; Cashier already pops on its own via
+        # WIN_COLOR since it's showing money.
         tk.Button(
-            top_bar, text="\U0001F4CA Stats", bg=theme.BG_ELEVATED, fg=theme.FG_DIM,
-            activebackground=theme.BORDER, activeforeground=theme.FG,
+            top_bar, text="\U0001F4CA Stats", bg=theme.MENU_BG, fg=theme.SECONDARY,
+            activebackground=theme.SECONDARY_DIM_MENU_BG, activeforeground=theme.SECONDARY,
             font=theme.font(12), relief="flat", padx=14, pady=8,
-            highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
+            highlightthickness=1, highlightbackground=theme.SECONDARY, highlightcolor=theme.SECONDARY,
             cursor="hand2", command=lambda: app.show_frame("stats"),
         ).pack(side="right", padx=6, pady=14)
 
         tk.Button(
-            top_bar, text="⚙ Settings", bg=theme.BG_ELEVATED, fg=theme.FG_DIM,
-            activebackground=theme.BORDER, activeforeground=theme.FG,
+            top_bar, text="⚙ Settings", bg=theme.MENU_BG, fg=theme.SECONDARY,
+            activebackground=theme.SECONDARY_DIM_MENU_BG, activeforeground=theme.SECONDARY,
             font=theme.font(12), relief="flat", padx=14, pady=8,
-            highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
+            highlightthickness=1, highlightbackground=theme.SECONDARY, highlightcolor=theme.SECONDARY,
             cursor="hand2", command=lambda: app.show_frame("settings"),
         ).pack(side="right", padx=6, pady=14)
 
-        breadcrumb_lbl = theme.breadcrumb(top_bar, "menu", bg=theme.BG_ELEVATED)
+        breadcrumb_lbl = theme.breadcrumb(top_bar, "menu", bg=theme.MENU_BG)
         breadcrumb_lbl.pack(side="right", padx=(6, 6), pady=14)
 
+        # A visible grey rule between the top bar and the body -- MENU_BG is
+        # light enough that the bar needs its own separator rather than
+        # relying on a color difference the way the darker BG screens do.
+        tk.Frame(self, bg=theme.MENU_DIVIDER, height=1).pack(fill="x")
+
         # --- body ---
-        body = tk.Frame(self, bg=theme.BG)
+        body = tk.Frame(self, bg=theme.MENU_BG)
         body.pack(fill="both", expand=True)
 
-        grid = tk.Frame(body, bg=theme.BG)
+        grid = tk.Frame(body, bg=theme.MENU_BG)
         grid.pack(pady=30)
 
         for i, (icon, name, subtitle, enabled, frame_name) in enumerate(GAMES):
@@ -103,8 +119,21 @@ class MainMenuFrame(tk.Frame):
             command = (lambda f=frame_name: app.show_frame(f)) if (enabled and frame_name) else None
             self._make_game_tile(grid, row, col, icon, name, subtitle, enabled, command=command)
 
+    def _make_spade(self, parent):
+        """A small black-fill, mint-outline spade -- a purely decorative
+        accent flanking the "HADFIELD CASINO" title, replacing the traffic-
+        light dots that used to sit there (see ui/theme.py's outlined_glyph;
+        plain Tk text can't have a two-tone fill/outline on its own)."""
+        canvas = tk.Canvas(parent, width=SPADE_CANVAS_SIZE, height=SPADE_CANVAS_SIZE,
+                            bg=theme.MENU_BG, highlightthickness=0)
+        theme.outlined_glyph(canvas, SPADE_CANVAS_SIZE / 2, SPADE_CANVAS_SIZE / 2, "♠",
+                              size=22, fill="#000000", outline=theme.ACCENT)
+        return canvas
+
     def _make_game_tile(self, grid, row, col, icon, name, subtitle, enabled, command=None):
-        bg = theme.ACCENT_DIM_BG if enabled else theme.GREY_BTN_BG
+        # theme.BG (the app's near-black, not MENU_BG) -- differentiates a
+        # tile from this screen's own lighter MENU_BG page background.
+        bg = theme.BG
         fg = theme.FG if enabled else theme.GREY_BTN_TEXT
         sub_fg = theme.FG_DIM if enabled else theme.GREY_BTN_TEXT
 

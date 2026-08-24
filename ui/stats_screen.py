@@ -2,6 +2,7 @@ import tkinter as tk
 
 from games.three_card_poker import logic as tcp_logic
 from ui import theme
+from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
 
 # One entry per game the Stats screen knows about -- "bet_types" and
@@ -34,16 +35,16 @@ class StatsFrame(tk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent, bg=theme.BG)
         self.app = app
+        self._section_resets = []  # each section's "back to its default open/closed state" fn
 
         top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
         top_bar.pack(fill="x")
-        theme.traffic_lights(top_bar, bg=theme.BG_ELEVATED).pack(side="left", padx=(20, 10), pady=12)
         tk.Button(
             top_bar, text="← Back", bg=theme.BG_ELEVATED, fg=theme.FG_DIM, relief="flat",
             font=theme.font(11), padx=12, pady=6, cursor="hand2",
             highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
             command=lambda: app.show_frame("menu"),
-        ).pack(side="left", padx=(0, 10), pady=12)
+        ).pack(side="left", padx=(20, 10), pady=12)
         tk.Label(top_bar, text="Stats", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
                  font=theme.font(18, weight="bold")).pack(side="left", padx=10)
         theme.breadcrumb(top_bar, "stats", bg=theme.BG_ELEVATED).pack(side="right", padx=20, pady=12)
@@ -59,21 +60,19 @@ class StatsFrame(tk.Frame):
         self._build_lifetime_panel()
         self._build_game_sections()
 
-    def _make_panel(self, parent, title):
-        """Standard bordered "terminal panel" -- see finances_screen's
-        identical helper; a plain Frame + title Label rather than a
-        tk.LabelFrame, whose relief="groove" can't take a clean border."""
-        panel = tk.Frame(parent, bg=theme.BG_ELEVATED, highlightbackground=theme.BORDER, highlightthickness=1)
-        tk.Label(panel, text=title, bg=theme.BG_ELEVATED, fg=theme.ACCENT,
-                 font=theme.font(11, weight="bold")).pack(anchor="w", padx=20, pady=(12, 0))
-        return panel
-
     # ------------------------------------------------------------------ lifetime stats
     def _build_lifetime_panel(self):
-        panel = self._make_panel(self.body, "$ stats --lifetime")
-        panel.pack(fill="x", pady=(10, 24))
-        grid = tk.Frame(panel, bg=theme.BG_ELEVATED)
-        grid.pack(padx=20, pady=15, fill="x")
+        # Expanded by default -- unlike the per-game sections below, this is
+        # the one thing worth seeing at a glance every time you open Stats.
+        # Still collapsible afterward, and on_show puts it back to expanded
+        # on every fresh visit, same as the per-game sections reset to
+        # collapsed (see _section_resets).
+        inner = make_collapsible(
+            self.body, "$ stats --lifetime", pady=(10, 24),
+            start_expanded=True, reset_list=self._section_resets,
+        )
+        grid = tk.Frame(inner, bg=theme.BG_ELEVATED)
+        grid.pack(fill="x")
 
         self.lifetime_labels = {}
         for i, (key, label, _kind) in enumerate(LIFETIME_STAT_ROWS):
@@ -101,10 +100,13 @@ class StatsFrame(tk.Frame):
     def _build_game_sections(self):
         self.game_panels = []  # (section, panel_body) -- refreshed on every on_show
         for section in GAME_SECTIONS:
-            panel = self._make_panel(self.body, f"$ stats --game {section['key']}")
-            panel.pack(fill="x", pady=(0, 20))
-            panel_body = tk.Frame(panel, bg=theme.BG_ELEVATED)
-            panel_body.pack(fill="x", padx=20, pady=15)
+            # Collapsed by default -- unlike Lifetime Stats above, a game's
+            # full breakdown is the kind of thing you click into on demand
+            # rather than wanting to see at a glance every visit.
+            panel_body = make_collapsible(
+                self.body, f"$ stats --game {section['key']}", pady=(0, 20),
+                reset_list=self._section_resets,
+            )
             self.game_panels.append((section, panel_body))
 
     def _refresh_game_sections(self):
@@ -169,7 +171,7 @@ class StatsFrame(tk.Frame):
             font=theme.font(11, weight="bold"),
         ).pack(anchor="w", pady=(0, 4))
         tk.Label(
-            parent, text=f"Played: {played} ({played_pct:.1f}%)              Folded: {folded} ({folded_pct:.1f}%)",
+            parent, text=f"Played: {played} ({played_pct:.1f}%)             Folded: {folded} ({folded_pct:.1f}%)",
             bg=theme.BG_ELEVATED, fg=theme.FG_DIM, font=theme.font(10),
         ).pack(anchor="w", pady=(0, 2))
 
@@ -255,3 +257,8 @@ class StatsFrame(tk.Frame):
     def on_show(self):
         self._refresh_lifetime_panel()
         self._refresh_game_sections()
+        # Every fresh visit starts from the same state: Lifetime Stats open,
+        # each game's breakdown collapsed -- regardless of how they were
+        # left last time.
+        for reset in self._section_resets:
+            reset()

@@ -37,16 +37,22 @@ GREY_BTN_BORDER = "#232c27"
 GREY_BTN_TEXT = "#4c5850"
 RADIUS = 10
 
-# Decorative-only traffic-light dots -- never reused as status/semantic colors.
-TRAFFIC_RED = "#ff5f56"
-TRAFFIC_YELLOW = "#ffbd2e"
-TRAFFIC_GREEN = "#27c93f"
+# A warm secondary accent, used sparingly and only where something needs to
+# stand out from the cool mint primary -- the Main Menu's own branding/nav
+# highlights (see ui/main_menu.py), not a general-purpose token reached for
+# everywhere else.
+SECONDARY = "#d4af37"
+
+# The Main Menu's own page background -- lifted straight from the terminal
+# background on the user's website, distinct from (and lighter than) BG,
+# which every other screen still uses. Scoped to ui/main_menu.py only.
+MENU_BG = "#141917"
 
 # Win / lose / push -- the one 3-way mapping used everywhere a result (a bet,
 # a hand, a round) is colored: finances, stats, the poker result/payout panel.
 WIN_COLOR = ACCENT
-LOSE_COLOR = TRAFFIC_RED   # the same red the site already uses for invalid
-                           # fields, so "red" reads as one consistent signal
+LOSE_COLOR = "#ff5f56"     # the same red the site uses for invalid fields,
+                           # so "red" reads as one consistent signal
 PUSH_COLOR = WARN
 
 
@@ -67,6 +73,12 @@ ACCENT_DIM_BG_ELEVATED = lerp_color(BG_ELEVATED, ACCENT, 0.14)
 WARN_DIM_BG = lerp_color(BG, WARN, 0.12)
 LOSE_DIM_BG = lerp_color(BG, LOSE_COLOR, 0.12)
 LOSE_DIM_BG_ELEVATED = lerp_color(BG_ELEVATED, LOSE_COLOR, 0.14)
+SECONDARY_DIM_MENU_BG = lerp_color(MENU_BG, SECONDARY, 0.16)
+
+# A visible neutral-grey rule for separators against MENU_BG -- BORDER/
+# BORDER_SOFT are calibrated for the near-black BG and read as almost
+# invisible against the lighter MENU_BG, so this is its own, brighter token.
+MENU_DIVIDER = lerp_color(MENU_BG, "#ffffff", 0.15)
 
 # ---------------------------------------------------------------------- fonts
 _FONT_FAMILY = None  # resolved lazily -- tkinter.font.families() needs a live
@@ -122,19 +134,18 @@ def pill(canvas, cx, cy, text, fill=GREY_BTN_BG, outline=GREY_BTN_BORDER,
     return shape_id, text_id
 
 
-def traffic_lights(parent, bg, r=5, gap=13, pad=4):
-    """A small fixed-size Canvas with 3 non-interactive traffic-light dots
-    (red/yellow/green, left to right) pre-drawn -- purely decorative window
-    chrome. Returned unpacked; the caller slots it into an existing top bar's
-    pack sequence, e.g. `.pack(side="left", padx=(20, 8), pady=14)`."""
-    width = 6 * r + 2 * gap + 2 * pad
-    height = 2 * r + 2 * pad
-    canvas = tk.Canvas(parent, width=width, height=height, bg=bg, highlightthickness=0)
-    cy = height / 2
-    for i, color in enumerate((TRAFFIC_RED, TRAFFIC_YELLOW, TRAFFIC_GREEN)):
-        cx = pad + r + i * gap
-        canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=color, outline="")
-    return canvas
+def outlined_glyph(canvas, cx, cy, text, size, fill, outline, outline_width=1, weight="bold"):
+    """A single character with a solid fill and a colored outline -- Tk canvas
+    text only ever takes one fill color, so the outline is faked by drawing
+    the glyph several times at small offsets in `outline`, then once more
+    dead-center in `fill` on top. Good enough at icon sizes (a handful of px
+    of offset); not meant for large display type."""
+    f = font(size, weight=weight)
+    for dx in (-outline_width, 0, outline_width):
+        for dy in (-outline_width, 0, outline_width):
+            if dx or dy:
+                canvas.create_text(cx + dx, cy + dy, text=text, font=f, fill=outline)
+    canvas.create_text(cx, cy, text=text, font=f, fill=fill)
 
 
 def breadcrumb(parent, path, bg, host="hadfield-casino"):

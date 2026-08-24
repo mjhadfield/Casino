@@ -2,8 +2,17 @@ import tkinter as tk
 from tkinter import messagebox
 
 from core.settings import TABLE_THEMES
-from ui import theme
+from games.three_card_poker import logic as tcp_logic
+from ui import dialogs, theme
+from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
+
+# Gates the Jackpot Config / Danger Zone sections -- a placeholder "admin"
+# password rather than a real auth system, per explicit request ("just be
+# 'admin' for now"). Entered once per app session (see _ensure_admin_unlocked
+# -- self._admin_unlocked is never reset by on_show, only the sections'
+# collapsed/expanded state is), not saved or checked against anything else.
+ADMIN_PASSWORD = "admin"
 
 
 class SettingsFrame(tk.Frame):
@@ -12,6 +21,8 @@ class SettingsFrame(tk.Frame):
         self.app = app
         self._toggle_redraws = []
         self.theme_canvases = {}
+        self._collapsers = []       # every gated section's collapse() -- on_show resets them all
+        self._admin_unlocked = False
 
         self.sound_var = tk.BooleanVar(value=app.settings.get("sound_enabled"))
         self.anim_var = tk.BooleanVar(value=app.settings.get("animations_enabled"))
@@ -21,13 +32,12 @@ class SettingsFrame(tk.Frame):
 
         top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
         top_bar.pack(fill="x")
-        theme.traffic_lights(top_bar, bg=theme.BG_ELEVATED).pack(side="left", padx=(20, 10), pady=12)
         tk.Button(
             top_bar, text="← Back", bg=theme.BG_ELEVATED, fg=theme.FG_DIM, relief="flat",
             font=theme.font(11), padx=12, pady=6, cursor="hand2",
             highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
             command=lambda: self._on_cancel(),
-        ).pack(side="left", padx=(0, 10), pady=12)
+        ).pack(side="left", padx=(20, 10), pady=12)
         tk.Label(top_bar, text="Settings", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
                  font=theme.font(18, weight="bold")).pack(side="left", padx=10)
         theme.breadcrumb(top_bar, "settings", bg=theme.BG_ELEVATED).pack(side="right", padx=20, pady=12)
@@ -41,6 +51,7 @@ class SettingsFrame(tk.Frame):
         body = tk.Frame(scroll.inner, bg=theme.BG)
         body.pack(fill="both", expand=True, padx=40, pady=30)
 
+        # --- Preferences -- always visible/expanded, no gating, no chevron.
         panel = tk.Frame(body, bg=theme.BG_ELEVATED, highlightbackground=theme.BORDER, highlightthickness=1)
         panel.pack(fill="x")
         inner = tk.Frame(panel, bg=theme.BG_ELEVATED)
@@ -56,33 +67,46 @@ class SettingsFrame(tk.Frame):
 
         self._make_theme_row(inner)
 
-        jackpot_panel = tk.Frame(body, bg=theme.BG_ELEVATED, highlightbackground=theme.BORDER, highlightthickness=1)
-        jackpot_panel.pack(fill="x", pady=(24, 0))
-        jackpot_inner = tk.Frame(jackpot_panel, bg=theme.BG_ELEVATED)
-        jackpot_inner.pack(fill="x", padx=26, pady=22)
-        tk.Label(jackpot_inner, text="$ jackpot --config", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
-                 font=theme.font(13, weight="bold")).pack(anchor="w", pady=(0, 14))
+        # --- Jackpot Config -- collapsed by default, admin-gated to expand.
+        jackpot_inner = make_collapsible(
+            body, "$ jackpot --config",
+            before_expand=lambda: self._ensure_admin_unlocked("jackpot"), reset_list=self._collapsers,
+        )
         self._make_jackpot_rate_row(jackpot_inner)
         tk.Frame(jackpot_inner, bg=theme.BORDER, height=1).pack(fill="x", pady=16)
         self._make_jackpot_debug_row(jackpot_inner)
 
-        danger_bg = theme.LOSE_DIM_BG
-        danger_panel = tk.Frame(body, bg=danger_bg, highlightbackground=theme.LOSE_COLOR, highlightthickness=1)
-        danger_panel.pack(fill="x", pady=(24, 0))
-        danger_inner = tk.Frame(danger_panel, bg=danger_bg)
-        danger_inner.pack(fill="x", padx=26, pady=18)
-        tk.Label(danger_inner, text="$ danger --zone", bg=danger_bg, fg=theme.LOSE_COLOR,
-                 font=theme.font(12, weight="bold")).pack(anchor="w")
+        # --- Danger Zone -- same gating, red-tinted throughout.
+        danger_inner = make_collapsible(
+            body, "$ danger --zone",
+            bg=theme.LOSE_DIM_BG, border=theme.LOSE_COLOR, fg=theme.LOSE_COLOR,
+            before_expand=lambda: self._ensure_admin_unlocked("danger"), reset_list=self._collapsers,
+        )
         tk.Label(
-            danger_inner, text="Reset lifetime statistics. Your balance is not affected.",
-            bg=danger_bg, fg=theme.FG_DIM, font=theme.font(9),
-        ).pack(anchor="w", pady=(6, 10))
-        tk.Button(
-            danger_inner, text="Reset Statistics", bg=danger_bg, fg=theme.LOSE_COLOR, relief="flat",
-            font=theme.font(10, weight="bold"), padx=14, pady=6, cursor="hand2",
-            highlightthickness=1, highlightbackground=theme.LOSE_COLOR,
-            command=self._reset_stats,
-        ).pack(anchor="w")
+            danger_inner, text="Reset Statistics -- your balance will not be affected.",
+            bg=theme.LOSE_DIM_BG, fg=theme.FG, font=theme.font(10, weight="bold"),
+        ).pack(anchor="w", pady=(0, 14))
+        self._make_reset_row(
+            danger_inner, "$ rm --stats --lifetime",
+            "This permanently deletes your lifetime deposit, withdrawal and wagering totals "
+            "on the Stats screen. Your current balance is not affected.",
+            "Lifetime statistics have been reset.",
+            self._reset_lifetime,
+        )
+        self._make_reset_row(
+            danger_inner, "$ rm --stats --game three_card_poker",
+            "This permanently deletes Three Card Poker's bet, hand and strategy breakdown "
+            "on the Stats screen.",
+            "Three Card Poker's statistics have been reset.",
+            lambda: self.app.game_stats.reset_game(tcp_logic.GAME_KEY),
+        )
+        self._make_reset_row(
+            danger_inner, "$ rm --stats --game blackjack",
+            "This permanently deletes Blackjack's statistics breakdown. Blackjack isn't "
+            "implemented yet, so this currently has nothing to remove.",
+            "Blackjack's statistics have been reset.",
+            lambda: self.app.game_stats.reset_game("blackjack"),
+        )
 
         action_row = tk.Frame(body, bg=theme.BG)
         action_row.pack(pady=(28, 0))
@@ -98,6 +122,20 @@ class SettingsFrame(tk.Frame):
             highlightthickness=1, highlightbackground=theme.GREY_BTN_BORDER,
             command=self._on_cancel,
         ).pack(side="left", padx=8)
+
+    # ------------------------------------------------------------------ admin gate
+    def _ensure_admin_unlocked(self, slug):
+        if self._admin_unlocked:
+            return True
+        unlocked = dialogs.confirm_with_password(
+            self, f"$ sudo access --section {slug}",
+            "Administrator privileges are required to view this section. "
+            "Enter the admin password to continue.",
+            password=ADMIN_PASSWORD,
+        )
+        if unlocked:
+            self._admin_unlocked = True
+        return unlocked
 
     # ------------------------------------------------------------------ toggle switches
     def _make_toggle_row(self, parent, label, var):
@@ -201,6 +239,30 @@ class SettingsFrame(tk.Frame):
         self.jackpot_debug_var.set(f"{self.app.jackpot.amount:.2f}")
         messagebox.showinfo("Jackpot Updated", f"Jackpot set to £{self.app.jackpot.amount:,.2f}.")
 
+    # ------------------------------------------------------------------ danger zone
+    def _make_reset_row(self, parent, command_text, warn_message, done_message, action, pady=(0, 12)):
+        """One "$ rm ..." reset command: a button styled like the terminal
+        command it names, which -- since the section it's in was already
+        admin-gated to even see -- only needs a plain are-you-sure (no
+        password again) before actually running `action`."""
+        tk.Button(
+            parent, text=command_text, bg=theme.LOSE_DIM_BG, fg=theme.LOSE_COLOR, relief="flat",
+            font=theme.font(10, weight="bold"), padx=14, pady=6, cursor="hand2", anchor="w",
+            highlightthickness=1, highlightbackground=theme.LOSE_COLOR,
+            command=lambda: self._confirm_and_run(command_text, warn_message, done_message, action),
+        ).pack(anchor="w", pady=pady)
+
+    def _confirm_and_run(self, command_text, warn_message, done_message, action):
+        if dialogs.confirm(
+            self, command_text, f"{warn_message} This cannot be undone. Continue?", danger=True,
+        ):
+            action()
+            dialogs.info(self, command_text, done_message)
+
+    def _reset_lifetime(self):
+        self.app.finance.reset_stats_only()
+        self.app.on_balance_changed()
+
     # ------------------------------------------------------------------ save / cancel
     def _snapshot(self):
         return {
@@ -234,17 +296,6 @@ class SettingsFrame(tk.Frame):
                 return
         self.app.show_frame("menu")
 
-    def _reset_stats(self):
-        if messagebox.askyesno(
-            "Reset Statistics",
-            "This will reset lifetime statistics, including the per-game breakdown on the "
-            "Stats screen. Your balance will not change. Continue?",
-        ):
-            self.app.finance.reset_stats_only()
-            self.app.game_stats.reset()
-            self.app.on_balance_changed()
-            messagebox.showinfo("Done", "Lifetime statistics have been reset.")
-
     # ------------------------------------------------------------------ lifecycle
     def on_show(self):
         self.sound_var.set(self.app.settings.get("sound_enabled"))
@@ -255,4 +306,10 @@ class SettingsFrame(tk.Frame):
         for redraw in self._toggle_redraws:
             redraw()
         self._draw_theme_swatches()
+        # Gated sections always start collapsed on a fresh visit -- but
+        # self._admin_unlocked is deliberately NOT reset here, so re-opening
+        # one after having already entered the password once this session
+        # doesn't prompt again.
+        for collapse in self._collapsers:
+            collapse()
         self._original = self._snapshot()

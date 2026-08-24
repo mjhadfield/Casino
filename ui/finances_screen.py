@@ -14,13 +14,12 @@ class FinancesFrame(tk.Frame):
 
         top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
         top_bar.pack(fill="x")
-        theme.traffic_lights(top_bar, bg=theme.BG_ELEVATED).pack(side="left", padx=(20, 10), pady=12)
         tk.Button(
             top_bar, text="← Back", bg=theme.BG_ELEVATED, fg=theme.FG_DIM, relief="flat",
             font=theme.font(11), padx=12, pady=6, cursor="hand2",
             highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
             command=lambda: app.show_frame("menu"),
-        ).pack(side="left", padx=(0, 10), pady=12)
+        ).pack(side="left", padx=(20, 10), pady=12)
         tk.Label(top_bar, text="Cashier", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
                  font=theme.font(18, weight="bold")).pack(side="left", padx=10)
         theme.breadcrumb(top_bar, "cashier", bg=theme.BG_ELEVATED).pack(side="right", padx=20, pady=12)
