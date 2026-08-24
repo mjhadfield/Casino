@@ -17,10 +17,10 @@ class _TerminalDialog(tk.Toplevel):
     popup centred on its parent, closable via Escape or the window manager's
     own close button (treated as Cancel either way)."""
 
-    def __init__(self, parent, title, message, danger=False):
+    def __init__(self, parent, title, message, danger=False, accent=None):
         super().__init__(parent.winfo_toplevel())
         self.result = False
-        border = theme.LOSE_COLOR if danger else theme.ACCENT
+        border = accent or (theme.LOSE_COLOR if danger else theme.ACCENT)
         self.configure(bg=theme.BG_ELEVATED, highlightbackground=border, highlightthickness=2)
         self.overrideredirect(True)  # no OS title bar -- this is a small, self-contained popup
         self.resizable(False, False)
@@ -80,7 +80,7 @@ class _TerminalDialog(tk.Toplevel):
         self.update_idletasks()
         parent = self.master
         x = parent.winfo_rootx() + (parent.winfo_width() - self.winfo_reqwidth()) // 2
-        y = parent.winfo_rooty() + (parent.winfo_height() - self.winfo_reqheight()) // 3
+        y = parent.winfo_rooty() + (parent.winfo_height() - self.winfo_reqheight()) // 2
         self.geometry(f"+{max(0, x)}+{max(0, y)}")
         self.transient(parent)
         self.grab_set()
@@ -97,10 +97,13 @@ def confirm(parent, title, message, danger=False, confirm_text="Confirm"):
     return dialog.run()
 
 
-def info(parent, title, message):
+def info(parent, title, message, accent=None):
     """A single-button acknowledgement dialog -- the styled equivalent of
-    messagebox.showinfo, for after an action confirm() already gated."""
-    dialog = _TerminalDialog(parent, title, message, danger=False)
+    messagebox.showinfo/showwarning, for after an action confirm() already
+    gated, or for a plain "this isn't allowed" notice with nothing to
+    confirm. `accent` defaults to the ordinary mint accent; pass
+    theme.WARN for a warning-toned one (e.g. a rejected bet)."""
+    dialog = _TerminalDialog(parent, title, message, accent=accent or theme.ACCENT)
     dialog.confirm_btn.configure(text="OK")
     for child in list(dialog.confirm_btn.master.winfo_children()):
         if child is not dialog.confirm_btn:
@@ -147,4 +150,46 @@ def confirm_with_password(parent, title, message, password,
     dialog._confirm = try_confirm
     dialog.confirm_btn.configure(command=try_confirm)
 
+    return dialog.run()
+
+
+def choice(parent, title, message, options, accent=None):
+    """A warning-styled dialog offering custom named actions instead of the
+    usual Confirm/Cancel -- e.g. Three Card Poker's insufficient-balance
+    warning, which offers "Go Home" and "Cashier" rather than a single OK.
+
+    `options` is an ordered list of (label, key) pairs, rendered right-to-
+    left with the *last* one as the primary/accent-styled action (matching
+    where Confirm sits in every other dialog here) and the rest styled as
+    plain secondary buttons. Returns the key of whichever was clicked, or
+    None if the dialog was dismissed instead (Escape / closed) -- "leave
+    things as they are and try something else" always stays an option,
+    even when it's not one of the named buttons."""
+    dialog = _TerminalDialog(parent, title, message, accent=accent or theme.WARN)
+    dialog.result = None
+    button_row = dialog.confirm_btn.master
+    for child in list(button_row.winfo_children()):
+        child.destroy()  # drop the default Cancel/Confirm pair
+
+    primary_pick = None
+    for i, (label, key) in enumerate(options):
+        primary = i == len(options) - 1
+        bg = theme.ACCENT_DIM_BG_ELEVATED if primary else theme.GREY_BTN_BG
+        fg = theme.ACCENT if primary else theme.FG_DIM
+        border = theme.ACCENT if primary else theme.GREY_BTN_BORDER
+
+        def pick(_k=key):
+            dialog.result = _k
+            dialog.destroy()
+
+        if primary:
+            primary_pick = pick
+        tk.Button(
+            button_row, text=label, bg=bg, fg=fg, relief="flat",
+            font=theme.font(10, weight="bold" if primary else "normal"), padx=14, pady=6, cursor="hand2",
+            highlightthickness=1, highlightbackground=border,
+            command=pick,
+        ).pack(side="right", padx=(8, 0))
+
+    dialog._confirm = primary_pick  # <Return> triggers the primary action, same as every other dialog
     return dialog.run()

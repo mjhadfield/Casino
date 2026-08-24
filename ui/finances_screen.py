@@ -83,7 +83,7 @@ class FinancesFrame(tk.Frame):
 
         tk.Label(
             withdraw_frame,
-            text=f"Maximum £{MAX_TRANSACTION:.0f} per withdrawal • only while your balance is over "
+            text=f"No maximum per withdrawal • only while your balance is over "
                  f"£{TRANSACTION_BALANCE_THRESHOLD:.0f}",
             bg=theme.BG_ELEVATED, fg=theme.FG_DIM, font=theme.font(9),
         ).pack(pady=(4, 4))

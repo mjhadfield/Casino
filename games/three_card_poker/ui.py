@@ -1,7 +1,6 @@
 import math
 import os
 import tkinter as tk
-from tkinter import messagebox
 from typing import Optional
 
 from core.hand_evaluator import HAND_NAMES
@@ -22,7 +21,7 @@ from games.three_card_poker.logic import (
     should_play,
     ThreeCardPokerGame,
 )
-from ui import theme
+from ui import dialogs, theme
 from ui.card_widgets import draw_card, draw_card_back, CARD_HEIGHT, CARD_WIDTH
 from ui.jackpot_display import JackpotDisplay
 
@@ -775,8 +774,10 @@ class ThreeCardPokerFrame(tk.Frame):
         trial_bets = dict(self.bets)
         trial_bets["jackpot"] = 0 if self.bets["jackpot"] else int(JACKPOT_BET_AMOUNT)
         if trial_bets["jackpot"] and _max_round_cost(trial_bets) > self.app.finance.balance + 1e-9:
-            messagebox.showwarning(
-                "Insufficient Balance", "You don't have enough balance to place the £1 Jackpot bet.",
+            dialogs.info(
+                self, "$ jackpot --check-funds",
+                "You don't have enough balance to place the £1 Jackpot bet.",
+                accent=theme.WARN,
             )
             return
         self.bets = trial_bets
@@ -794,13 +795,17 @@ class ThreeCardPokerFrame(tk.Frame):
                 # They could afford to place it, just not to also match it with
                 # a Play bet later -- a casino wouldn't let you place an Ante
                 # you can't back up.
-                messagebox.showwarning(
-                    "Insufficient Balance",
+                dialogs.info(
+                    self, "$ ante --check-funds",
                     "You wouldn't have enough left to match this Ante with a Play bet "
                     "if you choose to play. Reduce your bet or add funds.",
+                    accent=theme.WARN,
                 )
             else:
-                messagebox.showwarning("Insufficient Balance", "You don't have enough balance to place that chip.")
+                dialogs.info(
+                    self, "$ bet --check-funds", "You don't have enough balance to place that chip.",
+                    accent=theme.WARN,
+                )
             return
         self.bets = trial_bets
         self._draw_table()
@@ -837,7 +842,7 @@ class ThreeCardPokerFrame(tk.Frame):
             self.bets["ante"], self.bets["pair_plus"], self.bets["prime"], self.bets["jackpot"],
         )
         if ante <= 0:
-            messagebox.showwarning("Ante Required", "You must place an Ante bet to deal.")
+            dialogs.info(self, "$ deal --require-ante", "You must place an Ante bet to deal.", accent=theme.WARN)
             return
 
         # Checked against the worst case (this wager plus a matching Play bet),
@@ -845,10 +850,15 @@ class ThreeCardPokerFrame(tk.Frame):
         # every chip placement, so this is a defensive re-check, not the
         # primary guard (see _adjust_bet and _sanitize_bets).
         if not self.app.finance.can_afford(_max_round_cost(self.bets)):
-            messagebox.showwarning(
-                "Insufficient Balance",
-                "You don't have enough balance for these bets and a matching Play bet.",
+            choice = dialogs.choice(
+                self, "$ deal --check-funds",
+                "You don't have enough balance to cover these bets plus a matching Play bet.",
+                [("Go Home", "home"), ("Cashier", "cashier")],
             )
+            if choice == "home":
+                self.app.show_frame("menu")
+            elif choice == "cashier":
+                self.app.show_frame("finances")
             return
 
         total_upfront = ante + pair_plus + prime + jackpot
@@ -865,7 +875,7 @@ class ThreeCardPokerFrame(tk.Frame):
         # _on_round_settled), so it only ever takes up space (right below
         # the Play/Fold buttons) while there's an actual hand in it.
         self.fan_canvas.delete("all")
-        self.fan_canvas.pack(pady=(4, 0), before=self.chip_zone)
+        self.fan_canvas.pack(pady=(14, 0), before=self.chip_zone)
         self._draw_fan_mat()
 
         # Only the play area appears at first: the dealer's cards (face down)
@@ -881,9 +891,10 @@ class ThreeCardPokerFrame(tk.Frame):
         if not folded:
             play_bet = self.result.ante_bet
             if not self.app.finance.can_afford(play_bet):
-                messagebox.showwarning(
-                    "Insufficient Balance",
+                dialogs.info(
+                    self, "$ play --check-funds",
                     "You don't have enough balance to match the Play bet. Folding instead.",
+                    accent=theme.WARN,
                 )
                 folded = True
             else:

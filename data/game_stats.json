@@ -2,50 +2,51 @@
   "three_card_poker": {
     "bets": {
       "play": {
-        "wagered": 2365.0,
-        "returned": 2265.0,
-        "wins": 154,
-        "losses": 174,
-        "pushes": 145
+        "wagered": 2460.0,
+        "returned": 2365.0,
+        "wins": 162,
+        "losses": 181,
+        "pushes": 149
       },
       "ante": {
-        "wagered": 3330.0,
-        "returned": 3065.0,
-        "wins": 299,
-        "losses": 365,
+        "wagered": 3495.0,
+        "returned": 3220.0,
+        "wins": 311,
+        "losses": 386,
         "pushes": 2
       },
       "pair_plus": {
-        "wagered": 3284.0,
-        "returned": 2569.0,
-        "wins": 170,
-        "losses": 490,
+        "wagered": 3449.0,
+        "returned": 2884.0,
+        "wins": 178,
+        "losses": 515,
         "pushes": 0
       },
       "prime": {
-        "wagered": 3314.0,
-        "returned": 3146.0,
-        "wins": 153,
-        "losses": 513,
+        "wagered": 3479.0,
+        "returned": 3291.0,
+        "wins": 160,
+        "losses": 539,
         "pushes": 0
       },
       "jackpot": {
-        "wagered": 660.0,
-        "returned": 96.0,
-        "wins": 16,
-        "losses": 644,
+        "wagered": 693.0,
+        "returned": 208.0,
+        "wins": 19,
+        "losses": 674,
         "pushes": 0
       }
     },
     "hands": {
-      "Pair": 120,
-      "High Card": 286,
-      "Fold": 189,
-      "Flush": 32,
-      "Straight": 15
+      "Pair": 124,
+      "High Card": 297,
+      "Fold": 203,
+      "Flush": 33,
+      "Straight": 17,
+      "Straight Flush": 1
     },
     "strategy": {
-      "played_incorrectly": 4
+      "played_incorrectly": 5
     }
   }
 }

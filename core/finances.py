@@ -11,20 +11,21 @@ from datetime import datetime, timezone
 
 from core.persistence import load_json, save_json
 
-MAX_TRANSACTION = 200.0  # per-transaction cap, both directions; unlimited number of transactions
+MAX_TRANSACTION = 200.0  # per-transaction cap on deposits only; unlimited number of transactions
 
-# Anti-cheat rail, both directions gated off the same line: a withdrawal is
-# only allowed strictly above it, and a deposit is not just blocked above it
-# but actively capped AT it -- deposit() silently reduces the amount
-# actually credited so a deposit can never land the balance past this line,
-# no matter how large a deposit is requested. Without that cap, only the
-# *starting* balance of a deposit was ever checked, not where it would
-# land -- so a small withdrawal down to just below the line, followed by a
-# full-size deposit back past it, could park the balance at roughly double
-# this line indefinitely (withdraw £2, deposit £200, withdraw £200, deposit
-# £200, ...) purely by shuffling money, no play required. Capping the
-# deposit itself closes that off: the balance can only ever get above this
-# line by actually winning at the tables.
+# Anti-cheat rail: a withdrawal is only allowed strictly above this line, and
+# a deposit is not just blocked above it but actively capped AT it --
+# deposit() silently reduces the amount actually credited so a deposit can
+# never land the balance past this line, no matter how large a deposit is
+# requested. Without that cap, only the *starting* balance of a deposit was
+# ever checked, not where it would land -- so a small withdrawal down to just
+# below the line, followed by a full-size deposit back past it, could park
+# the balance at roughly double this line indefinitely (withdraw £2, deposit
+# £200, withdraw £200, deposit £200, ...) purely by shuffling money, no play
+# required. Capping the deposit itself closes that off: the balance can only
+# ever get above this line by actually winning at the tables. Withdrawals
+# have no per-transaction cap of their own (MAX_TRANSACTION doesn't apply to
+# them) -- taking money back out was never the exploitable direction.
 TRANSACTION_BALANCE_THRESHOLD = 200.0
 
 DEFAULT_FINANCE_DATA = {
@@ -97,8 +98,6 @@ class FinanceManager:
             raise ValueError("Enter a valid amount.")
         if amount <= 0:
             raise ValueError("Withdrawal amount must be greater than £0.")
-        if amount > MAX_TRANSACTION:
-            raise ValueError(f"Withdrawals are capped at £{MAX_TRANSACTION:.0f} per transaction.")
         if self.balance <= TRANSACTION_BALANCE_THRESHOLD:
             raise ValueError(f"You can only withdraw while your balance is over £{TRANSACTION_BALANCE_THRESHOLD:.0f}.")
         if not self.can_afford(amount):
