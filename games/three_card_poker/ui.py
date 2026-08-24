@@ -22,6 +22,7 @@ from games.three_card_poker.logic import (
     should_play,
     ThreeCardPokerGame,
 )
+from ui import theme
 from ui.card_widgets import draw_card, draw_card_back, CARD_HEIGHT, CARD_WIDTH
 from ui.jackpot_display import JackpotDisplay
 
@@ -158,17 +159,15 @@ FAN_CANVAS_HEIGHT = FAN_Y + CARD_HEIGHT + FAN_ARC_OFFSET + 14
 
 # The player's own felt mat, behind the fanned hand in fan_canvas -- same
 # rounded-rectangle language as the dealer's mat (and the same width, so
-# the two line up), but a distinct border colour rather than gold, so the
-# dealer's and the player's areas read as clearly different zones despite
-# sharing the same felt/rounded-rect styling. The border matches the Play/
-# Fold buttons' own border -- Tk's default flat-button highlightbackground
-# (#d9d9d9), not either button's green/red fill.
+# the two line up), but a distinct, neutral border colour rather than the
+# felt's own accent, so the dealer's and the player's areas read as clearly
+# different zones despite sharing the same felt/rounded-rect styling.
 FAN_MAT_X1 = DEALER_MAT_X1
 FAN_MAT_X2 = DEALER_MAT_X2
 FAN_MAT_TOP = 4
 FAN_MAT_BOTTOM = FAN_CANVAS_HEIGHT - 4
 FAN_MAT_RADIUS = 12
-FAN_MAT_BORDER = "#d9d9d9"
+FAN_MAT_BORDER = theme.FG_DIM
 
 # Cards that come to rest on a bet-indicator spot -- the played hand landing
 # on Play, or a folded hand resting on Prime/Pair Plus to show there's still
@@ -201,13 +200,10 @@ JACKPOT_GLOW_DIM = "#5a1414"
 JACKPOT_GLOW_BRIGHT = "#ff4136"
 
 
-def _lerp_color(c1, c2, t):
-    """Blends two "#rrggbb" colours -- t=0 -> c1, t=1 -> c2. Used to animate
-    the jackpot glow/sheen by brightness rather than by resizing shapes."""
-    t = max(0.0, min(1.0, t))
-    r1, g1, b1 = int(c1[1:3], 16), int(c1[3:5], 16), int(c1[5:7], 16)
-    r2, g2, b2 = int(c2[1:3], 16), int(c2[3:5], 16), int(c2[5:7], 16)
-    return f"#{round(r1 + (r2 - r1) * t):02x}{round(g1 + (g2 - g1) * t):02x}{round(b1 + (b2 - b1) * t):02x}"
+# Used to animate the jackpot glow/sheen by brightness rather than by
+# resizing shapes -- see ui/theme.py for the implementation, the natural
+# home for a color-math primitive shared with theme.py's own dim-tint blends.
+_lerp_color = theme.lerp_color
 
 
 # Paytable rows, read straight from the game rules in logic.py/hand_evaluator.py
@@ -281,15 +277,18 @@ def _format_signed(amount):
 
 def _net_color(amount):
     if amount > 0:
-        return "#4be36b"
+        return theme.WIN_COLOR
     if amount < 0:
-        return "#e05555"
-    return "#f0f0f0"
+        return theme.LOSE_COLOR
+    return theme.FG
 
 
 class ThreeCardPokerFrame(tk.Frame):
     def __init__(self, parent, app):
-        super().__init__(parent, bg="#0b3d24")
+        # Overwritten a few lines later by _build_ui's self.configure(bg=
+        # theme["felt"]) once self.app is set -- theme.BG here is just a
+        # harmless placeholder for the instant before that happens.
+        super().__init__(parent, bg=theme.BG)
         self.app = app
         self.game = ThreeCardPokerGame()
         self.result: Optional[RoundResult] = None
@@ -317,22 +316,28 @@ class ThreeCardPokerFrame(tk.Frame):
 
     # ------------------------------------------------------------------ UI build
     def _build_ui(self):
-        theme = self.app.settings.theme()
-        self._current_felt = theme["felt"]
-        self.configure(bg=theme["felt"])
+        felt_theme = self.app.settings.theme()
+        self._current_felt = felt_theme["felt"]
+        self.configure(bg=felt_theme["felt"])
 
-        top_bar = tk.Frame(self, bg="#111111")
+        # Top bar is NOT felt-scoped -- it's this app's global chrome, so it
+        # always uses the one fixed terminal accent regardless of which
+        # table felt is selected (see ui/theme.py's module docstring).
+        top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
         top_bar.pack(fill="x")
+        theme.traffic_lights(top_bar, bg=theme.BG_ELEVATED).pack(side="left", padx=(20, 10), pady=10)
         tk.Button(
-            top_bar, text="← Menu", bg="#1c1c1c", fg="#cccccc", relief="flat",
-            font=("Helvetica", 11), padx=12, pady=6, cursor="hand2",
+            top_bar, text="← Menu", bg=theme.BG_ELEVATED, fg=theme.FG_DIM, relief="flat",
+            font=theme.font(11), padx=12, pady=6, cursor="hand2",
+            highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
             command=lambda: self.app.show_frame("menu"),
-        ).pack(side="left", padx=20, pady=10)
-        tk.Label(top_bar, text="Three Card Poker", bg="#111111", fg="#d4af37",
-                 font=("Georgia", 16, "bold")).pack(side="left", padx=10)
-        self.balance_lbl = tk.Label(top_bar, text="£0.00", bg="#111111", fg="#4be36b",
-                                     font=("Helvetica", 12, "bold"))
+        ).pack(side="left", padx=(0, 10), pady=10)
+        tk.Label(top_bar, text="Three Card Poker", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
+                 font=theme.font(16, weight="bold")).pack(side="left", padx=10)
+        self.balance_lbl = tk.Label(top_bar, text="£0.00", bg=theme.BG_ELEVATED, fg=theme.WIN_COLOR,
+                                     font=theme.font(12, weight="bold"))
         self.balance_lbl.pack(side="right", padx=20)
+        theme.breadcrumb(top_bar, "three_card_poker", bg=theme.BG_ELEVATED).pack(side="right", padx=(6, 6))
 
         # `body` is the full-window stage; `content` is the actual UI at its
         # fixed base size, centred horizontally within it as one block rather
@@ -341,16 +346,16 @@ class ThreeCardPokerFrame(tk.Frame):
         # a fixed offset from the top (not vertically centred) so any extra
         # window height becomes slack at the bottom instead of pushing the
         # whole table down and leaving a big gap under the top bar.
-        body = tk.Frame(self, bg=theme["felt"])
+        body = tk.Frame(self, bg=felt_theme["felt"])
         body.pack(fill="both", expand=True)
 
-        content = tk.Frame(body, bg=theme["felt"])
+        content = tk.Frame(body, bg=felt_theme["felt"])
         content.place(relx=0.5, y=CONTENT_TOP_MARGIN, anchor="n")
 
-        game_col = tk.Frame(content, bg=theme["felt"])
+        game_col = tk.Frame(content, bg=felt_theme["felt"])
         game_col.pack(side="left")
 
-        paytable_col = tk.Frame(content, bg=theme["felt"])
+        paytable_col = tk.Frame(content, bg=felt_theme["felt"])
         paytable_col.pack(side="right", fill="y", padx=(10, 24), pady=10)
 
         self.jackpot_display = JackpotDisplay(
@@ -360,13 +365,13 @@ class ThreeCardPokerFrame(tk.Frame):
 
         self._build_paytable(paytable_col)
 
-        self.canvas = tk.Canvas(game_col, bg=theme["felt"], highlightthickness=0,
+        self.canvas = tk.Canvas(game_col, bg=felt_theme["felt"], highlightthickness=0,
                                  width=CANVAS_WIDTH, height=CANVAS_HEIGHT)
         self.canvas.pack(padx=12, pady=(10, 4))
 
         self.result_lbl = tk.Label(
-            game_col, text="Place your Ante bet to begin.", bg=theme["felt"], fg="#f0f0f0",
-            font=("Helvetica", 13, "bold"), wraplength=900, justify="center",
+            game_col, text="Place your Ante bet to begin.", bg=felt_theme["felt"], fg=theme.FG,
+            font=theme.font(13, weight="bold"), wraplength=900, justify="center",
         )
         self.result_lbl.pack(pady=(0, 6))
 
@@ -374,35 +379,40 @@ class ThreeCardPokerFrame(tk.Frame):
         # instructions text, with only a small, constant gap: Deal, Play+Fold and
         # New Deal+Change Bets are all single-row layouts of the same height, so
         # this needs no space reservation of its own to stay put between states.
-        self.action_frame = tk.Frame(game_col, bg=theme["felt"])
+        self.action_frame = tk.Frame(game_col, bg=felt_theme["felt"])
         self.action_frame.pack(pady=(8, 0))
 
         self.deal_btn = tk.Button(
-            self.action_frame, text="DEAL", bg="#d4af37", fg="#111111",
-            font=("Helvetica", 13, "bold"), relief="flat", padx=30, pady=10, cursor="hand2",
+            self.action_frame, text="DEAL", bg=theme.ACCENT_DIM_BG, fg=theme.FG,
+            font=theme.font(13, weight="bold"), relief="flat", padx=30, pady=10, cursor="hand2",
+            highlightthickness=1, highlightbackground=theme.ACCENT,
             command=self._on_deal,
         )
         self.play_btn = tk.Button(
-            self.action_frame, text="PLAY", bg="#215a2b", fg="#ffffff",
-            font=("Helvetica", 13, "bold"), relief="flat", padx=30, pady=10, cursor="hand2",
+            self.action_frame, text="PLAY", bg=theme.ACCENT_DIM_BG, fg=theme.FG,
+            font=theme.font(13, weight="bold"), relief="flat", padx=30, pady=10, cursor="hand2",
+            highlightthickness=1, highlightbackground=theme.ACCENT,
             command=lambda: self._finish_round(folded=False),
         )
         self.fold_btn = tk.Button(
-            self.action_frame, text="FOLD", bg="#5a1c1c", fg="#ffffff",
-            font=("Helvetica", 13, "bold"), relief="flat", padx=30, pady=10, cursor="hand2",
+            self.action_frame, text="FOLD", bg=theme.LOSE_DIM_BG, fg=theme.FG,
+            font=theme.font(13, weight="bold"), relief="flat", padx=30, pady=10, cursor="hand2",
+            highlightthickness=1, highlightbackground=theme.LOSE_COLOR,
             command=lambda: self._finish_round(folded=True),
         )
         # Round-over controls: a quick rebet (same bets, dealt immediately)
-        # is the common case, so it gets the primary gold styling; Change
+        # is the common case, so it gets the primary accent styling; Change
         # Bets -- back to the betting screen -- is the secondary option.
         self.new_deal_btn = tk.Button(
-            self.action_frame, text="New Deal", bg="#d4af37", fg="#111111",
-            font=("Helvetica", 13, "bold"), relief="flat", padx=30, pady=10, cursor="hand2",
+            self.action_frame, text="New Deal", bg=theme.ACCENT_DIM_BG, fg=theme.FG,
+            font=theme.font(13, weight="bold"), relief="flat", padx=30, pady=10, cursor="hand2",
+            highlightthickness=1, highlightbackground=theme.ACCENT,
             command=self._new_deal,
         )
         self.change_bets_btn = tk.Button(
-            self.action_frame, text="Change Bets", bg="#333333", fg="#cccccc",
-            font=("Helvetica", 13, "bold"), relief="flat", padx=30, pady=10, cursor="hand2",
+            self.action_frame, text="Change Bets", bg=theme.GREY_BTN_BG, fg=theme.FG_DIM,
+            font=theme.font(13, weight="bold"), relief="flat", padx=30, pady=10, cursor="hand2",
+            highlightthickness=1, highlightbackground=theme.GREY_BTN_BORDER,
             command=self._new_round,
         )
 
@@ -412,7 +422,7 @@ class ThreeCardPokerFrame(tk.Frame):
         # actual fan to show -- shown in _on_deal, hidden again in
         # _on_round_settled -- so it takes up no space (and leaves no gap)
         # once the hand's moved onto the strip and this is empty again.
-        self.fan_canvas = tk.Canvas(game_col, bg=theme["felt"], highlightthickness=0,
+        self.fan_canvas = tk.Canvas(game_col, bg=felt_theme["felt"], highlightthickness=0,
                                      width=CANVAS_WIDTH, height=FAN_CANVAS_HEIGHT)
 
         # --- below that: chip tray (betting) or the round result (resolved)
@@ -424,30 +434,31 @@ class ThreeCardPokerFrame(tk.Frame):
         # undoing the Deal <-> Play/Fold alignment -- but because the reserved
         # space sits below the buttons rather than between them and the
         # instructions, there's no visible gap where it matters.
-        self.chip_zone = tk.Frame(game_col, bg=theme["felt"])
+        self.chip_zone = tk.Frame(game_col, bg=felt_theme["felt"])
         self.chip_zone.pack(pady=(10, 0))
 
         # Chip tray: pick a denomination, then tap a betting spot on the table.
         # Total bet and Clear Bets are grouped into it too.
-        self.chip_frame = tk.Frame(self.chip_zone, bg=theme["felt"])
+        self.chip_frame = tk.Frame(self.chip_zone, bg=felt_theme["felt"])
         tk.Label(
             self.chip_frame, text="Tap a chip, then tap Ante / Pair Plus / Prime to place it",
-            bg=theme["felt"], fg="#999999", font=("Helvetica", 9),
+            bg=felt_theme["felt"], fg=theme.FG_DIM, font=theme.font(9),
         ).pack(pady=(0, 6))
-        self.chip_row = tk.Frame(self.chip_frame, bg=theme["felt"])
+        self.chip_row = tk.Frame(self.chip_frame, bg=felt_theme["felt"])
         self.chip_row.pack()
         for value, face, rim in CHIP_DENOMINATIONS:
             self._make_chip_button(self.chip_row, value, face, rim)
 
         self.total_lbl = tk.Label(
-            self.chip_frame, text="Total bet: £0", bg=theme["felt"], fg="#d4af37",
-            font=("Helvetica", 12, "bold"),
+            self.chip_frame, text="Total bet: £0", bg=felt_theme["felt"], fg=theme.ACCENT,
+            font=theme.font(12, weight="bold"),
         )
         self.total_lbl.pack(pady=(8, 0))
 
         self.clear_btn = tk.Button(
-            self.chip_frame, text="Clear Bets", bg="#333333", fg="#cccccc",
-            font=("Helvetica", 9), relief="flat", padx=10, pady=4, cursor="hand2",
+            self.chip_frame, text="Clear Bets", bg=theme.GREY_BTN_BG, fg=theme.FG_DIM,
+            font=theme.font(9), relief="flat", padx=10, pady=4, cursor="hand2",
+            highlightthickness=1, highlightbackground=theme.GREY_BTN_BORDER,
             command=self._clear_bets,
         )
         self.clear_btn.pack(pady=(6, 0))
@@ -455,7 +466,7 @@ class ThreeCardPokerFrame(tk.Frame):
         # Round result: shown once a round resolves, in place of the chip tray.
         self.payout_canvas = tk.Canvas(
             self.chip_zone, width=PAYOUT_PANEL_WIDTH, height=PAYOUT_PANEL_HEIGHT,
-            bg=theme["felt"], highlightthickness=0,
+            bg=felt_theme["felt"], highlightthickness=0,
         )
 
         self.chip_frame.pack()
@@ -470,9 +481,9 @@ class ThreeCardPokerFrame(tk.Frame):
 
     # ------------------------------------------------------------------ chip tray
     def _make_chip_button(self, parent, value, face, rim):
-        theme = self.app.settings.theme()
+        felt_theme = self.app.settings.theme()
         canvas = tk.Canvas(parent, width=CHIP_SIZE + 10, height=CHIP_SIZE + 10,
-                            bg=theme["felt"], highlightthickness=0, cursor="hand2")
+                            bg=felt_theme["felt"], highlightthickness=0, cursor="hand2")
         canvas.pack(side="left", padx=6)
         canvas.bind("<Button-1>", lambda e, v=value: self._select_chip(v))
         self.chip_canvases[value] = (canvas, face, rim)
@@ -486,11 +497,11 @@ class ThreeCardPokerFrame(tk.Frame):
         cx = cy = r + pad
         if value == self.selected_chip:
             canvas.create_oval(cx - r - 4, cy - r - 4, cx + r + 4, cy + r + 4,
-                                outline="#d4af37", width=3)
+                                outline=theme.ACCENT, width=3)
         canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=face, outline=rim, width=3)
         canvas.create_oval(cx - r + 7, cy - r + 7, cx + r - 7, cy + r - 7,
                             outline="#ffffff", width=1)
-        canvas.create_text(cx, cy, text=f"£{value}", fill="#ffffff", font=("Helvetica", 10, "bold"))
+        canvas.create_text(cx, cy, text=f"£{value}", fill="#ffffff", font=theme.font(10, weight="bold"))
 
     def _select_chip(self, value):
         self.selected_chip = value
@@ -500,9 +511,9 @@ class ThreeCardPokerFrame(tk.Frame):
 
     # ------------------------------------------------------------------ paytable panel
     def _build_paytable(self, parent):
-        theme = self.app.settings.theme()
+        felt_theme = self.app.settings.theme()
         canvas = tk.Canvas(parent, width=PAYTABLE_WIDTH, height=PAYTABLE_HEIGHT,
-                            bg=theme["felt"], highlightthickness=0)
+                            bg=felt_theme["felt"], highlightthickness=0)
         # No expand=True: paytable_col fills the game column's full height
         # (which varies by state -- e.g. fan_canvas showing/hiding), and
         # expand=True would centre the paytable in whatever slack that
@@ -518,26 +529,24 @@ class ThreeCardPokerFrame(tk.Frame):
         canvas.delete("all")
         w, h = PAYTABLE_WIDTH, PAYTABLE_HEIGHT
 
-        canvas.create_rectangle(3, 3, w - 3, h - 3, fill="#0e2a1a", outline="#d4af37", width=2)
-        canvas.create_rectangle(8, 8, w - 8, h - 8, outline="#3a6b4c", width=1)
-        canvas.create_text(w / 2, 24, text="PAYTABLE", fill="#d4af37", font=("Georgia", 14, "bold"))
+        theme.recessed_panel(canvas, 0, 0, w, h, title="PAYTABLE", title_font_size=14)
 
         y = 46
         for i, (title, rows) in enumerate(PAYTABLE_SECTIONS):
             if i:
-                canvas.create_line(20, y, w - 20, y, fill="#3a6b4c")
+                canvas.create_line(20, y, w - 20, y, fill=theme.BORDER)
                 y += 12
             y = self._draw_paytable_section(canvas, y, title, rows)
 
     def _draw_paytable_section(self, canvas, y, title, rows):
         w = PAYTABLE_WIDTH
-        canvas.create_text(20, y, text=title, fill="#8fd6a8",
-                            font=("Helvetica", 10, "bold"), anchor="w")
+        canvas.create_text(20, y, text=title, fill=theme.ACCENT,
+                            font=theme.font(10, weight="bold"), anchor="w")
         y += 20
         for label, multiplier in rows:
-            canvas.create_text(20, y, text=label, fill="#f0f0f0", font=("Helvetica", 9), anchor="w")
-            canvas.create_text(w - 20, y, text=f"{multiplier}:1", fill="#4be36b",
-                                font=("Helvetica", 9, "bold"), anchor="e")
+            canvas.create_text(20, y, text=label, fill=theme.FG, font=theme.font(9), anchor="w")
+            canvas.create_text(w - 20, y, text=f"{multiplier}:1", fill=theme.WIN_COLOR,
+                                font=theme.font(9, weight="bold"), anchor="e")
             y += 19
         return y
 
@@ -575,31 +584,33 @@ class ThreeCardPokerFrame(tk.Frame):
     def _draw_spot_circle(self, key, cx, cy, r, label):
         tag = f"spot_{key}"
         amount = self.bets[key]
+        felt_theme = self.app.settings.theme()
         self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r,
-                                 fill="#0e4a2c", outline="#d4af37", width=2, tags=(tag,))
-        self.canvas.create_text(cx, cy - r - 12, text=label, fill="#cfead9",
-                                 font=("Helvetica", 9, "bold"), tags=(tag,))
+                                 fill=felt_theme["felt_dark"], outline=felt_theme["accent"], width=2, tags=(tag,))
+        self.canvas.create_text(cx, cy - r - 12, text=label, fill=theme.FG,
+                                 font=theme.font(9, weight="bold"), tags=(tag,))
         if amount:
             self._draw_chip_stack(tag, cx, cy, amount, max_r=CHIP_LAYER_MAX_R, budget=r * 1.9)
         else:
-            self.canvas.create_text(cx, cy, text="tap to bet", fill="#6f9c82",
-                                     font=("Helvetica", 9, "bold"), tags=(tag,))
+            self.canvas.create_text(cx, cy, text="tap to bet", fill=theme.FG_DIM,
+                                     font=theme.font(9, weight="bold"), tags=(tag,))
         self._bind_spot(tag, key)
 
     def _draw_spot_rect(self, key, cx, cy, width, height, label):
         tag = f"spot_{key}"
         amount = self.bets[key]
+        felt_theme = self.app.settings.theme()
         x1, y1, x2, y2 = cx - width / 2, cy - height / 2, cx + width / 2, cy + height / 2
-        self.canvas.create_rectangle(x1, y1, x2, y2, fill="#0e4a2c", outline="#d4af37",
+        self.canvas.create_rectangle(x1, y1, x2, y2, fill=felt_theme["felt_dark"], outline=felt_theme["accent"],
                                       width=2, tags=(tag,))
-        self.canvas.create_text(cx, y1 + 18, text=label, fill="#cfead9",
-                                 font=("Helvetica", 11, "bold"), tags=(tag,))
+        self.canvas.create_text(cx, y1 + 18, text=label, fill=theme.FG,
+                                 font=theme.font(11, weight="bold"), tags=(tag,))
         stack_cy = cy + 16
         if amount:
             self._draw_chip_stack(tag, cx, stack_cy, amount, max_r=CHIP_LAYER_MAX_R, budget=110)
         else:
-            self.canvas.create_text(cx, stack_cy, text="tap to bet", fill="#6f9c82",
-                                     font=("Helvetica", 10, "bold"), tags=(tag,))
+            self.canvas.create_text(cx, stack_cy, text="tap to bet", fill=theme.FG_DIM,
+                                     font=theme.font(10, weight="bold"), tags=(tag,))
         self._bind_spot(tag, key)
 
     def _draw_spot_jackpot(self, cx, cy, r):
@@ -610,6 +621,7 @@ class ThreeCardPokerFrame(tk.Frame):
         reads as a premium bet, not a warning light. The chip itself stays
         the same blue as every other £1 chip in the tray."""
         tag = "spot_jackpot"
+        felt_theme = self.app.settings.theme()
         placed = bool(self.bets["jackpot"])
         t = 0.5 + 0.5 * math.sin(self._jackpot_pulse_t)  # 0 -> 1 -> 0, one slow breath
         if placed:
@@ -625,11 +637,11 @@ class ThreeCardPokerFrame(tk.Frame):
                                          outline=ring, width=2, tags=(tag,))
             outline_color = glow
         else:
-            outline_color = "#d4af37"
-        self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill="#0e4a2c",
+            outline_color = felt_theme["accent"]
+        self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=felt_theme["felt_dark"],
                                  outline=outline_color, width=3, tags=(tag,))
-        self.canvas.create_text(cx, cy - r - 12, text="JACKPOT", fill="#cfead9",
-                                 font=("Helvetica", 9, "bold"), tags=(tag,))
+        self.canvas.create_text(cx, cy - r - 12, text="JACKPOT", fill=theme.FG,
+                                 font=theme.font(9, weight="bold"), tags=(tag,))
         if placed:
             face, rim = CHIP_COLORS_BY_VALUE[1]
             token_r = r - 10
@@ -646,10 +658,10 @@ class ThreeCardPokerFrame(tk.Frame):
             self.canvas.create_oval(sx - sheen_r, sy - sheen_r, sx + sheen_r, sy + sheen_r,
                                      fill=sheen_color, outline="", tags=(tag,))
             self.canvas.create_text(cx, cy, text="£1", fill="#ffffff",
-                                     font=("Helvetica", 11, "bold"), tags=(tag,))
+                                     font=theme.font(11, weight="bold"), tags=(tag,))
         else:
-            self.canvas.create_text(cx, cy, text="tap to\nbet £1", fill="#6f9c82",
-                                     font=("Helvetica", 8, "bold"), justify="center", tags=(tag,))
+            self.canvas.create_text(cx, cy, text="tap to\nbet £1", fill=theme.FG_DIM,
+                                     font=theme.font(8, weight="bold"), justify="center", tags=(tag,))
         self._bind_spot(tag, "jackpot")
 
     def _draw_chip_stack(self, tag, cx, cy, amount, max_r, budget):
@@ -681,14 +693,14 @@ class ThreeCardPokerFrame(tk.Frame):
             self.canvas.create_oval(cx - layer_r + 4, layer_cy - layer_r + 4, cx + layer_r - 4, layer_cy + layer_r - 4,
                                      outline="#ffffff", width=1, tags=tags)
             self.canvas.create_text(cx, layer_cy, text=f"£{value}", fill="#ffffff",
-                                     font=("Helvetica", max(7, int(layer_r * 0.38)), "bold"), tags=tags)
+                                     font=theme.font(max(7, int(layer_r * 0.38)), weight="bold"), tags=tags)
             if count > 1:
                 badge_r = max(7, layer_r * 0.42)
                 bx, by = cx + layer_r * 0.62, layer_cy + layer_r * 0.62
                 self.canvas.create_oval(bx - badge_r, by - badge_r, bx + badge_r, by + badge_r,
-                                         fill="#111111", outline="#d4af37", width=1, tags=tags)
+                                         fill=theme.BG_ELEVATED, outline=theme.ACCENT, width=1, tags=tags)
                 self.canvas.create_text(bx, by, text=f"×{count}", fill="#ffffff",
-                                         font=("Helvetica", max(7, int(badge_r * 0.85)), "bold"), tags=tags)
+                                         font=theme.font(max(7, int(badge_r * 0.85)), weight="bold"), tags=tags)
 
     def _bind_spot(self, tag, key):
         self.canvas.tag_bind(tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
@@ -847,7 +859,7 @@ class ThreeCardPokerFrame(tk.Frame):
         self.result = self.game.play_round(ante, pair_plus, prime, jackpot)
         self.state = "dealt"
 
-        self.result_lbl.configure(text="Dealing...", fg="#f0f0f0")
+        self.result_lbl.configure(text="Dealing...", fg=theme.FG)
         self._show_no_controls()
 
         # Shown fresh for this round -- hidden again once resolved (see
@@ -931,7 +943,7 @@ class ThreeCardPokerFrame(tk.Frame):
         again. Bets carry over so it's a starting point, not a blank slate --
         Clear Bets is there if they want £0 instead."""
         self.state = "betting"
-        self.result_lbl.configure(text="Place your Ante bet to begin.", fg="#f0f0f0")
+        self.result_lbl.configure(text="Place your Ante bet to begin.", fg=theme.FG)
         self._sanitize_bets()
         self._show_betting_controls()
 
@@ -946,12 +958,13 @@ class ThreeCardPokerFrame(tk.Frame):
         moment betting ends. Individual cards are separate, tagged canvas
         items drawn/animated on top of this background."""
         self.canvas.delete("all")
+        felt_theme = self.app.settings.theme()
         self._draw_rounded_rect(
             self.canvas, DEALER_MAT_X1, DEALER_MAT_TOP, DEALER_MAT_X2, DEALER_MAT_BOTTOM, radius=DEALER_MAT_RADIUS,
-            fill="#0e4a2c", outline="#d4af37", width=2, tags=("zone_bg",),
+            fill=felt_theme["felt_dark"], outline=felt_theme["accent"], width=2, tags=("zone_bg",),
         )
-        self.canvas.create_text(CANVAS_WIDTH / 2, DEALER_MAT_LABEL_Y, text="DEALER", fill="#8fd6a8",
-                                 font=("Helvetica", 9, "bold"), tags=("zone_bg",))
+        self.canvas.create_text(CANVAS_WIDTH / 2, DEALER_MAT_LABEL_Y, text="DEALER", fill=theme.ACCENT,
+                                 font=theme.font(9, weight="bold"), tags=("zone_bg",))
         self._draw_bet_strip()
 
     def _draw_bet_strip(self):
@@ -983,13 +996,14 @@ class ThreeCardPokerFrame(tk.Frame):
         placed on it."""
         tag = f"strip_{key}"
         self.canvas.delete(tag)
+        felt_theme = self.app.settings.theme()
         amount = self.bets.get(key, 0)
         x1, y1, x2, y2 = STACK_CX - w / 2, top, STACK_CX + w / 2, top + h
-        self._draw_rounded_rect(self.canvas, x1, y1, x2, y2, radius=10, fill="#0e4a2c", outline="#d4af37",
-                                 width=2, tags=(tag,))
+        self._draw_rounded_rect(self.canvas, x1, y1, x2, y2, radius=10, fill=felt_theme["felt_dark"],
+                                 outline=felt_theme["accent"], width=2, tags=(tag,))
         cy = (y1 + y2) / 2
-        self.canvas.create_text(STACK_CX, cy, text=label, fill="#cfead9",
-                                 font=("Helvetica", 9, "bold"), tags=(tag,))
+        self.canvas.create_text(STACK_CX, cy, text=label, fill=theme.FG,
+                                 font=theme.font(9, weight="bold"), tags=(tag,))
         if amount:
             self._draw_chip_stack(tag, STACK_CX, cy, amount, max_r=20, budget=h * 0.85)
 
@@ -1000,22 +1014,20 @@ class ThreeCardPokerFrame(tk.Frame):
         the others."""
         tag = f"strip_{key}"
         self.canvas.delete(tag)
-        self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill="#0e4a2c", outline="#d4af37",
-                                 width=2, tags=(tag,))
-        self.canvas.create_text(cx, cy - r - 10, text=label, fill="#cfead9",
-                                 font=("Helvetica", 9, "bold"), tags=(tag,))
+        felt_theme = self.app.settings.theme()
+        self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=felt_theme["felt_dark"],
+                                 outline=felt_theme["accent"], width=2, tags=(tag,))
+        self.canvas.create_text(cx, cy - r - 10, text=label, fill=theme.FG,
+                                 font=theme.font(9, weight="bold"), tags=(tag,))
         # Chips get their own extra tag alongside the shared one, so the
         # payout animation can delete/redraw just the chips later without
         # touching this spot's own circle+label -- see _draw_chip_stack.
         self._draw_chip_stack((tag, f"{tag}_chips"), cx, cy, self.bets.get(key, 0), max_r=20, budget=r * 1.7)
 
-    def _draw_rounded_rect(self, canvas, x1, y1, x2, y2, radius, **kwargs):
-        points = [
-            x1 + radius, y1, x2 - radius, y1, x2, y1, x2, y1 + radius,
-            x2, y2 - radius, x2, y2, x2 - radius, y2, x1 + radius, y2,
-            x1, y2, x1, y2 - radius, x1, y1 + radius, x1, y1,
-        ]
-        return canvas.create_polygon(points, smooth=True, **kwargs)
+    # See ui/theme.py for the canonical implementation -- shared with
+    # ui/settings_screen.py's toggle switches, which drew the exact same
+    # polygon math independently before this was factored out.
+    _draw_rounded_rect = staticmethod(theme.rounded_rect)
 
     def _dealer_slot_x(self, i):
         return CARD_ROW_START_X + i * CARD_ROW_GAP
@@ -1028,7 +1040,8 @@ class ThreeCardPokerFrame(tk.Frame):
         if face_up:
             draw_card(self.canvas, x, DEALER_Y, self.result.dealer_cards[i], tags=(tag,))
         else:
-            draw_card_back(self.canvas, x, DEALER_Y, tags=(tag,))
+            draw_card_back(self.canvas, x, DEALER_Y, self._current_felt,
+                            self.app.settings.theme()["accent"], tags=(tag,))
 
     def _draw_player_card_at(self, i, card, x, y, face_up=True):
         """Draws into fan_canvas -- every caller of this is drawing the
@@ -1039,7 +1052,8 @@ class ThreeCardPokerFrame(tk.Frame):
         if face_up:
             draw_card(self.fan_canvas, x, y, card, tags=(tag,))
         else:
-            draw_card_back(self.fan_canvas, x, y, tags=(tag,))
+            draw_card_back(self.fan_canvas, x, y, self._current_felt,
+                            self.app.settings.theme()["accent"], tags=(tag,))
 
     def _fan_slots(self):
         """Top-left (x, y) for each of the player's 3 cards, in dealt order,
@@ -1055,11 +1069,12 @@ class ThreeCardPokerFrame(tk.Frame):
         -- drawn once per round, right after fan_canvas is cleared, so it
         persists underneath as individual cards are animated in/out on top
         of it. Same rounded-rectangle language as the dealer's mat, but a
-        distinct steel-blue border so the two read as clearly different
-        zones rather than identical twins."""
+        distinct neutral border (FAN_MAT_BORDER) so the two read as clearly
+        different zones rather than identical twins."""
+        felt_theme = self.app.settings.theme()
         self._draw_rounded_rect(
             self.fan_canvas, FAN_MAT_X1, FAN_MAT_TOP, FAN_MAT_X2, FAN_MAT_BOTTOM, radius=FAN_MAT_RADIUS,
-            fill="#0e4a2c", outline=FAN_MAT_BORDER, width=2, tags=("fan_mat_bg",),
+            fill=felt_theme["felt_dark"], outline=FAN_MAT_BORDER, width=2, tags=("fan_mat_bg",),
         )
 
     # ------------------------------------------------------------------ animation engine
@@ -1128,7 +1143,8 @@ class ThreeCardPokerFrame(tk.Frame):
                 if face_up_now:
                     draw_card(canvas, x, y, card, width=w, tags=(tag,))
                 else:
-                    draw_card_back(canvas, x, y, width=w, tags=(tag,))
+                    draw_card_back(canvas, x, y, self._current_felt, self.app.settings.theme()["accent"],
+                                    width=w, tags=(tag,))
             else:
                 canvas.create_rectangle(x, y, x + w, y + CARD_HEIGHT,
                                          fill="#fdfdf5", outline="#222222", tags=(tag,))
@@ -1156,7 +1172,7 @@ class ThreeCardPokerFrame(tk.Frame):
             self._run_staggered(3, 90, deal_one)
 
     def _on_player_cards_dealt(self):
-        self.result_lbl.configure(text="Your cards are dealt. Play or Fold?", fg="#f0f0f0")
+        self.result_lbl.configure(text="Your cards are dealt. Play or Fold?", fg=theme.FG)
         self._show_decision_controls()
 
     def _animate_to_rest(self, cards, target_cx, target_cy, group_tag, spot_tag=None,
@@ -1200,7 +1216,8 @@ class ThreeCardPokerFrame(tk.Frame):
                     if face_up:
                         draw_card(self.fan_canvas, cx - w / 2, cy - h / 2, cards[i], width=w, height=h, tags=(tag,))
                     else:
-                        draw_card_back(self.fan_canvas, cx - w / 2, cy - h / 2, width=w, height=h, tags=(tag,))
+                        draw_card_back(self.fan_canvas, cx - w / 2, cy - h / 2, self._current_felt,
+                                        self.app.settings.theme()["accent"], width=w, height=h, tags=(tag,))
 
         def grow_frame(t):
             for new_pos, orig_i in enumerate(order):
@@ -1215,7 +1232,8 @@ class ThreeCardPokerFrame(tk.Frame):
                         draw_card(self.canvas, tcx - w / 2, tcy - h / 2, cards[orig_i], width=w, height=h,
                                   tags=draw_tags)
                     else:
-                        draw_card_back(self.canvas, tcx - w / 2, tcy - h / 2, width=w, height=h, tags=draw_tags)
+                        draw_card_back(self.canvas, tcx - w / 2, tcy - h / 2, self._current_felt,
+                                        self.app.settings.theme()["accent"], width=w, height=h, tags=draw_tags)
                     if spot_tag:
                         self.canvas.tag_lower(tag, spot_tag)
 
@@ -1506,11 +1524,11 @@ class ThreeCardPokerFrame(tk.Frame):
             "push": "Push — stakes returned.",
         }[result.outcome]
         color = {
-            "fold": "#cccccc",
-            "dealer_no_qualify": "#4be36b",
-            "win": "#4be36b",
-            "lose": "#e05555",
-            "push": "#d4af37",
+            "fold": theme.FG_DIM,
+            "dealer_no_qualify": theme.WIN_COLOR,
+            "win": theme.WIN_COLOR,
+            "lose": theme.LOSE_COLOR,
+            "push": theme.PUSH_COLOR,
         }[result.outcome]
 
         player_hand_name = result.player_eval[1]
@@ -1548,24 +1566,22 @@ class ThreeCardPokerFrame(tk.Frame):
         canvas.delete("all")
         w, h = PAYOUT_PANEL_WIDTH, PAYOUT_PANEL_HEIGHT
 
-        canvas.create_rectangle(3, 3, w - 3, h - 3, fill="#0e2a1a", outline="#d4af37", width=2)
-        canvas.create_rectangle(8, 8, w - 8, h - 8, outline="#3a6b4c", width=1)
-        canvas.create_text(w / 2, 22, text="ROUND RESULT", fill="#d4af37", font=("Georgia", 12, "bold"))
+        theme.recessed_panel(canvas, 0, 0, w, h, title="ROUND RESULT")
 
         rows = self._payout_rows(result)
         y = 46
         for label, net in rows:
-            canvas.create_text(24, y, text=label, fill="#f0f0f0", font=("Helvetica", 10), anchor="w")
+            canvas.create_text(24, y, text=label, fill=theme.FG, font=theme.font(10), anchor="w")
             canvas.create_text(w - 24, y, text=_format_signed(net), fill=_net_color(net),
-                                font=("Helvetica", 10, "bold"), anchor="e")
+                                font=theme.font(10, weight="bold"), anchor="e")
             y += 20
 
         y += 6
-        canvas.create_line(24, y, w - 24, y, fill="#3a6b4c")
+        canvas.create_line(24, y, w - 24, y, fill=theme.BORDER)
         y += 20
-        canvas.create_text(24, y, text="Round Net", fill="#f0f0f0", font=("Helvetica", 11, "bold"), anchor="w")
+        canvas.create_text(24, y, text="Round Net", fill=theme.FG, font=theme.font(11, weight="bold"), anchor="w")
         canvas.create_text(w - 24, y, text=_format_signed(result.net_result), fill=_net_color(result.net_result),
-                            font=("Helvetica", 12, "bold"), anchor="e")
+                            font=theme.font(12, weight="bold"), anchor="e")
 
     # ------------------------------------------------------------------ lifecycle
     def on_show(self):

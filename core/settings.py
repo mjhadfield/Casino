@@ -4,15 +4,19 @@ from core.persistence import load_json, save_json
 DEFAULT_SETTINGS = {
     "sound_enabled": True,
     "animations_enabled": True,
-    "table_theme": "Emerald",
+    "table_theme": "Matrix",
     "jackpot_rate_per_second": 0.01,
 }
 
+# Table felt options -- purely a per-table cosmetic choice (the poker table's
+# own felt background + trim), independent of the app's one fixed global
+# accent (see ui/theme.py) used everywhere else. Reskinned to fit that same
+# terminal aesthetic without becoming a global accent picker themselves.
 TABLE_THEMES = {
-    "Emerald": {"felt": "#0b3d24", "felt_dark": "#062616", "accent": "#d4af37"},
-    "Crimson": {"felt": "#4a0f1a", "felt_dark": "#2b0810", "accent": "#d4af37"},
-    "Sapphire": {"felt": "#0b2545", "felt_dark": "#071730", "accent": "#c0c0c0"},
-    "Graphite": {"felt": "#26282b", "felt_dark": "#0b0c0c", "accent": "#d0cdcd"},
+    "Matrix": {"felt": "#0a2e14", "felt_dark": "#051a0b", "accent": "#39ff88"},
+    "Amber CRT": {"felt": "#3a2308", "felt_dark": "#1f1204", "accent": "#ffb347"},
+    "Ice": {"felt": "#0d2a45", "felt_dark": "#071a2c", "accent": "#5fd4ff"},
+    "Mono": {"felt": "#2a2a2a", "felt_dark": "#151515", "accent": "#cfd6d1"},
 }
 
 # Available chip denominations for bet controls -- shared across games.
@@ -32,7 +36,7 @@ class SettingsManager:
         self._save()
 
     def theme(self):
-        return TABLE_THEMES.get(self.data.get("table_theme", "Emerald"), TABLE_THEMES["Emerald"])
+        return TABLE_THEMES.get(self.data.get("table_theme", "Matrix"), TABLE_THEMES["Matrix"])
 
     def _save(self):
         save_json(self.save_path, self.data)

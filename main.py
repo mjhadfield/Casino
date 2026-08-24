@@ -19,6 +19,7 @@ from core.finances import FinanceManager
 from core.game_stats import GameStatsManager
 from core.jackpot import JackpotManager
 from core.settings import SettingsManager
+from ui import theme
 from ui.main_menu import MainMenuFrame
 from ui.finances_screen import FinancesFrame
 from ui.settings_screen import SettingsFrame
@@ -44,7 +45,7 @@ class CasinoApp(tk.Tk):
         # a minsize floor: this is headed for a static-size embed in a
         # webpage, so a resizable window isn't a real requirement here.
         self.resizable(False, False)
-        self.configure(bg="#0b0b0b")
+        self.configure(bg=theme.BG)
 
         self.data_dir = DATA_DIR
         self.finance = FinanceManager(FINANCE_SAVE_PATH)
@@ -55,7 +56,7 @@ class CasinoApp(tk.Tk):
         # is showing -- started here rather than by any one game's frame.
         self.jackpot.start(self)
 
-        container = tk.Frame(self, bg="#0b0b0b")
+        container = tk.Frame(self, bg=theme.BG)
         container.pack(fill="both", expand=True)
         container.grid_rowconfigure(0, weight=1)
         container.grid_columnconfigure(0, weight=1)

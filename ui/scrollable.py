@@ -14,12 +14,18 @@ plain body Frame used to go, then pack the screen's actual content into its
 """
 import tkinter as tk
 
+from ui import theme
+
 
 class ScrollableFrame(tk.Frame):
     def __init__(self, parent, bg):
         super().__init__(parent, bg=bg)
         self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0)
-        self.scrollbar = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.scrollbar = tk.Scrollbar(
+            self, orient="vertical", command=self.canvas.yview,
+            bg=theme.GREY_BTN_BG, troughcolor=theme.BG, activebackground=theme.ACCENT_DIM_BG,
+            highlightthickness=0, bd=0,
+        )
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         # Scrollbar is deliberately not packed yet -- only shown once the
         # content actually overflows, see _update_scrollbar_visibility.

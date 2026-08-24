@@ -1,10 +1,6 @@
 import tkinter as tk
 
-from ui import game_icons
-
-BG = "#0b0b0b"
-BAR_BG = "#111111"
-GOLD = "#d4af37"
+from ui import game_icons, theme
 
 # One row per game tile: (icon, name, subtitle, enabled, frame_name).
 # `icon` is either a single glyph string, rendered as text (the way Three
@@ -50,49 +46,56 @@ TILE_TEXT_WRAP = 190
 
 class MainMenuFrame(tk.Frame):
     def __init__(self, parent, app):
-        super().__init__(parent, bg=BG)
+        super().__init__(parent, bg=theme.BG)
         self.app = app
 
         # --- top bar ---
-        top_bar = tk.Frame(self, bg=BAR_BG)
+        top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
         top_bar.pack(fill="x", side="top")
 
+        theme.traffic_lights(top_bar, bg=theme.BG_ELEVATED).pack(side="left", padx=(20, 10), pady=14)
         tk.Label(
-            top_bar, text="\u2660 HADFIELD CASINO \u2663", bg=BAR_BG, fg=GOLD,
-            font=("Georgia", 18, "bold"),
-        ).pack(side="left", padx=20, pady=14)
+            top_bar, text="HADFIELD CASINO", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
+            font=theme.font(18, weight="bold"),
+        ).pack(side="left")
 
         # Packed right-to-left (side="right" stacks inward from the right
         # edge, each new one landing left of the previous), so this order --
         # Cashier, then Stats, then Settings -- reads left-to-right on
         # screen as Settings, Stats, Cashier.
         self.balance_btn = tk.Button(
-            top_bar, text="Cashier: £0.00", bg="#1c1c1c", fg="#4be36b",
-            activebackground="#2a2a2a", activeforeground="#4be36b",
-            font=("Helvetica", 12, "bold"), relief="flat", padx=14, pady=8,
+            top_bar, text="Cashier: £0.00", bg=theme.BG_ELEVATED, fg=theme.WIN_COLOR,
+            activebackground=theme.ACCENT_DIM_BG_ELEVATED, activeforeground=theme.WIN_COLOR,
+            font=theme.font(12, weight="bold"), relief="flat", padx=14, pady=8,
+            highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
             cursor="hand2", command=lambda: app.show_frame("finances"),
         )
         self.balance_btn.pack(side="right", padx=(6, 20), pady=14)
 
         tk.Button(
-            top_bar, text="\U0001F4CA Stats", bg="#1c1c1c", fg="#cccccc",
-            activebackground="#2a2a2a", activeforeground="#ffffff",
-            font=("Helvetica", 12), relief="flat", padx=14, pady=8,
+            top_bar, text="\U0001F4CA Stats", bg=theme.BG_ELEVATED, fg=theme.FG_DIM,
+            activebackground=theme.BORDER, activeforeground=theme.FG,
+            font=theme.font(12), relief="flat", padx=14, pady=8,
+            highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
             cursor="hand2", command=lambda: app.show_frame("stats"),
         ).pack(side="right", padx=6, pady=14)
 
         tk.Button(
-            top_bar, text="\u2699 Settings", bg="#1c1c1c", fg="#cccccc",
-            activebackground="#2a2a2a", activeforeground="#ffffff",
-            font=("Helvetica", 12), relief="flat", padx=14, pady=8,
+            top_bar, text="⚙ Settings", bg=theme.BG_ELEVATED, fg=theme.FG_DIM,
+            activebackground=theme.BORDER, activeforeground=theme.FG,
+            font=theme.font(12), relief="flat", padx=14, pady=8,
+            highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
             cursor="hand2", command=lambda: app.show_frame("settings"),
         ).pack(side="right", padx=6, pady=14)
 
+        breadcrumb_lbl = theme.breadcrumb(top_bar, "menu", bg=theme.BG_ELEVATED)
+        breadcrumb_lbl.pack(side="right", padx=(6, 6), pady=14)
+
         # --- body ---
-        body = tk.Frame(self, bg=BG)
+        body = tk.Frame(self, bg=theme.BG)
         body.pack(fill="both", expand=True)
 
-        grid = tk.Frame(body, bg=BG)
+        grid = tk.Frame(body, bg=theme.BG)
         grid.pack(pady=30)
 
         for i, (icon, name, subtitle, enabled, frame_name) in enumerate(GAMES):
@@ -101,18 +104,33 @@ class MainMenuFrame(tk.Frame):
             self._make_game_tile(grid, row, col, icon, name, subtitle, enabled, command=command)
 
     def _make_game_tile(self, grid, row, col, icon, name, subtitle, enabled, command=None):
-        bg = "#15321f" if enabled else "#161616"
-        fg = "#f2f2f2" if enabled else "#555555"
-        border = GOLD if enabled else "#333333"
+        bg = theme.ACCENT_DIM_BG if enabled else theme.GREY_BTN_BG
+        fg = theme.FG if enabled else theme.GREY_BTN_TEXT
+        sub_fg = theme.FG_DIM if enabled else theme.GREY_BTN_TEXT
 
-        tile = tk.Frame(grid, bg=bg, width=TILE_WIDTH, height=TILE_HEIGHT,
-                         highlightbackground=border, highlightthickness=2)
+        tile = tk.Frame(
+            grid, bg=bg, width=TILE_WIDTH, height=TILE_HEIGHT,
+            highlightbackground=theme.ACCENT if enabled else bg,
+            highlightthickness=2 if enabled else 0,
+        )
         tile.grid(row=row, column=col, padx=14, pady=14)
         # Contents are placed with pack() -- pack_propagate (not
         # grid_propagate, which only governs *grid*-managed children) is
         # what stops a longer wrapped subtitle from growing this particular
         # tile taller/wider than the fixed size every tile is given above.
         tile.pack_propagate(False)
+
+        if not enabled:
+            # A Frame border can only ever be solid -- the site's dashed
+            # "soon" look has to be Canvas-drawn, sized to exactly cover the
+            # tile and placed behind everything else (created first, so
+            # every later-packed child renders on top of it).
+            border_canvas = tk.Canvas(tile, width=TILE_WIDTH, height=TILE_HEIGHT, bg=bg, highlightthickness=0)
+            border_canvas.place(x=0, y=0)
+            theme.dashed_rect(
+                border_canvas, 2, 2, TILE_WIDTH - 2, TILE_HEIGHT - 2, radius=theme.RADIUS,
+                outline=theme.GREY_BTN_BORDER, width=1.5, dash=(5, 3), fill="",
+            )
 
         if callable(icon):
             # A vector icon (game_icons.draw_*): fixed-size canvas so it's
@@ -121,24 +139,30 @@ class MainMenuFrame(tk.Frame):
                                      bg=bg, highlightthickness=0)
             icon(icon_widget, ICON_CANVAS_SIZE / 2, ICON_CANVAS_SIZE / 2, ICON_DRAW_SIZE, fg)
         else:
-            icon_widget = tk.Label(tile, text=icon, bg=bg, fg=fg, font=("Helvetica", 36))
+            icon_widget = tk.Label(tile, text=icon, bg=bg, fg=fg, font=theme.font(36))
         icon_widget.pack(pady=(16, 4))
-        name_lbl = tk.Label(tile, text=name, bg=bg, fg=fg, font=("Helvetica", 13, "bold"),
+        name_lbl = tk.Label(tile, text=name, bg=bg, fg=fg, font=theme.font(13, weight="bold"),
                              wraplength=TILE_TEXT_WRAP, justify="center")
         name_lbl.pack()
         # height=2 reserves the same two-line footprint whether this
         # particular subtitle wraps to one line or two -- otherwise the
-        # "Coming soon" tag below would land at a different height on
-        # almost every tile depending on how its subtitle happened to wrap.
-        sub_lbl = tk.Label(tile, text=subtitle, bg=bg, fg=("#888888" if enabled else "#444444"),
-                            font=("Helvetica", 9), wraplength=TILE_TEXT_WRAP, justify="center", height=2)
+        # status tag below would land at a different height on almost every
+        # tile depending on how its subtitle happened to wrap.
+        sub_lbl = tk.Label(tile, text=subtitle, bg=bg, fg=sub_fg,
+                            font=theme.font(9), wraplength=TILE_TEXT_WRAP, justify="center", height=2)
         sub_lbl.pack(pady=(4, 0))
-        status_lbl = tk.Label(tile, text=("" if enabled else "COMING SOON"), bg=bg, fg="#8a7328",
-                               font=("Helvetica", 8, "bold"))
-        status_lbl.pack(pady=(4, 0))
+
+        status_widgets = [tile, icon_widget, name_lbl, sub_lbl]
+        if not enabled:
+            # A small rounded "SOON" pill, matching the site's .link-btn__tag
+            # -- replaces the old plain "COMING SOON" text label.
+            pill_canvas = tk.Canvas(tile, width=TILE_TEXT_WRAP, height=20, bg=bg, highlightthickness=0)
+            pill_canvas.pack(pady=(6, 0))
+            theme.pill(pill_canvas, TILE_TEXT_WRAP / 2, 10, "SOON")
+            status_widgets.append(pill_canvas)
 
         if enabled and command:
-            for widget in (tile, icon_widget, name_lbl, sub_lbl, status_lbl):
+            for widget in status_widgets:
                 widget.configure(cursor="hand2")
                 widget.bind("<Button-1>", lambda _e: command())
 

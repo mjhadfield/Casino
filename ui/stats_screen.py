@@ -1,11 +1,8 @@
 import tkinter as tk
 
 from games.three_card_poker import logic as tcp_logic
+from ui import theme
 from ui.scrollable import ScrollableFrame
-
-BG = "#0b0b0b"
-PANEL_BG = "#131313"
-GOLD = "#d4af37"
 
 # One entry per game the Stats screen knows about -- "bet_types" and
 # "hand_labels" are the ordered lists each game's own logic module exposes
@@ -35,47 +32,56 @@ LIFETIME_STAT_ROWS = [
 
 class StatsFrame(tk.Frame):
     def __init__(self, parent, app):
-        super().__init__(parent, bg=BG)
+        super().__init__(parent, bg=theme.BG)
         self.app = app
 
-        top_bar = tk.Frame(self, bg="#111111")
+        top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
         top_bar.pack(fill="x")
+        theme.traffic_lights(top_bar, bg=theme.BG_ELEVATED).pack(side="left", padx=(20, 10), pady=12)
         tk.Button(
-            top_bar, text="← Back", bg="#1c1c1c", fg="#cccccc", relief="flat",
-            font=("Helvetica", 11), padx=12, pady=6, cursor="hand2",
+            top_bar, text="← Back", bg=theme.BG_ELEVATED, fg=theme.FG_DIM, relief="flat",
+            font=theme.font(11), padx=12, pady=6, cursor="hand2",
+            highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
             command=lambda: app.show_frame("menu"),
-        ).pack(side="left", padx=20, pady=12)
-        tk.Label(top_bar, text="Stats", bg="#111111", fg=GOLD,
-                 font=("Georgia", 18, "bold")).pack(side="left", padx=10)
+        ).pack(side="left", padx=(0, 10), pady=12)
+        tk.Label(top_bar, text="Stats", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
+                 font=theme.font(18, weight="bold")).pack(side="left", padx=10)
+        theme.breadcrumb(top_bar, "stats", bg=theme.BG_ELEVATED).pack(side="right", padx=20, pady=12)
 
         # Scrollable -- lifetime stats plus a growing list of per-game
         # sections easily outgrows the window, especially once more games
         # are added; see ui/scrollable.py.
-        scroll = ScrollableFrame(self, bg=BG)
+        scroll = ScrollableFrame(self, bg=theme.BG)
         scroll.pack(fill="both", expand=True)
-        self.body = tk.Frame(scroll.inner, bg=BG)
+        self.body = tk.Frame(scroll.inner, bg=theme.BG)
         self.body.pack(fill="both", expand=True, padx=40, pady=20)
 
         self._build_lifetime_panel()
         self._build_game_sections()
 
+    def _make_panel(self, parent, title):
+        """Standard bordered "terminal panel" -- see finances_screen's
+        identical helper; a plain Frame + title Label rather than a
+        tk.LabelFrame, whose relief="groove" can't take a clean border."""
+        panel = tk.Frame(parent, bg=theme.BG_ELEVATED, highlightbackground=theme.BORDER, highlightthickness=1)
+        tk.Label(panel, text=title, bg=theme.BG_ELEVATED, fg=theme.ACCENT,
+                 font=theme.font(11, weight="bold")).pack(anchor="w", padx=20, pady=(12, 0))
+        return panel
+
     # ------------------------------------------------------------------ lifetime stats
     def _build_lifetime_panel(self):
-        panel = tk.LabelFrame(
-            self.body, text=" Lifetime Statistics ", bg=PANEL_BG, fg=GOLD,
-            font=("Helvetica", 11, "bold"), bd=2, relief="groove",
-        )
+        panel = self._make_panel(self.body, "$ stats --lifetime")
         panel.pack(fill="x", pady=(10, 24))
-        grid = tk.Frame(panel, bg=PANEL_BG)
+        grid = tk.Frame(panel, bg=theme.BG_ELEVATED)
         grid.pack(padx=20, pady=15, fill="x")
 
         self.lifetime_labels = {}
         for i, (key, label, _kind) in enumerate(LIFETIME_STAT_ROWS):
             r, c = divmod(i, 2)
-            tk.Label(grid, text=label + ":", bg=PANEL_BG, fg="#aaaaaa",
-                     font=("Helvetica", 10), anchor="w").grid(row=r, column=c * 2, sticky="w", padx=(0, 6), pady=4)
-            val_lbl = tk.Label(grid, text="-", bg=PANEL_BG, fg="#f0f0f0",
-                                font=("Helvetica", 10, "bold"), anchor="w")
+            tk.Label(grid, text=label + ":", bg=theme.BG_ELEVATED, fg=theme.FG_DIM,
+                     font=theme.font(10), anchor="w").grid(row=r, column=c * 2, sticky="w", padx=(0, 6), pady=4)
+            val_lbl = tk.Label(grid, text="-", bg=theme.BG_ELEVATED, fg=theme.FG,
+                                font=theme.font(10, weight="bold"), anchor="w")
             val_lbl.grid(row=r, column=c * 2 + 1, sticky="w", padx=(0, 30), pady=4)
             self.lifetime_labels[key] = val_lbl
 
@@ -85,7 +91,7 @@ class StatsFrame(tk.Frame):
             lbl = self.lifetime_labels[key]
             if key == "net":
                 net = f.lifetime_net()
-                lbl.configure(text=f"£{net:,.2f}", fg="#4be36b" if net >= 0 else "#e05555")
+                lbl.configure(text=f"£{net:,.2f}", fg=theme.WIN_COLOR if net >= 0 else theme.LOSE_COLOR)
             elif kind == "count":
                 lbl.configure(text=str(f.data[key]))
             else:
@@ -95,12 +101,9 @@ class StatsFrame(tk.Frame):
     def _build_game_sections(self):
         self.game_panels = []  # (section, panel_body) -- refreshed on every on_show
         for section in GAME_SECTIONS:
-            panel = tk.LabelFrame(
-                self.body, text=f" {section['label']} ", bg=PANEL_BG, fg=GOLD,
-                font=("Helvetica", 11, "bold"), bd=2, relief="groove",
-            )
+            panel = self._make_panel(self.body, f"$ stats --game {section['key']}")
             panel.pack(fill="x", pady=(0, 20))
-            panel_body = tk.Frame(panel, bg=PANEL_BG)
+            panel_body = tk.Frame(panel, bg=theme.BG_ELEVATED)
             panel_body.pack(fill="x", padx=20, pady=15)
             self.game_panels.append((section, panel_body))
 
@@ -110,8 +113,8 @@ class StatsFrame(tk.Frame):
                 w.destroy()
             if not section["enabled"]:
                 tk.Label(
-                    panel_body, text="Coming soon.", bg=PANEL_BG, fg="#666666",
-                    font=("Helvetica", 10, "italic"),
+                    panel_body, text="Coming soon.", bg=theme.BG_ELEVATED, fg=theme.GREY_BTN_TEXT,
+                    font=(theme.mono_family(), 10, "italic"),
                 ).pack(anchor="w")
                 continue
 
@@ -119,8 +122,8 @@ class StatsFrame(tk.Frame):
             hands = self.app.game_stats.game_hand_counts(section["key"])
             if not bets and not hands:
                 tk.Label(
-                    panel_body, text="No hands played yet.", bg=PANEL_BG, fg="#888888",
-                    font=("Helvetica", 10, "italic"),
+                    panel_body, text="No hands played yet.", bg=theme.BG_ELEVATED, fg=theme.FG_DIM,
+                    font=(theme.mono_family(), 10, "italic"),
                 ).pack(anchor="w")
                 continue
 
@@ -135,8 +138,8 @@ class StatsFrame(tk.Frame):
             edge = self.app.game_stats.game_house_edge(section["key"])
             edge_text = f"{edge:.2f}%" if edge is not None else "-"
             tk.Label(
-                panel_body, text=f"Combined across every bet: {edge_text}", bg=PANEL_BG, fg="#f0f0f0",
-                font=("Helvetica", 10, "bold"),
+                panel_body, text=f"Combined across every bet: {edge_text}", bg=theme.BG_ELEVATED, fg=theme.FG,
+                font=theme.font(10, weight="bold"),
             ).pack(anchor="w", pady=(2, 8))
             self._build_bet_table(panel_body, section["bet_types"], bets)
 
@@ -162,12 +165,12 @@ class StatsFrame(tk.Frame):
         played_pct = (played / total * 100) if total else 0.0
         folded_pct = (folded / total * 100) if total else 0.0
         tk.Label(
-            parent, text=f"Total Hands: {total}", bg=PANEL_BG, fg="#f0f0f0",
-            font=("Helvetica", 11, "bold"),
+            parent, text=f"Total Hands: {total}", bg=theme.BG_ELEVATED, fg=theme.FG,
+            font=theme.font(11, weight="bold"),
         ).pack(anchor="w", pady=(0, 4))
         tk.Label(
             parent, text=f"Played: {played} ({played_pct:.1f}%)              Folded: {folded} ({folded_pct:.1f}%)",
-            bg=PANEL_BG, fg="#aaaaaa", font=("Helvetica", 10),
+            bg=theme.BG_ELEVATED, fg=theme.FG_DIM, font=theme.font(10),
         ).pack(anchor="w", pady=(0, 2))
 
         played_correct = played - strategy_counts.get("played_incorrectly", 0)
@@ -178,12 +181,12 @@ class StatsFrame(tk.Frame):
             parent,
             text=f"Correctly: {played_correct}/{played} [{played_correct_pct:.1f}%]          "
                  f"Correctly: {folded_correct}/{folded} [{folded_correct_pct:.1f}%]",
-            bg=PANEL_BG, fg="#777777", font=("Helvetica", 9),
+            bg=theme.BG_ELEVATED, fg=theme.GREY_BTN_TEXT, font=theme.font(9),
         ).pack(anchor="w", pady=(0, 12))
 
     def _section_header(self, parent, text, pady_top=0):
         tk.Label(
-            parent, text=text.upper(), bg=PANEL_BG, fg="#8fd6a8", font=("Helvetica", 10, "bold"),
+            parent, text=text.upper(), bg=theme.BG_ELEVATED, fg=theme.ACCENT, font=theme.font(10, weight="bold"),
         ).pack(anchor="w", pady=(pady_top, 6))
 
     def _build_table(self, parent, headers, rows):
@@ -194,17 +197,17 @@ class StatsFrame(tk.Frame):
         weight, the value columns are dragged out to the panel's far right
         edge, opening up a wide, eye-tiring gap between a label and its own
         value; unstretched, every column just hugs its own content."""
-        table = tk.Frame(parent, bg=PANEL_BG)
+        table = tk.Frame(parent, bg=theme.BG_ELEVATED)
         table.pack(anchor="w")
         for c, text in enumerate(headers):
             tk.Label(
-                table, text=text, bg=PANEL_BG, fg="#8fd6a8", font=("Helvetica", 9, "bold"),
+                table, text=text, bg=theme.BG_ELEVATED, fg=theme.ACCENT, font=theme.font(9, weight="bold"),
                 anchor="w" if c == 0 else "e",
             ).grid(row=0, column=c, sticky="ew", padx=(0 if c == 0 else 18, 0), pady=(0, 6))
         for r, (values, colors) in enumerate(rows, start=1):
             for c, (text, color) in enumerate(zip(values, colors)):
                 tk.Label(
-                    table, text=text, bg=PANEL_BG, fg=color, font=("Helvetica", 9),
+                    table, text=text, bg=theme.BG_ELEVATED, fg=color, font=theme.font(9),
                     anchor="w" if c == 0 else "e",
                 ).grid(row=r, column=c, sticky="ew", padx=(0 if c == 0 else 18, 0), pady=3)
 
@@ -234,8 +237,8 @@ class StatsFrame(tk.Frame):
                 f"{wins} / {losses} / {pushes}",
                 edge_text,
             ]
-            net_color = "#4be36b" if net > 0 else ("#e05555" if net < 0 else "#f0f0f0")
-            rows.append((values, ["#f0f0f0", "#f0f0f0", "#f0f0f0", net_color, "#f0f0f0", "#f0f0f0"]))
+            net_color = theme.WIN_COLOR if net > 0 else (theme.LOSE_COLOR if net < 0 else theme.FG)
+            rows.append((values, [theme.FG, theme.FG, theme.FG, net_color, theme.FG, theme.FG]))
         self._build_table(parent, headers, rows)
 
     def _build_hand_table(self, parent, hand_labels, hand_counts):
@@ -245,7 +248,7 @@ class StatsFrame(tk.Frame):
         for label in hand_labels:
             count = hand_counts.get(label, 0)
             pct = (count / total * 100) if total else 0.0
-            rows.append(([label, str(count), f"{pct:.1f}%"], ["#f0f0f0", "#f0f0f0", "#f0f0f0"]))
+            rows.append(([label, str(count), f"{pct:.1f}%"], [theme.FG, theme.FG, theme.FG]))
         self._build_table(parent, headers, rows)
 
     # ------------------------------------------------------------------ lifecycle

@@ -17,14 +17,24 @@ its own progressive jackpot can reuse it.
 import math
 import tkinter as tk
 
+from ui import theme
+
 REEL_DIGIT_WIDTH = 20
 REEL_DIGIT_HEIGHT = 32
-REEL_FONT = ("Helvetica", 18, "bold")
+# Not resolved at import time -- theme.font() needs a live Tk root, which
+# doesn't exist yet when this module is first imported (see _reel_font()).
+# Deliberately NOT reskinned to the mint accent -- this red "LED" look is a
+# signature "arcade jackpot" accent that's meant to pop against the new
+# terminal palette rather than blend into it. Leave it red.
 REEL_BG = "#0a0a0a"           # recessed "LED window" look, independent of the felt theme
 REEL_FG = "#ff4136"           # classic red jackpot-meter digits
 
 INTEGER_DIGITS = 5   # fixed so the ceiling (£50,000.00) never needs more room
 DECIMAL_DIGITS = 2
+
+
+def _reel_font():
+    return theme.font(18, weight="bold")
 
 
 class _DigitReel(tk.Canvas):
@@ -40,6 +50,7 @@ class _DigitReel(tk.Canvas):
                           bg=REEL_BG, highlightthickness=0)
         self.rolling = rolling
         self._last_key = None
+        self._font = _reel_font()
         self.set_wheel_position(0.0)
 
     def set_wheel_position(self, w):
@@ -59,10 +70,10 @@ class _DigitReel(tk.Canvas):
         cy = REEL_DIGIT_HEIGHT / 2
         dy = frac * REEL_DIGIT_HEIGHT
         self.create_text(REEL_DIGIT_WIDTH / 2, cy - dy, text=str(digit),
-                          fill=REEL_FG, font=REEL_FONT)
+                          fill=REEL_FG, font=self._font)
         if frac:
             self.create_text(REEL_DIGIT_WIDTH / 2, cy - dy + REEL_DIGIT_HEIGHT, text=str((digit + 1) % 10),
-                              fill=REEL_FG, font=REEL_FONT)
+                              fill=REEL_FG, font=self._font)
 
 
 class JackpotDisplay(tk.Frame):
@@ -78,26 +89,27 @@ class JackpotDisplay(tk.Frame):
     """
 
     def __init__(self, parent, title="PROGRESSIVE JACKPOT", rows=None, highlight_row=None,
-                 panel_bg="#0e2a1a", border="#d4af37"):
-        super().__init__(parent, bg=panel_bg, highlightbackground=border, highlightthickness=2)
+                 panel_bg=theme.BG_ELEVATED, border=theme.ACCENT):
+        super().__init__(parent, bg=panel_bg, highlightbackground=border, highlightthickness=1)
+        reel_font = _reel_font()
 
-        tk.Label(self, text=title, bg=panel_bg, fg="#d4af37",
-                 font=("Georgia", 12, "bold")).pack(pady=(10, 6))
+        tk.Label(self, text=title, bg=panel_bg, fg=border,
+                 font=theme.font(12, weight="bold")).pack(pady=(10, 6))
 
         meter = tk.Frame(self, bg=REEL_BG, highlightbackground="#3a1010", highlightthickness=2)
         meter.pack(padx=14)
         reel_row = tk.Frame(meter, bg=REEL_BG)
         reel_row.pack(padx=8, pady=6)
 
-        tk.Label(reel_row, text="£", bg=REEL_BG, fg=REEL_FG, font=REEL_FONT).pack(side="left")
+        tk.Label(reel_row, text="£", bg=REEL_BG, fg=REEL_FG, font=reel_font).pack(side="left")
         self._int_reels = []
         for i in range(INTEGER_DIGITS):
             if i == INTEGER_DIGITS - 3:  # thousands separator, e.g. "50,000"
-                tk.Label(reel_row, text=",", bg=REEL_BG, fg=REEL_FG, font=REEL_FONT).pack(side="left")
+                tk.Label(reel_row, text=",", bg=REEL_BG, fg=REEL_FG, font=reel_font).pack(side="left")
             reel = _DigitReel(reel_row, rolling=False)  # whole pounds: static, flicks over on carry
             reel.pack(side="left")
             self._int_reels.append(reel)
-        tk.Label(reel_row, text=".", bg=REEL_BG, fg=REEL_FG, font=REEL_FONT).pack(side="left")
+        tk.Label(reel_row, text=".", bg=REEL_BG, fg=REEL_FG, font=reel_font).pack(side="left")
         self._dec_reels = [_DigitReel(reel_row, rolling=True) for _ in range(DECIMAL_DIGITS)]  # pennies: rolls
         for reel in self._dec_reels:
             reel.pack(side="left")
@@ -107,8 +119,8 @@ class JackpotDisplay(tk.Frame):
             table = tk.Frame(self, bg=panel_bg)
             table.pack(fill="x", padx=16, pady=(0, 12))
             for i, (label, value_text) in enumerate(rows):
-                fg = "#ff4136" if i == highlight_row else "#f0f0f0"
-                font = ("Helvetica", 9, "bold") if i == highlight_row else ("Helvetica", 9)
+                fg = REEL_FG if i == highlight_row else theme.FG
+                font = theme.font(9, weight="bold") if i == highlight_row else theme.font(9)
                 row = tk.Frame(table, bg=panel_bg)
                 row.pack(fill="x", pady=2)
                 tk.Label(row, text=label, bg=panel_bg, fg=fg, font=font, anchor="w").pack(side="left")

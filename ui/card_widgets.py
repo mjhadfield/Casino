@@ -53,15 +53,21 @@ def draw_card(canvas, x, y, card, width=CARD_WIDTH, height=CARD_HEIGHT, tags=())
     )
 
 
-def draw_card_back(canvas, x, y, accent="#d4af37", width=CARD_WIDTH, height=CARD_HEIGHT, tags=()):
+def draw_card_back(canvas, x, y, felt, accent="#35e0a0", width=CARD_WIDTH, height=CARD_HEIGHT, tags=()):
     """Draws a face-down card back at (x, y). Scales the same way draw_card
-    does -- see its docstring."""
+    does -- see its docstring.
+
+    `felt`/`accent` are the caller's *current* table-felt theme colours
+    (games/three_card_poker/ui.py tracks `self._current_felt` and reads
+    `self.app.settings.theme()["accent"]` for exactly this) -- required
+    rather than defaulted, so a card back always matches whichever felt
+    theme is actually active instead of a stale hardcoded green/gold."""
     tags = _card_tags(tags)
     inset = 6 * min(width / CARD_WIDTH, height / CARD_HEIGHT)
     symbol_font = max(8, round(20 * height / CARD_HEIGHT))
     canvas.create_rectangle(
         x, y, x + width, y + height,
-        fill="#0b3d24", outline=accent, width=2, tags=tags,
+        fill=felt, outline=accent, width=2, tags=tags,
     )
     canvas.create_rectangle(
         x + inset, y + inset, x + width - inset, y + height - inset,
