@@ -31,6 +31,9 @@ GAMES = [
      False, None),
     (game_icons.draw_let_it_ride_icon, "Let It Ride", "3 starter bets -- pull back or let it ride",
      False, None),
+    ("?", "Unknown", "<REDACTED>", False, None),
+    ("?", "Unknown", "<REDACTED>", False, None),
+    ("?", "Unknown", "<REDACTED>", False, None),
 ]
 GAMES_PER_ROW = 3
 
@@ -89,12 +92,8 @@ class MainMenuFrame(tk.Frame):
         body = tk.Frame(self, bg=BG)
         body.pack(fill="both", expand=True)
 
-        tk.Label(
-            body, text="Choose a game", bg=BG, fg="#aaaaaa", font=("Helvetica", 13),
-        ).pack(pady=(30, 10))
-
         grid = tk.Frame(body, bg=BG)
-        grid.pack(pady=10)
+        grid.pack(pady=30)
 
         for i, (icon, name, subtitle, enabled, frame_name) in enumerate(GAMES):
             row, col = divmod(i, GAMES_PER_ROW)
