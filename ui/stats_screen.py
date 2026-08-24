@@ -124,7 +124,8 @@ class StatsFrame(tk.Frame):
                 ).pack(anchor="w")
                 continue
 
-            self._build_hands_summary(panel_body, hands)
+            strategy = self.app.game_stats.game_strategy_incorrect_counts(section["key"])
+            self._build_hands_summary(panel_body, hands, strategy)
 
             # Everything wagered/returned so far, grouped under one house-edge
             # figure per bet type plus the combined figure across all of them
@@ -142,13 +143,19 @@ class StatsFrame(tk.Frame):
             self._section_header(panel_body, "Hands Made", pady_top=18)
             self._build_hand_table(panel_body, section["hand_labels"], hands)
 
-    def _build_hands_summary(self, parent, hand_counts):
+    def _build_hands_summary(self, parent, hand_counts, strategy_counts):
         """Total rounds played -- broken down into Played vs Folded, each as
         a percentage of that total -- right at the top of the game's
         section, above the more detailed breakdowns below it. "Folded" is
         just the "Fold" bucket from hand_counts; every other bucket in it
         (High Card, Pair, ... Royal Flush) is a hand that was actually
-        played, so "Played" is simply everything else."""
+        played, so "Played" is simply everything else.
+
+        Directly beneath that: of those Played/Folded hands, how many were
+        the statistically correct call (see logic.py's should_play -- play
+        Q-6-4 or better, fold anything worse). strategy_counts only ever
+        holds the *incorrect* counts (see GameStatsManager's own docstring
+        for why), so "correct" is just the rest of each group."""
         total = sum(hand_counts.values())
         folded = hand_counts.get("Fold", 0)
         played = total - folded
@@ -159,8 +166,19 @@ class StatsFrame(tk.Frame):
             font=("Helvetica", 11, "bold"),
         ).pack(anchor="w", pady=(0, 4))
         tk.Label(
-            parent, text=f"Played: {played} ({played_pct:.1f}%)    Folded: {folded} ({folded_pct:.1f}%)",
+            parent, text=f"Played: {played} ({played_pct:.1f}%)              Folded: {folded} ({folded_pct:.1f}%)",
             bg=PANEL_BG, fg="#aaaaaa", font=("Helvetica", 10),
+        ).pack(anchor="w", pady=(0, 2))
+
+        played_correct = played - strategy_counts.get("played_incorrectly", 0)
+        folded_correct = folded - strategy_counts.get("folded_incorrectly", 0)
+        played_correct_pct = (played_correct / played * 100) if played else 0.0
+        folded_correct_pct = (folded_correct / folded * 100) if folded else 0.0
+        tk.Label(
+            parent,
+            text=f"Correctly: {played_correct}/{played} [{played_correct_pct:.1f}%]          "
+                 f"Correctly: {folded_correct}/{folded} [{folded_correct_pct:.1f}%]",
+            bg=PANEL_BG, fg="#777777", font=("Helvetica", 9),
         ).pack(anchor="w", pady=(0, 12))
 
     def _section_header(self, parent, text, pady_top=0):

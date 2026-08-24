@@ -1,18 +1,24 @@
 """
 Per-game statistics -- a separate concern from FinanceManager
 (core/finances.py), which only tracks the account's overall lifetime totals.
-This is what powers the "Stats" screen's game-by-game breakdown: two kinds
+This is what powers the "Stats" screen's game-by-game breakdown: three kinds
 of data per game, kept in separate namespaces under that game's own key --
 
-  "bets":  per-bet-type (Ante, Pair Plus, Prime, ...) wagered/returned/
-           win-loss-push, and the house edge that's actually been realised
-           on it -- see record_bet/game_bets/game_house_edge.
-  "hands": how often each possible hand outcome (High Card, Pair, ...,
-           Royal Flush, or a fold) has actually come up -- see
-           record_hand/game_hand_counts.
+  "bets":     per-bet-type (Ante, Pair Plus, Prime, ...) wagered/returned/
+              win-loss-push, and the house edge that's actually been
+              realised on it -- see record_bet/game_bets/game_house_edge.
+  "hands":    how often each possible hand outcome (High Card, Pair, ...,
+              Royal Flush, or a fold) has actually come up -- see
+              record_hand/game_hand_counts.
+  "strategy": how often the player's Play/Fold decision itself was the
+              statistically wrong one -- see record_strategy_decision/
+              game_strategy_incorrect_counts. Only incorrect decisions are
+              ever recorded (a save file predating this tracking has none,
+              which reads as "every earlier decision was correct" -- the
+              deliberate, explicitly-requested assumption, not an oversight).
 
-A game's UI reports one resolved bet/hand at a time; this module knows
-nothing about any particular game's rules, so a future game (e.g.
+A game's UI reports one resolved bet/hand/decision at a time; this module
+knows nothing about any particular game's rules, so a future game (e.g.
 Blackjack) just calls in with its own keys and a new section appears on the
 Stats screen with no changes needed here.
 """
@@ -96,6 +102,23 @@ class GameStatsManager:
     def game_hand_counts(self, game_key):
         """hand_label -> count for one game -- empty if none recorded yet."""
         return self.data.get(game_key, {}).get("hands", {})
+
+    def record_strategy_decision(self, game_key, folded, correct):
+        """Records one round's Play/Fold decision -- a no-op if it was the
+        statistically correct one, since only the incorrect count is
+        actually stored (see the module docstring for why that's enough)."""
+        if correct:
+            return
+        strategy = self._game(game_key).setdefault("strategy", {})
+        key = "folded_incorrectly" if folded else "played_incorrectly"
+        strategy[key] = strategy.get(key, 0) + 1
+        self._save()
+
+    def game_strategy_incorrect_counts(self, game_key):
+        """{"played_incorrectly": N, "folded_incorrectly": M} for one game
+        -- either key absent/0 if every decision so far (including all of a
+        save file predating this tracking) was correct."""
+        return self.data.get(game_key, {}).get("strategy", {})
 
     def reset(self):
         self.data = {}

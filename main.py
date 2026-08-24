@@ -40,7 +40,10 @@ class CasinoApp(tk.Tk):
         super().__init__()
         self.title(APP_TITLE)
         self.geometry("1200x820")
-        self.minsize(1120, 760)
+        # Fixed-size window -- no drag-to-resize, no maximize -- rather than
+        # a minsize floor: this is headed for a static-size embed in a
+        # webpage, so a resizable window isn't a real requirement here.
+        self.resizable(False, False)
         self.configure(bg="#0b0b0b")
 
         self.data_dir = DATA_DIR

@@ -40,6 +40,7 @@ from core.hand_evaluator import (
     dealer_qualifies,
     HandEval,
     HAND_NAMES,
+    HIGH_CARD,
     STRAIGHT_FLUSH,
     THREE_OF_A_KIND,
     STRAIGHT,
@@ -103,6 +104,26 @@ _ROYAL_HIGH_CARD = 14
 def _is_royal(player_eval: HandEval) -> bool:
     rank, _, tiebreak = player_eval
     return rank == STRAIGHT_FLUSH and tiebreak[0] == _ROYAL_HIGH_CARD
+
+
+# Basic strategy threshold: Q-6-4 or better should be played, anything
+# worse should be folded -- the standard, statistically-correct cutoff for
+# Three Card Poker (maximises expected value against the Ante/Play paytable
+# above; nothing about Pair Plus/Prime/Jackpot factors into it, since those
+# pay out the same whether the hand's played or folded). Expressed as a
+# HandEval so should_play can compare against it with the same
+# compare_hands() used everywhere else -- any pair or better already beats
+# it outright, so this only actually discriminates between two high-card
+# hands.
+Q64_THRESHOLD: HandEval = (HIGH_CARD, HAND_NAMES[HIGH_CARD], (12, 6, 4))
+
+
+def should_play(player_eval: HandEval) -> bool:
+    """True if `player_eval` is Q-6-4 or better -- the statistically
+    correct Play decision. Used by the Stats screen's "Correctly" strategy
+    breakdown (see ui.py's _finish_round, which records whether the
+    player's actual Play/Fold decision matched this)."""
+    return compare_hands(player_eval, Q64_THRESHOLD) >= 0
 
 
 def hand_outcome_label(player_eval: HandEval, folded: bool) -> str:

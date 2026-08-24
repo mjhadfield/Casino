@@ -19,6 +19,7 @@ from games.three_card_poker.logic import (
     PRIME_SAME_COLOUR_3_MULTIPLIER,
     PRIME_SAME_COLOUR_6_MULTIPLIER,
     RoundResult,
+    should_play,
     ThreeCardPokerGame,
 )
 from ui.card_widgets import draw_card, draw_card_back, CARD_HEIGHT, CARD_WIDTH
@@ -888,6 +889,11 @@ class ThreeCardPokerFrame(tk.Frame):
         for key, bet, ret in self._resolved_bet_totals(result):
             self.app.game_stats.record_bet(GAME_KEY, key, bet, ret)
         self.app.game_stats.record_hand(GAME_KEY, hand_outcome_label(result.player_eval, result.folded))
+        # Statistically correct Play/Fold decision: play Q-6-4 or better,
+        # fold anything worse (see should_play) -- correct iff that verdict
+        # matches whether the player actually played or folded.
+        decision_correct = should_play(result.player_eval) != result.folded
+        self.app.game_stats.record_strategy_decision(GAME_KEY, result.folded, decision_correct)
         if result.jackpot_won:
             self.app.jackpot.win()  # resets it to its floor -- see JackpotManager.win
         self._refresh_balance()
