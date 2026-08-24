@@ -54,6 +54,15 @@ class FinanceManager:
     def balance(self) -> float:
         return round(self.data["balance"], 2)
 
+    def set_balance(self, amount):
+        """Manual override straight to `amount` -- no MAX_TRANSACTION/
+        TRANSACTION_BALANCE_THRESHOLD checks, no lifetime-deposited/withdrawn
+        bookkeeping, since it isn't a real transaction. Admin-only debug
+        control (Cashier's "$ override --modify" section), same shape as
+        JackpotManager.set_amount's debug override."""
+        self.data["balance"] = round(float(amount), 2)
+        self._save()
+
     def deposit(self, amount) -> float:
         """Credits up to `amount` -- silently less, if `amount` would carry
         the balance past TRANSACTION_BALANCE_THRESHOLD, see its own comment

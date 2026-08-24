@@ -7,13 +7,6 @@ from ui import dialogs, theme
 from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
 
-# Gates the Jackpot Config / Danger Zone sections -- a placeholder "admin"
-# password rather than a real auth system, per explicit request ("just be
-# 'admin' for now"). Entered once per app session (see _ensure_admin_unlocked
-# -- self._admin_unlocked is never reset by on_show, only the sections'
-# collapsed/expanded state is), not saved or checked against anything else.
-ADMIN_PASSWORD = "admin"
-
 
 class SettingsFrame(tk.Frame):
     def __init__(self, parent, app):
@@ -22,7 +15,6 @@ class SettingsFrame(tk.Frame):
         self._toggle_redraws = []
         self.theme_canvases = {}
         self._collapsers = []       # every gated section's collapse() -- on_show resets them all
-        self._admin_unlocked = False
 
         self.sound_var = tk.BooleanVar(value=app.settings.get("sound_enabled"))
         self.anim_var = tk.BooleanVar(value=app.settings.get("animations_enabled"))
@@ -70,7 +62,8 @@ class SettingsFrame(tk.Frame):
         # --- Jackpot Config -- collapsed by default, admin-gated to expand.
         jackpot_inner = make_collapsible(
             body, "$ jackpot --config",
-            before_expand=lambda: self._ensure_admin_unlocked("jackpot"), reset_list=self._collapsers,
+            before_expand=lambda: dialogs.ensure_admin_unlocked(self.app, self, "jackpot"),
+            reset_list=self._collapsers,
         )
         self._make_jackpot_rate_row(jackpot_inner)
         tk.Frame(jackpot_inner, bg=theme.BORDER, height=1).pack(fill="x", pady=16)
@@ -80,7 +73,8 @@ class SettingsFrame(tk.Frame):
         danger_inner = make_collapsible(
             body, "$ danger --zone",
             bg=theme.LOSE_DIM_BG, border=theme.LOSE_COLOR, fg=theme.LOSE_COLOR,
-            before_expand=lambda: self._ensure_admin_unlocked("danger"), reset_list=self._collapsers,
+            before_expand=lambda: dialogs.ensure_admin_unlocked(self.app, self, "danger"),
+            reset_list=self._collapsers,
         )
         tk.Label(
             danger_inner, text="Reset Statistics -- your balance will not be affected.",
@@ -122,20 +116,6 @@ class SettingsFrame(tk.Frame):
             highlightthickness=1, highlightbackground=theme.GREY_BTN_BORDER,
             command=self._on_cancel,
         ).pack(side="left", padx=8)
-
-    # ------------------------------------------------------------------ admin gate
-    def _ensure_admin_unlocked(self, slug):
-        if self._admin_unlocked:
-            return True
-        unlocked = dialogs.confirm_with_password(
-            self, f"$ sudo access --section {slug}",
-            "Administrator privileges are required to view this section. "
-            "Enter the admin password to continue.",
-            password=ADMIN_PASSWORD,
-        )
-        if unlocked:
-            self._admin_unlocked = True
-        return unlocked
 
     # ------------------------------------------------------------------ toggle switches
     def _make_toggle_row(self, parent, label, var):
@@ -292,8 +272,15 @@ class SettingsFrame(tk.Frame):
 
     def _on_cancel(self):
         if self._is_dirty():
-            if not messagebox.askyesno("Unsaved Changes", "Unsaved changes, quit without saving?"):
+            choice = dialogs.choice(
+                self, "$ settings --exit", "You have unsaved changes.",
+                [("Cancel", "cancel"), ("Discard Changes", "discard"), ("Save Changes", "save")],
+            )
+            if choice == "save":
+                self._on_save()
                 return
+            if choice != "discard":
+                return  # Cancel, or dismissed (Escape / closed) -- stay put either way
         self.app.show_frame("menu")
 
     # ------------------------------------------------------------------ lifecycle
@@ -307,9 +294,9 @@ class SettingsFrame(tk.Frame):
             redraw()
         self._draw_theme_swatches()
         # Gated sections always start collapsed on a fresh visit -- but
-        # self._admin_unlocked is deliberately NOT reset here, so re-opening
+        # app.admin_unlocked is deliberately NOT reset here, so re-opening
         # one after having already entered the password once this session
-        # doesn't prompt again.
+        # (even on a different screen) doesn't prompt again.
         for collapse in self._collapsers:
             collapse()
         self._original = self._snapshot()

@@ -1,7 +1,8 @@
 import tkinter as tk
 
 from core.finances import MAX_TRANSACTION, TRANSACTION_BALANCE_THRESHOLD
-from ui import theme
+from ui import dialogs, theme
+from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
 
 QUICK_AMOUNTS = (10, 25, 50, 100, 200)
@@ -11,6 +12,7 @@ class FinancesFrame(tk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent, bg=theme.BG)
         self.app = app
+        self._section_resets = []  # gated sections' "back to collapsed" fns -- see on_show
 
         top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
         top_bar.pack(fill="x")
@@ -118,14 +120,30 @@ class FinancesFrame(tk.Frame):
         self.withdraw_msg = tk.Label(withdraw_frame, text="", bg=theme.BG_ELEVATED, fg=theme.LOSE_COLOR, font=theme.font(9))
         self.withdraw_msg.pack(pady=(0, 10))
 
-        # Lifetime statistics (deposits/withdrawals included) now live on
-        # their own Stats screen -- see ui/stats_screen.py -- this is just a
-        # shortcut there rather than duplicating them here.
+        # --- admin override -- collapsed by default, admin-gated to expand,
+        # same pattern as Settings' Jackpot Config / Danger Zone sections --
+        # and red-tinted like Danger Zone too, not the usual neutral panel.
+        override_inner = make_collapsible(
+            body, "$ override --modify", pady=(12, 20),
+            bg=theme.LOSE_DIM_BG, border=theme.LOSE_COLOR, fg=theme.LOSE_COLOR,
+            before_expand=lambda: dialogs.ensure_admin_unlocked(self.app, self, "override"),
+            reset_list=self._section_resets,
+        )
+        balance_row = tk.Frame(override_inner, bg=theme.LOSE_DIM_BG)
+        balance_row.pack(pady=4)
+        tk.Label(balance_row, text="£", bg=theme.LOSE_DIM_BG, fg=theme.FG, font=theme.font(13)).pack(side="left")
+        self.override_balance_var = tk.StringVar()
+        tk.Entry(
+            balance_row, textvariable=self.override_balance_var, width=10, font=theme.font(13), justify="center",
+            bg=theme.BG, fg=theme.FG, insertbackground=theme.FG, relief="flat",
+            highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
+        ).pack(side="left", padx=6)
         tk.Button(
-            body, text="View Lifetime Stats →", bg=theme.BG, fg=theme.FG_DIM, relief="flat",
-            font=(theme.mono_family(), 10, "underline"), cursor="hand2", bd=0, highlightthickness=0,
-            activebackground=theme.BG, activeforeground=theme.ACCENT, command=lambda: app.show_frame("stats"),
-        ).pack(pady=(4, 20))
+            balance_row, text="Set", bg=theme.LOSE_DIM_BG_ELEVATED, fg=theme.LOSE_COLOR, relief="flat",
+            font=theme.font(11, weight="bold"), padx=16, pady=6, cursor="hand2",
+            highlightthickness=1, highlightbackground=theme.LOSE_COLOR,
+            command=self._apply_balance_override,
+        ).pack(side="left", padx=10)
 
     def _make_panel(self, parent, title):
         """The standard bordered "terminal panel" look: an outer Frame with
@@ -187,12 +205,33 @@ class FinancesFrame(tk.Frame):
         self.refresh()
         self.app.on_balance_changed()
 
+    def _apply_balance_override(self):
+        try:
+            amount = float(self.override_balance_var.get().strip().replace("£", "").replace(",", ""))
+            if amount < 0:
+                raise ValueError
+        except ValueError:
+            dialogs.info(
+                self, "$ override --modify", "Enter a valid, non-negative £ amount.", accent=theme.WARN,
+            )
+            return
+        self.app.finance.set_balance(amount)
+        self.refresh()
+        self.app.on_balance_changed()
+        dialogs.info(self, "$ override --modify", f"Balance manually set to £{self.app.finance.balance:,.2f}.")
+
     def on_show(self):
         self.refresh()
+        # Same "start fresh every visit" rule as Settings/Stats' gated
+        # sections -- collapsed again regardless of how it was left, though
+        # app.admin_unlocked (once entered) still carries over.
+        for reset in self._section_resets:
+            reset()
 
     def refresh(self):
         balance = self.app.finance.balance
         self.balance_lbl.configure(text=f"£{balance:,.2f}")
+        self.override_balance_var.set(f"{balance:.2f}")
         # Greyed out (rather than left clickable and only failing after the
         # fact) whenever the current balance is on the wrong side of
         # TRANSACTION_BALANCE_THRESHOLD for that action -- see deposit()/

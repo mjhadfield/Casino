@@ -48,6 +48,10 @@ class CasinoApp(tk.Tk):
         self.configure(bg=theme.BG)
 
         self.data_dir = DATA_DIR
+        # Whole-app-session admin gate (see ui/dialogs.py's
+        # ensure_admin_unlocked) -- entering the password once, anywhere it's
+        # asked for, unlocks every admin section for the rest of this run.
+        self.admin_unlocked = False
         self.finance = FinanceManager(FINANCE_SAVE_PATH)
         self.settings = SettingsManager(SETTINGS_SAVE_PATH)
         self.jackpot = JackpotManager(JACKPOT_SAVE_PATH, self.settings)

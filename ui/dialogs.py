@@ -11,6 +11,12 @@ import tkinter as tk
 
 from ui import theme
 
+# Gates any "admin" section anywhere in the app (Settings' Jackpot Config /
+# Danger Zone, Cashier's override panel, ...) -- a placeholder password
+# rather than a real auth system, per explicit request ("just be 'admin' for
+# now"). See ensure_admin_unlocked below for how it's actually checked.
+ADMIN_PASSWORD = "admin"
+
 
 class _TerminalDialog(tk.Toplevel):
     """Shared chrome for both dialogs below: a bordered, dark, monospace
@@ -153,15 +159,37 @@ def confirm_with_password(parent, title, message, password,
     return dialog.run()
 
 
+def ensure_admin_unlocked(app, parent, slug):
+    """The shared gate behind every "admin" section anywhere in the app --
+    Settings' Jackpot Config and Danger Zone, Cashier's override panel, and
+    anywhere else that needs it later. The first time *anything* asks for
+    it, this prompts for ADMIN_PASSWORD via confirm_with_password; once
+    entered correctly it sets app.admin_unlocked, so every later call here
+    -- even from a completely different screen -- returns True immediately
+    without prompting again for the rest of this app session."""
+    if getattr(app, "admin_unlocked", False):
+        return True
+    unlocked = confirm_with_password(
+        parent, f"$ sudo access --section {slug}",
+        "Administrator privileges are required to view this section. "
+        "Enter the admin password to continue.",
+        password=ADMIN_PASSWORD,
+    )
+    if unlocked:
+        app.admin_unlocked = True
+    return unlocked
+
+
 def choice(parent, title, message, options, accent=None):
     """A warning-styled dialog offering custom named actions instead of the
     usual Confirm/Cancel -- e.g. Three Card Poker's insufficient-balance
     warning, which offers "Go Home" and "Cashier" rather than a single OK.
 
-    `options` is an ordered list of (label, key) pairs, rendered right-to-
-    left with the *last* one as the primary/accent-styled action (matching
-    where Confirm sits in every other dialog here) and the rest styled as
-    plain secondary buttons. Returns the key of whichever was clicked, or
+    `options` is an ordered list of (label, key) pairs -- the *last* one is
+    the primary/accent-styled action, and ends up leftmost, the same
+    position Confirm sits in every other dialog here (Cancel-equivalents
+    conventionally end up rightmost); everything before it is styled as a
+    plain secondary button. Returns the key of whichever was clicked, or
     None if the dialog was dismissed instead (Escape / closed) -- "leave
     things as they are and try something else" always stays an option,
     even when it's not one of the named buttons."""
