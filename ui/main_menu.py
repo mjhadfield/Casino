@@ -17,8 +17,8 @@ from ui import game_icons, theme
 GAMES = [
     ("\U0001F0A1", "Three Card Poker", "Ante, Play, Pair Plus & Prime side bets",
      True, "three_card_poker"),
-    (game_icons.draw_blackjack_icon, "Blackjack", "Perfect Pairs & 21+3 side bets",
-     False, None),
+    (game_icons.draw_blackjack_icon, "Blackjack", "Super Pairs, 21+3, Top 3 & Jackpot side bets",
+     True, "blackjack"),
     (game_icons.draw_pai_gow_icon, "Pai Gow Poker", "Fortune Bonus & Pai Gow Insurance",
      False, None),
     (game_icons.draw_mississippi_stud_icon, "Mississippi Stud", "3 Card Bonus side bet",

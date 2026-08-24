@@ -23,38 +23,36 @@ from games.three_card_poker.logic import (
 )
 from ui import dialogs, theme
 from ui.card_widgets import draw_card, draw_card_back, CARD_HEIGHT, CARD_WIDTH
+from ui.chips import (
+    CHIP_COLORS_BY_VALUE,
+    CHIP_DENOMINATIONS,
+    CHIP_LAYER_MAX_R,
+    CHIP_SIZE,
+    draw_chip_face,
+    draw_chip_stack,
+)
 from ui.jackpot_display import JackpotDisplay
 
 STATE_FILENAME = "three_card_poker_state.json"
 DEFAULT_STATE = {"bets": {"ante": 0, "pair_plus": 0, "prime": 0, "jackpot": 0}, "selected_chip": 5}
 
-# Classic casino chip palette: (denomination, face colour, rim colour).
-CHIP_DENOMINATIONS = [
-    (1, "#1f6fd6", "#0d3c85"),     # blue
-    (5, "#d1362f", "#8f211d"),     # red
-    (25, "#1f8a4c", "#125c32"),    # green
-    (100, "#1c1c1c", "#000000"),   # black
-    (500, "#d6389f", "#8f1f68"),   # pink
-]
 # --- Layout constants ------------------------------------------------------
 # The whole game area (table canvas + paytable) is built at these fixed pixel
 # sizes and centred as one block in the window, rather than stretching to
 # fill it -- see `_build_ui`. That also means a future "UI scale" setting can
 # be added later just by multiplying this block of constants by a factor
 # before building/drawing, without restructuring the layout itself.
-CHIP_COLORS_BY_VALUE = {value: (face, rim) for value, face, rim in CHIP_DENOMINATIONS}
-CHIP_SIZE = 58
+#
+# CHIP_DENOMINATIONS/CHIP_COLORS_BY_VALUE/CHIP_SIZE/CHIP_LAYER_MAX_R and the
+# chip-drawing routines themselves now live in ui/chips.py -- shared with any
+# other game (e.g. Blackjack) so chip colours/rendering can never drift
+# between them. Re-imported above under their original names so nothing
+# below has to change.
 CANVAS_WIDTH = 760
 # 366 (where the Ante circle ends -- see ANTE_STRIP_BOTTOM below) + 18px
 # margin below it -- half the original 36px, so the result text/buttons
 # right below the canvas sit closer to it.
 CANVAS_HEIGHT = 384
-
-# A single chip's on-table size -- identical everywhere it's placed (Ante,
-# Pair Plus, Prime) so a £25 chip looks the same size on every spot. Sized to
-# nearly fill the Pair Plus/Prime circles (radius 40), leaving a thin ring of
-# felt showing.
-CHIP_LAYER_MAX_R = 36
 
 PAYTABLE_WIDTH = 240
 PAYTABLE_HEIGHT = 340
@@ -264,22 +262,6 @@ JACKPOT_PAYTABLE_ROWS = [
     ("Royal Flush (♠)", "100% JACKPOT"),
 ]
 JACKPOT_PAYTABLE_HIGHLIGHT_ROW = len(JACKPOT_PAYTABLE_ROWS) - 1  # the spades Royal Flush
-
-
-def _chip_breakdown(amount):
-    """Greedy denomination breakdown of `amount` -- e.g. £30 -> [(25, 1), (5, 1)].
-    Since £1 chips exist this always accounts for the full amount exactly, and
-    it's recomputed from the total every draw, so five £1 chips on a spot
-    render as a single £5 chip rather than five separate ones."""
-    breakdown = []
-    remaining = amount
-    for value, _, _ in sorted(CHIP_DENOMINATIONS, reverse=True):
-        if remaining <= 0:
-            break
-        count, remaining = divmod(remaining, value)
-        if count:
-            breakdown.append((value, count))
-    return breakdown
 
 
 def _max_round_cost(bets):
@@ -525,13 +507,7 @@ class ThreeCardPokerFrame(tk.Frame):
         pad = 5
         r = CHIP_SIZE / 2
         cx = cy = r + pad
-        if value == self.selected_chip:
-            canvas.create_oval(cx - r - 4, cy - r - 4, cx + r + 4, cy + r + 4,
-                                outline=theme.ACCENT, width=3)
-        canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=face, outline=rim, width=3)
-        canvas.create_oval(cx - r + 7, cy - r + 7, cx + r - 7, cy + r - 7,
-                            outline="#ffffff", width=1)
-        canvas.create_text(cx, cy, text=f"£{value}", fill="#ffffff", font=theme.font(10, weight="bold"))
+        draw_chip_face(canvas, cx, cy, value, face, rim, r=r, selected=value == self.selected_chip)
 
     def _select_chip(self, value):
         self.selected_chip = value
@@ -753,44 +729,11 @@ class ThreeCardPokerFrame(tk.Frame):
         self._bind_spot(tag, "jackpot")
 
     def _draw_chip_stack(self, tag, cx, cy, amount, max_r):
-        """Draws `amount` as a stack of chip icons (largest denomination at the
-        base), each carrying a ×N badge if more than one of that chip is on the
-        spot. Recomputed from the total each time, so e.g. five £1 chips are
-        shown as a single £5 chip once the total reaches £5.
-
-        Every chip is always drawn at `max_r` -- the same size a single-
-        denomination stack gets -- so a big payout needing several different
-        denominations just grows taller, never shrinks its individual chips
-        to fit some notional budget the way this used to (a large payout
-        could end up with a correctly-sized bottom chip and comically small
-        ones stacked above it).
-
-        `tag` is usually a single string, but the payout animation
-        (_animate_payouts) needs to delete/redraw just the chips on a strip
-        spot without touching that spot's own box+label -- it passes a
-        (shell_tag, chips_tag) pair instead so both are still there for
-        anything (e.g. tag_lower) that expects the whole spot as one unit."""
-        tags = (tag,) if isinstance(tag, str) else tuple(tag)
-        breakdown = _chip_breakdown(amount)  # largest denomination first
-        layer_r = max_r
-        dy = layer_r * 0.85
-        base_cy = cy + dy * (len(breakdown) - 1) / 2
-        for i, (value, count) in enumerate(breakdown):
-            layer_cy = base_cy - i * dy
-            face, rim = CHIP_COLORS_BY_VALUE[value]
-            self.canvas.create_oval(cx - layer_r, layer_cy - layer_r, cx + layer_r, layer_cy + layer_r,
-                                     fill=face, outline=rim, width=2, tags=tags)
-            self.canvas.create_oval(cx - layer_r + 4, layer_cy - layer_r + 4, cx + layer_r - 4, layer_cy + layer_r - 4,
-                                     outline="#ffffff", width=1, tags=tags)
-            self.canvas.create_text(cx, layer_cy, text=f"£{value}", fill="#ffffff",
-                                     font=theme.font(max(7, int(layer_r * 0.38)), weight="bold"), tags=tags)
-            if count > 1:
-                badge_r = max(7, layer_r * 0.42)
-                bx, by = cx + layer_r * 0.62, layer_cy + layer_r * 0.62
-                self.canvas.create_oval(bx - badge_r, by - badge_r, bx + badge_r, by + badge_r,
-                                         fill=theme.BG_ELEVATED, outline=theme.ACCENT, width=1, tags=tags)
-                self.canvas.create_text(bx, by, text=f"×{count}", fill="#ffffff",
-                                         font=theme.font(max(7, int(badge_r * 0.85)), weight="bold"), tags=tags)
+        """Thin delegate to ui/chips.py's shared draw_chip_stack, bound to
+        this screen's own canvas -- kept as a same-named method so every
+        call site elsewhere in this file (there are several) doesn't need
+        to change."""
+        draw_chip_stack(self.canvas, tag, cx, cy, amount, max_r)
 
     def _bind_spot(self, tag, key):
         self.canvas.tag_bind(tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
@@ -1011,6 +954,7 @@ class ThreeCardPokerFrame(tk.Frame):
         if result.total_returned > 0:
             self.app.finance.add_return(result.total_returned)
         self.app.finance.record_round_played(result.net_result)
+        self.app.game_stats.record_round_net(GAME_KEY, result.net_result)
         for key, bet, ret in self._resolved_bet_totals(result):
             self.app.game_stats.record_bet(GAME_KEY, key, bet, ret)
         self.app.game_stats.record_hand(GAME_KEY, hand_outcome_label(result.player_eval, result.folded))

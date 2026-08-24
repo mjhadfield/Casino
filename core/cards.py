@@ -71,10 +71,22 @@ class Card:
 
 
 class Deck:
-    """A standard, shuffled 52-card deck. Reusable across any game."""
+    """A standard, shuffled 52-card deck -- or a shoe of several standard
+    decks shuffled together, via `num_decks` (e.g. Blackjack's 8-deck shoe).
+    Reusable across any game. `num_decks` copies of the same rank+suit
+    combination are equal (Card.__eq__ compares rank/suit only) and can
+    genuinely all appear in the same hand -- that's real, expected shoe
+    behaviour, not a bug (see e.g. Blackjack's "Suited Trips" side bet,
+    which specifically relies on that being possible)."""
 
-    def __init__(self):
-        self._all_cards = [Card(rank, suit) for suit in Suit for rank in RANK_ORDER]
+    def __init__(self, num_decks: int = 1):
+        self.num_decks = num_decks
+        self._all_cards = [
+            Card(rank, suit)
+            for _ in range(num_decks)
+            for suit in Suit
+            for rank in RANK_ORDER
+        ]
         self.cards = []
         self.reset()
 

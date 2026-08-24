@@ -120,6 +120,23 @@ class GameStatsManager:
         save file predating this tracking) was correct."""
         return self.data.get(game_key, {}).get("strategy", {})
 
+    def record_round_net(self, game_key, net_result):
+        """Tracks the single biggest net win this game has ever paid out in
+        one round -- the per-game equivalent of FinanceManager's own
+        lifetime `biggest_win` (see its record_round_played), same
+        only-ever-moves-up-on-a-bigger-win convention: a losing or
+        break-even round is a no-op, not a decrease."""
+        game = self._game(game_key)
+        if net_result > game.get("biggest_win", 0.0):
+            game["biggest_win"] = round(net_result, 2)
+            self._save()
+
+    def game_biggest_win(self, game_key):
+        """The biggest single-round net win recorded for one game -- 0.0 if
+        none recorded yet (including a game that isn't implemented, or one
+        played only before this tracking existed)."""
+        return self.data.get(game_key, {}).get("biggest_win", 0.0)
+
     def reset(self):
         self.data = {}
         self._save()

@@ -1,6 +1,7 @@
 import tkinter as tk
 
 from games.three_card_poker import logic as tcp_logic
+from games.blackjack import logic as bj_logic
 from ui import theme
 from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
@@ -12,10 +13,19 @@ from ui.scrollable import ScrollableFrame
 # that isn't implemented yet just gets empty lists and renders as a "coming
 # soon" section instead of a breakdown -- add its real entry here once it
 # ships, the same data-driven way ui/main_menu.py's GAMES list works.
+#
+# "tracks_folding": whether this game has a Fold-style decision at all --
+# Three Card Poker's "Played vs Folded" split and its "Correctly" strategy
+# breakdown (see _build_hands_summary) only mean anything for a game shaped
+# that way. A game without one (Blackjack: Hit/Stand/Double/Split, no fold
+# concept) sets this False and just gets the plain "Total Hands" count --
+# GameStatsManager itself is unaffected either way, this only controls what
+# the Stats screen chooses to *display*.
 GAME_SECTIONS = [
-    {"key": tcp_logic.GAME_KEY, "label": tcp_logic.GAME_LABEL, "enabled": True,
+    {"key": tcp_logic.GAME_KEY, "label": tcp_logic.GAME_LABEL, "enabled": True, "tracks_folding": True,
      "bet_types": tcp_logic.BET_TYPES, "hand_labels": tcp_logic.HAND_OUTCOME_LABELS},
-    {"key": "blackjack", "label": "Blackjack", "enabled": False, "bet_types": [], "hand_labels": []},
+    {"key": bj_logic.GAME_KEY, "label": bj_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
+     "bet_types": bj_logic.BET_TYPES, "hand_labels": bj_logic.HAND_OUTCOME_LABELS},
 ]
 
 LIFETIME_STAT_ROWS = [
@@ -130,7 +140,8 @@ class StatsFrame(tk.Frame):
                 continue
 
             strategy = self.app.game_stats.game_strategy_incorrect_counts(section["key"])
-            self._build_hands_summary(panel_body, hands, strategy)
+            biggest_win = self.app.game_stats.game_biggest_win(section["key"])
+            self._build_hands_summary(panel_body, hands, strategy, section["tracks_folding"], biggest_win)
 
             # Everything wagered/returned so far, grouped under one house-edge
             # figure per bet type plus the combined figure across all of them
@@ -148,28 +159,43 @@ class StatsFrame(tk.Frame):
             self._section_header(panel_body, "Hands Made", pady_top=18)
             self._build_hand_table(panel_body, section["hand_labels"], hands)
 
-    def _build_hands_summary(self, parent, hand_counts, strategy_counts):
-        """Total rounds played -- broken down into Played vs Folded, each as
-        a percentage of that total -- right at the top of the game's
-        section, above the more detailed breakdowns below it. "Folded" is
-        just the "Fold" bucket from hand_counts; every other bucket in it
-        (High Card, Pair, ... Royal Flush) is a hand that was actually
-        played, so "Played" is simply everything else.
+    def _build_hands_summary(self, parent, hand_counts, strategy_counts, tracks_folding=True, biggest_win=0.0):
+        """Total rounds played and this game's own biggest single-round net
+        win -- the per-game equivalent of the Lifetime panel's own
+        "Biggest Single-Round Net Win" (see FinanceManager.record_round_
+        played), both always shown -- and, only for a game that actually
+        has a Fold-style decision (`tracks_folding`), broken down further
+        into Played vs Folded plus a "Correctly" strategy line for each. A
+        game without a fold concept (e.g. Blackjack) just gets the Total
+        Hands/Biggest Win lines and stops there -- rendering "Played 100% /
+        Folded 0%" and a "Correctly" line with nothing real behind it would
+        be noise, not information, for a game shaped that differently.
 
-        Directly beneath that: of those Played/Folded hands, how many were
+        "Folded" is just the "Fold" bucket from hand_counts; every other
+        bucket in it (High Card, Pair, ... Royal Flush) is a hand that was
+        actually played, so "Played" is simply everything else.
+
+        The "Correctly" line: of those Played/Folded hands, how many were
         the statistically correct call (see logic.py's should_play -- play
         Q-6-4 or better, fold anything worse). strategy_counts only ever
         holds the *incorrect* counts (see GameStatsManager's own docstring
         for why), so "correct" is just the rest of each group."""
         total = sum(hand_counts.values())
-        folded = hand_counts.get("Fold", 0)
-        played = total - folded
-        played_pct = (played / total * 100) if total else 0.0
-        folded_pct = (folded / total * 100) if total else 0.0
         tk.Label(
             parent, text=f"Total Hands: {total}", bg=theme.BG_ELEVATED, fg=theme.FG,
             font=theme.font(11, weight="bold"),
         ).pack(anchor="w", pady=(0, 4))
+        tk.Label(
+            parent, text=f"Biggest Single-Round Net Win: £{biggest_win:,.2f}",
+            bg=theme.BG_ELEVATED, fg=theme.FG, font=theme.font(10),
+        ).pack(anchor="w", pady=(0, 4 if tracks_folding else 12))
+        if not tracks_folding:
+            return
+
+        folded = hand_counts.get("Fold", 0)
+        played = total - folded
+        played_pct = (played / total * 100) if total else 0.0
+        folded_pct = (folded / total * 100) if total else 0.0
         tk.Label(
             parent, text=f"Played: {played} ({played_pct:.1f}%)             Folded: {folded} ({folded_pct:.1f}%)",
             bg=theme.BG_ELEVATED, fg=theme.FG_DIM, font=theme.font(10),
