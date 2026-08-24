@@ -8,6 +8,7 @@ header look, just with different rules for whether a click is allowed to
 actually expand the section.
 """
 import tkinter as tk
+from typing import Any
 
 from ui import theme
 
@@ -48,7 +49,11 @@ def make_collapsible(parent, title_text, pady=(24, 0), bg=None, border=None, fg=
     title_lbl.pack(side="left")
 
     body = tk.Frame(panel, bg=bg)
-    body_pack_opts = dict(fill="x", padx=26, pady=(0, 22))
+    # Explicitly dict[str, Any] -- a bare dict(...) literal here infers as
+    # dict[str, str | int | tuple[int, int]] (the union of the three kwarg
+    # value types below), which is too broad for pack_configure's individual
+    # per-keyword types once unpacked with ** at each call site.
+    body_pack_opts: dict[str, Any] = dict(fill="x", padx=26, pady=(0, 22))
     if start_expanded:
         body.pack(**body_pack_opts)
 

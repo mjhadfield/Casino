@@ -9,6 +9,7 @@ don't need to know these are hand-built Toplevels rather than native ones.
 """
 import tkinter as tk
 import tkinter.font as tkfont
+from typing import Any, Callable, cast
 
 from ui import theme
 
@@ -35,7 +36,11 @@ class _TerminalDialog(tk.Toplevel):
         # below) can't be measured correctly until they're actually
         # realized, so this stays mapped, just off the visible screen.
         _place_off_screen(self)
-        self.result = False
+        # Really bool (confirm()/info()) or Optional[str] (choice()'s
+        # returned option key) depending on which entry point built this --
+        # Any rather than a narrower union so both call patterns can freely
+        # assign to it without fighting the checker.
+        self.result: Any = False
         border = accent or (theme.LOSE_COLOR if danger else theme.ACCENT)
         self.configure(bg=theme.BG_ELEVATED, highlightbackground=border, highlightthickness=2)
         self.overrideredirect(True)  # no OS title bar -- this is a small, self-contained popup
@@ -94,7 +99,11 @@ class _TerminalDialog(tk.Toplevel):
 
     def run(self):
         _center_over_parent(self)
-        self.transient(self.master)
+        # self.master is really the Tk/Toplevel passed to super().__init__
+        # above, but Misc (its static type) is broader than what
+        # wm_transient's stub accepts -- cast rather than widen the actual
+        # runtime type.
+        self.transient(cast(tk.Wm, self.master))
         self.grab_set()
         self.wait_window()
         return self.result
@@ -230,7 +239,11 @@ def choice(parent, title, message, options, accent=None):
     for child in list(button_row.winfo_children()):
         child.destroy()  # drop the default Cancel/Confirm pair
 
-    primary_pick = None
+    # options is never actually empty in practice (every call site names at
+    # least one action), but statically that's not guaranteed -- start with
+    # a real no-op rather than None so the type stays a plain callable all
+    # the way through to the dialog._confirm assignment below.
+    primary_pick: Callable[[], None] = lambda: None
     for i, (label, key) in enumerate(options):
         primary = i == len(options) - 1
         bg = theme.ACCENT_DIM_BG_ELEVATED if primary else theme.GREY_BTN_BG
@@ -402,6 +415,6 @@ def document(parent, title, sections, width=460):
     win.bind("<Escape>", lambda _e: win.destroy())
 
     _center_over_parent(win)
-    win.transient(win.master)
+    win.transient(cast(tk.Wm, win.master))
     win.grab_set()
     win.wait_window()
