@@ -8,6 +8,7 @@ a plain bool, the same calling convention as messagebox.askyesno -- callers
 don't need to know these are hand-built Toplevels rather than native ones.
 """
 import tkinter as tk
+import tkinter.font as tkfont
 
 from ui import theme
 
@@ -25,6 +26,15 @@ class _TerminalDialog(tk.Toplevel):
 
     def __init__(self, parent, title, message, danger=False, accent=None):
         super().__init__(parent.winfo_toplevel())
+        # Off-screen until run() has actually centred it -- a Toplevel maps
+        # itself (at the WM's default placement, typically the screen's top
+        # left) as soon as it has content, which otherwise flashes there for
+        # a frame before the explicit geometry() below ever takes effect.
+        # withdraw() would hide it just as well, but leaves it unmapped --
+        # some widgets (a Text widget's wrapped line count, see document()
+        # below) can't be measured correctly until they're actually
+        # realized, so this stays mapped, just off the visible screen.
+        _place_off_screen(self)
         self.result = False
         border = accent or (theme.LOSE_COLOR if danger else theme.ACCENT)
         self.configure(bg=theme.BG_ELEVATED, highlightbackground=border, highlightthickness=2)
@@ -83,15 +93,36 @@ class _TerminalDialog(tk.Toplevel):
         self.destroy()
 
     def run(self):
-        self.update_idletasks()
-        parent = self.master
-        x = parent.winfo_rootx() + (parent.winfo_width() - self.winfo_reqwidth()) // 2
-        y = parent.winfo_rooty() + (parent.winfo_height() - self.winfo_reqheight()) // 2
-        self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        self.transient(parent)
+        _center_over_parent(self)
+        self.transient(self.master)
         self.grab_set()
         self.wait_window()
         return self.result
+
+
+def _place_off_screen(win):
+    """Maps `win` (a Toplevel) somewhere well outside the visible desktop
+    instead of at whatever spot the WM would first put it -- used in place
+    of withdraw() specifically because it keeps the window mapped/realized,
+    which withdraw() doesn't: a withdrawn window can't correctly measure a
+    Text widget's wrapped line count (document() below relies on this --
+    Tk reports a wildly wrong number until the widget's actually been
+    realized), even though plain Label sizing is unaffected either way."""
+    win.geometry("+-4000+-4000")
+
+
+def _center_over_parent(win):
+    """Positions `win` (a Toplevel) centred over whichever window it was
+    built on top of -- shared by every dialog here, including document()'s
+    below, which isn't an instance of _TerminalDialog. Moves it on-screen
+    (see the matching _place_off_screen when each of those was created)
+    only now that it's actually in the right place, rather than wherever it
+    was first mapped."""
+    win.update_idletasks()
+    parent = win.master
+    x = parent.winfo_rootx() + (parent.winfo_width() - win.winfo_reqwidth()) // 2
+    y = parent.winfo_rooty() + (parent.winfo_height() - win.winfo_reqheight()) // 2
+    win.geometry(f"+{max(0, x)}+{max(0, y)}")
 
 
 def confirm(parent, title, message, danger=False, confirm_text="Confirm"):
@@ -221,3 +252,156 @@ def choice(parent, title, message, options, accent=None):
 
     dialog._confirm = primary_pick  # <Return> triggers the primary action, same as every other dialog
     return dialog.run()
+
+
+def _render_rich_text(parent, text, width, prefix="", fg=None, pady=0):
+    """Renders one paragraph or bulleted list line for document() below,
+    honouring **bold** markdown-lite spans -- e.g. Optimal Play's
+    "Q-6-4", or a bulleted GAMEPLAY sub-heading like "**Betting:**".
+    `prefix` (e.g. "• ") is prepended as plain text, not itself scanned for
+    "**". Plain text (no "**" anywhere) stays a simple Label; a bold span
+    needs a read-only Text widget instead, since a Label can only ever
+    have one font for its whole text. Text has no wraplength option the
+    way Label does, so its width is set in characters, measured from the
+    actual resolved font so it still lines up with `width` in pixels; its
+    height (in lines) isn't known until after the wrapped text is actually
+    laid out, so that's set in a second pass once Tk's reported it."""
+    fg = fg or theme.FG_DIM
+    if "**" not in text:
+        tk.Label(
+            parent, text=prefix + text, bg=theme.BG_ELEVATED, fg=fg,
+            font=theme.font(10), anchor="w", justify="left", wraplength=width,
+        ).pack(fill="x", pady=pady)
+        return
+
+    base_font = theme.font(10)
+    bold_font = theme.font(10, weight="bold")
+    char_w = tkfont.Font(font=base_font).measure("0") or 7
+    text_widget = tk.Text(
+        parent, bg=theme.BG_ELEVATED, fg=fg, font=base_font,
+        wrap="word", relief="flat", bd=0, highlightthickness=0, cursor="arrow",
+        padx=0, pady=0, height=1, width=max(20, width // char_w),
+    )
+    text_widget.tag_configure("bold", font=bold_font, foreground=theme.FG)
+    if prefix:
+        text_widget.insert("end", prefix)
+    for i, part in enumerate(text.split("**")):
+        if part:
+            text_widget.insert("end", part, "bold" if i % 2 else "")
+    text_widget.configure(state="disabled")
+    text_widget.pack(fill="x", pady=pady)
+
+    text_widget.update_idletasks()
+    lines = text_widget.count("1.0", "end", "displaylines")
+    if isinstance(lines, tuple):
+        lines = lines[0] if lines else 1
+    text_widget.configure(height=max(1, lines or 1))
+
+
+_SUIT_GLYPHS = {"s": "♠", "h": "♥", "d": "♦", "c": "♣"}
+# Traditional red/black rather than a single uniform accent treatment --
+# tried the mint-outline look (matching the Main Menu's spade accents)
+# first, but at this small size it read as soft/fuzzy and hearts/diamonds
+# were hard to tell apart from each other without colour doing some of the
+# work the way it does on a real card. True black (#000) would vanish
+# against the dialog's own near-black background, so GREY_BTN_TEXT stands
+# in as the darkest tone that still actually reads on it.
+_SUIT_COLORS = {"s": theme.GREY_BTN_TEXT, "c": theme.GREY_BTN_TEXT, "h": theme.LOSE_COLOR, "d": theme.LOSE_COLOR}
+
+
+def _draw_hand_notation(parent, cards, bg):
+    """A compact "Q♠ 6♥ 4♦"-style strip for one hand-ranking example --
+    `cards` is a list of (rank, suit_letter) pairs, suits coloured per
+    _SUIT_COLORS. A Label can only ever have one font/colour for its whole
+    text, so this needs its own small Canvas rather than being part of the
+    surrounding Label the way the rest of the line is."""
+    rank_font = tkfont.Font(font=theme.font(11, weight="bold"))
+    suit_font = theme.font(13, weight="bold")
+    suit_size = 13
+    gap_after_rank = 2
+    gap_between_cards = 10
+    pad = 3
+
+    x = pad
+    rank_widths = []
+    for rank, _suit in cards:
+        rw = rank_font.measure(rank)
+        rank_widths.append(rw)
+        x += rw + gap_after_rank + suit_size + gap_between_cards
+    total_w = x - gap_between_cards + pad
+    canvas = tk.Canvas(parent, width=total_w, height=22, bg=bg, highlightthickness=0)
+
+    x = pad
+    cy = 11
+    for (rank, suit), rw in zip(cards, rank_widths):
+        canvas.create_text(x, cy, text=rank, fill=theme.FG, font=theme.font(11, weight="bold"), anchor="w")
+        x += rw + gap_after_rank
+        canvas.create_text(x + suit_size / 2, cy, text=_SUIT_GLYPHS[suit],
+                            fill=_SUIT_COLORS[suit], font=suit_font)
+        x += suit_size + gap_between_cards
+    return canvas
+
+
+def document(parent, title, sections, width=460):
+    """A larger read-only popup for a block of reference text (e.g. Three
+    Card Poker's Rules button) -- too much content for confirm()/info()'s
+    one-line message, so this isn't built on _TerminalDialog. `sections` is
+    an ordered list of (heading, body) pairs: `body` is either a paragraph
+    string (wrapped, dim) or a list of short strings rendered one per line
+    with a leading bullet (e.g. a hand-ranking order). Single "Close"
+    button/Escape/window-close -- purely informational, nothing to return."""
+    win = tk.Toplevel(parent.winfo_toplevel())
+    _place_off_screen(win)  # avoids a top-left flash before it's positioned -- see its own docstring
+    win.configure(bg=theme.BG_ELEVATED, highlightbackground=theme.ACCENT, highlightthickness=2)
+    win.overrideredirect(True)
+    win.resizable(False, False)
+
+    body = tk.Frame(win, bg=theme.BG_ELEVATED)
+    body.pack(padx=1, pady=1)
+
+    tk.Label(
+        body, text=title, bg=theme.BG_ELEVATED, fg=theme.ACCENT,
+        font=theme.font(14, weight="bold"), anchor="w",
+    ).pack(fill="x", padx=24, pady=(20, 4))
+
+    content = tk.Frame(body, bg=theme.BG_ELEVATED)
+    content.pack(fill="both", padx=24)
+
+    for heading, section_body in sections:
+        tk.Label(
+            content, text=heading, bg=theme.BG_ELEVATED, fg=theme.ACCENT,
+            font=theme.font(11, weight="bold"), anchor="w",
+        ).pack(fill="x", pady=(14, 4))
+        if isinstance(section_body, (list, tuple)):
+            for line in section_body:
+                if isinstance(line, tuple):
+                    # (label, cards) -- label plus a small rank/suit-icon
+                    # strip, e.g. "High Card (" + "Q♠ 6♥ 4♦" + ")" -- see
+                    # _draw_hand_notation.
+                    label, cards = line
+                    row = tk.Frame(content, bg=theme.BG_ELEVATED)
+                    row.pack(fill="x", pady=1, anchor="w")
+                    tk.Label(
+                        row, text=f"• {label} (", bg=theme.BG_ELEVATED, fg=theme.FG, font=theme.font(10),
+                    ).pack(side="left")
+                    _draw_hand_notation(row, cards, theme.BG_ELEVATED).pack(side="left")
+                    tk.Label(row, text=")", bg=theme.BG_ELEVATED, fg=theme.FG, font=theme.font(10)).pack(side="left")
+                else:
+                    _render_rich_text(content, line, width - 20, prefix="• ", fg=theme.FG, pady=1)
+        else:
+            _render_rich_text(content, section_body, width)
+
+    tk.Button(
+        body, text="Close", bg=theme.ACCENT_DIM_BG_ELEVATED, fg=theme.ACCENT, relief="flat",
+        font=theme.font(10, weight="bold"), padx=18, pady=6, cursor="hand2",
+        highlightthickness=1, highlightbackground=theme.ACCENT,
+        command=win.destroy,
+    ).pack(pady=(18, 20))
+
+    win.protocol("WM_DELETE_WINDOW", win.destroy)
+    win.bind("<Escape>", lambda _e: win.destroy())
+
+    _center_over_parent(win)
+    win.transient(win.master)
+    win.grab_set()
+    win.wait_window()

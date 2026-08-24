@@ -70,6 +70,42 @@ JACKPOT_SPOT_R = 32
 # centring in the window used to leave there.
 CONTENT_TOP_MARGIN = 35
 
+# --- Betting-view-only spacing ----------------------------------------------
+# Every value below is read only while the betting screen is showing (Deal
+# button, chip tray) -- never touched during the dealt/resolved screens the
+# same widgets are reused for, so none of this affects that screen's own
+# layout. Derived empirically (measured widget positions on a real render)
+# rather than from a formula, since the label/canvas geometry they're
+# balancing around isn't itself expressed as simple constants.
+#
+# "Place your Ante bet to begin." sits in a fixed ~44px gap below the Ante
+# box already (canvas's own bottom margin below where the Ante box happens
+# to be drawn) -- action_frame's usual (8, 0) top pady is bumped closer to
+# that on the Deal button's side too, so the label roughly centres between
+# the Ante box and Deal rather than hugging the box with Deal close behind
+# it. Pulled back in by ~15px from the exact balance point to bring Deal
+# itself back up a little.
+BETTING_ACTION_FRAME_PADY = (23, 0)
+
+# The chip tray (chip_frame) floats centred inside its reserved chip_zone by
+# default; this pady overrides that centring so the chip row itself (not the
+# tray's outer box, which also includes the "tap a chip..." caption above it
+# and the Total/Clear Bets below) sits at the midpoint between Deal and
+# Clear Bets.
+CHIP_FRAME_PADY = (16, 45)
+
+# --- Rules button ------------------------------------------------------
+# Sits to the left of the table, vertically centred on the Ante box and
+# horizontally halfway between the Ante box's left edge and the canvas's
+# own left edge -- see _draw_rules_button, called from _draw_table (betting
+# only, so it never appears once a hand's been dealt).
+RULES_BUTTON_WIDTH = 106   # 92 * 1.15
+RULES_BUTTON_HEIGHT = 54   # taller than a first pass at this -- more air
+                            # around the ♠ icon and the "RULES" text below it
+RULES_BUTTON_RADIUS = RULES_BUTTON_HEIGHT // 2  # a full stadium/pill shape --
+                                                 # evenly rounded all the way
+                                                 # round, not just at the corners
+
 # --- Card-view (post-Deal) geometry ----------------------------------------
 # Top to bottom: the dealer's cards, then a compact strip of bet indicators
 # -- Play stacked above Ante (Play gets top billing: it's the bet the player
@@ -193,10 +229,6 @@ def _ease_out_cubic(t):
     return 1 - (1 - t) ** 3
 
 
-# Jackpot spot glow: a slow "breathing" red that shifts mostly in brightness
-# rather than size -- see _draw_spot_jackpot / _pulse_jackpot.
-JACKPOT_GLOW_DIM = "#5a1414"
-JACKPOT_GLOW_BRIGHT = "#ff4136"
 
 
 # Used to animate the jackpot glow/sheen by brightness rather than by
@@ -306,7 +338,7 @@ class ThreeCardPokerFrame(tk.Frame):
         self._sanitize_bets(persist=False)
 
         self.chip_canvases = {}  # value -> (canvas, face colour, rim colour)
-        self._jackpot_pulse_t = 0.0  # phase for the jackpot spot's red glow, once a chip's placed
+        self._jackpot_pulse_t = 0.0  # phase for the jackpot spot's breathing glow, once a bet's placed
 
         self._build_ui()
         self.app.jackpot.add_listener(self._on_jackpot_changed)
@@ -574,10 +606,61 @@ class ThreeCardPokerFrame(tk.Frame):
 
         self._draw_spot_circle("pair_plus", pp_cx, side_cy, side_r, "PAIR PLUS")
         self._draw_spot_circle("prime", pr_cx, side_cy, side_r, "PRIME")
-        self._draw_spot_rect("ante", ante_cx, ante_cy, ante_w, ante_h, "ANTE")
+        self._draw_spot_rect("ante", ante_cx, ante_cy, ante_w, ante_h, "ANTE", textured=True)
 
         jp_cx = ante_cx + ante_w / 2 + 55 + JACKPOT_SPOT_R
         self._draw_spot_jackpot(jp_cx, ante_cy, JACKPOT_SPOT_R)
+
+        # Halfway between the Ante box's left edge and the canvas's own left
+        # edge, vertically centred on the Ante box.
+        ante_left = ante_cx - ante_w / 2
+        self._draw_rules_button(ante_left / 2, ante_cy)
+
+    def _draw_rules_button(self, cx, cy):
+        tag = "rules_button"
+        felt_theme = self.app.settings.theme()
+        x1, y1 = cx - RULES_BUTTON_WIDTH / 2, cy - RULES_BUTTON_HEIGHT / 2
+        x2, y2 = cx + RULES_BUTTON_WIDTH / 2, cy + RULES_BUTTON_HEIGHT / 2
+        self._draw_rounded_rect(self.canvas, x1, y1, x2, y2, radius=RULES_BUTTON_RADIUS,
+                                 fill=felt_theme["felt_dark"], outline=felt_theme["accent"],
+                                 width=2, tags=(tag,))
+        self.canvas.create_text(cx, cy - 12, text="♠", fill=felt_theme["accent"],
+                                 font=theme.font(15, weight="bold"), tags=(tag,))
+        self.canvas.create_text(cx, cy + 10, text="RULES", fill=theme.FG,
+                                 font=theme.font(9, weight="bold"), tags=(tag,))
+        self.canvas.tag_bind(tag, "<Button-1>", lambda _e: self._show_rules())
+        self.canvas.tag_bind(tag, "<Enter>", lambda _e: self.canvas.configure(cursor="hand2"))
+        self.canvas.tag_bind(tag, "<Leave>", lambda _e: self.canvas.configure(cursor=""))
+
+    def _show_rules(self):
+        dialogs.document(
+            self, "♠ Three Card Poker -- Rules",
+            [
+                ("GAMEPLAY", [
+                    "**Betting:** Players place an Ante (mandatory) plus Pair Plus, Prime, "
+                    "and Jackpot side bets (optional).",
+                    "**Dealing:** The dealer deals three cards face-down to the player and to themselves.",
+                    "**Decision:** Players must choose to Fold (forfeiting the Ante) or Play "
+                    "(placing a Play bet equal to the Ante).",
+                    "**Resolution:** If the dealer does not qualify (has less than Queen-high), "
+                    "the Ante bet pays 1:1 and the Play bet pushes.",
+                    "**Resolution:** If the dealer qualifies, hands are compared. A winning player "
+                    "hand pays 1:1 on both Ante and Play bets; a losing hand loses both. "
+                    "Ties result in a push.",
+                ]),
+                ("HAND RANKINGS", [
+                    ("High Card", [("Q", "h"), ("6", "s"), ("4", "d")]),
+                    ("Pair", [("8", "h"), ("8", "d"), ("3", "c")]),
+                    ("Flush", [("2", "c"), ("7", "c"), ("J", "c")]),
+                    ("Straight", [("5", "h"), ("6", "d"), ("7", "s")]),
+                    ("Three of a Kind", [("9", "h"), ("9", "d"), ("9", "c")]),
+                    ("Straight Flush", [("7", "d"), ("8", "d"), ("9", "d")]),
+                ]),
+                ("OPTIMAL PLAY",
+                 "Play with **Q-6-4** or better, fold all other hands. The Prime bonus is "
+                 "claimed when folded."),
+            ],
+        )
 
     def _draw_spot_circle(self, key, cx, cy, r, label):
         tag = f"spot_{key}"
@@ -588,52 +671,67 @@ class ThreeCardPokerFrame(tk.Frame):
         self.canvas.create_text(cx, cy - r - 12, text=label, fill=theme.FG,
                                  font=theme.font(9, weight="bold"), tags=(tag,))
         if amount:
-            self._draw_chip_stack(tag, cx, cy, amount, max_r=CHIP_LAYER_MAX_R, budget=r * 1.9)
+            self._draw_chip_stack(tag, cx, cy, amount, max_r=CHIP_LAYER_MAX_R)
         else:
             self.canvas.create_text(cx, cy, text="tap to bet", fill=theme.FG_DIM,
                                      font=theme.font(9, weight="bold"), tags=(tag,))
         self._bind_spot(tag, key)
 
-    def _draw_spot_rect(self, key, cx, cy, width, height, label):
+    def _draw_spot_rect(self, key, cx, cy, width, height, label, textured=False):
         tag = f"spot_{key}"
         amount = self.bets[key]
         felt_theme = self.app.settings.theme()
         x1, y1, x2, y2 = cx - width / 2, cy - height / 2, cx + width / 2, cy + height / 2
-        self.canvas.create_rectangle(x1, y1, x2, y2, fill=felt_theme["felt_dark"], outline=felt_theme["accent"],
-                                      width=2, tags=(tag,))
+        # Rounded, matching the dealer mat / fan mat / post-deal Play spot --
+        # was a plain right-angled rectangle, the one square shape left on
+        # the betting screen.
+        self._draw_rounded_rect(self.canvas, x1, y1, x2, y2, radius=10, fill=felt_theme["felt_dark"],
+                                 outline=felt_theme["accent"], width=2, tags=(tag,))
+        if textured:
+            self._draw_felt_texture(x1, y1, x2, y2, felt_theme, tag)
         self.canvas.create_text(cx, y1 + 18, text=label, fill=theme.FG,
                                  font=theme.font(11, weight="bold"), tags=(tag,))
         stack_cy = cy + 16
         if amount:
-            self._draw_chip_stack(tag, cx, stack_cy, amount, max_r=CHIP_LAYER_MAX_R, budget=110)
+            self._draw_chip_stack(tag, cx, stack_cy, amount, max_r=CHIP_LAYER_MAX_R)
         else:
             self.canvas.create_text(cx, stack_cy, text="tap to bet", fill=theme.FG_DIM,
                                      font=theme.font(10, weight="bold"), tags=(tag,))
         self._bind_spot(tag, key)
 
+    def _draw_felt_texture(self, x1, y1, x2, y2, felt_theme, tag):
+        """A faint diagonal hatch drawn over a spot's flat fill -- just the
+        Ante box for now (see textured= in _draw_spot_rect), so it doesn't
+        read as a completely flat cutout the way the plain betting circles
+        do. Lines are inset from the edges since a Canvas has no true
+        clipping to keep them off the rounded corners drawn under them."""
+        inset = 9
+        step = 9
+        color = _lerp_color(felt_theme["felt_dark"], felt_theme["felt"], 0.4)
+        ix1, iy1, ix2, iy2 = x1 + inset, y1 + inset, x2 - inset, y2 - inset
+        c = ix1 - iy2
+        c_max = ix2 - iy1
+        while c <= c_max:
+            xs = max(ix1, iy1 + c)
+            xe = min(ix2, iy2 + c)
+            if xs < xe:
+                self.canvas.create_line(xs, xs - c, xe, xe - c, fill=color, width=1, tags=(tag,))
+            c += step
+
     def _draw_spot_jackpot(self, cx, cy, r):
         """The £1 jackpot side bet: an on/off spot rather than a chip stack
-        (it's always exactly £1, never stacked higher). Placed, it breathes
-        a soft neon glow -- driven by _pulse_jackpot, mostly brightening and
-        dimming rather than growing, plus a faint sheen on the chip -- so it
-        reads as a premium bet, not a warning light. The chip itself stays
-        the same blue as every other £1 chip in the tray."""
+        (it's always exactly £1, never stacked higher). Placed, its ring
+        breathes -- a smooth, continuous fade in brightness between the
+        felt's own accent and its dimmer felt_dark, driven by
+        _pulse_jackpot -- rather than the old neon-glow halo (too gaudy)
+        or a hard on/off blink (tried it, too abrupt). The chip itself
+        stays the same blue as every other £1 chip in the tray."""
         tag = "spot_jackpot"
         felt_theme = self.app.settings.theme()
         placed = bool(self.bets["jackpot"])
-        t = 0.5 + 0.5 * math.sin(self._jackpot_pulse_t)  # 0 -> 1 -> 0, one slow breath
         if placed:
-            glow = _lerp_color(JACKPOT_GLOW_DIM, JACKPOT_GLOW_BRIGHT, t)
-            # A soft halo: two thin rings that barely grow (~1.5px) -- almost
-            # all the motion is the colour brightening, not the outline
-            # expanding -- with the outer ring faded towards the felt so it
-            # reads as a glow fading out, not a hard second outline.
-            for base_dr, fade in ((2, 0.0), (5, 0.55)):
-                dr = base_dr + t * 1.5
-                ring = _lerp_color(glow, self._current_felt, fade)
-                self.canvas.create_oval(cx - r - dr, cy - r - dr, cx + r + dr, cy + r + dr,
-                                         outline=ring, width=2, tags=(tag,))
-            outline_color = glow
+            t = 0.5 + 0.5 * math.sin(self._jackpot_pulse_t)  # 0 -> 1 -> 0, one slow breath
+            outline_color = _lerp_color(felt_theme["felt_dark"], felt_theme["accent"], t)
         else:
             outline_color = felt_theme["accent"]
         self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=felt_theme["felt_dark"],
@@ -647,14 +745,6 @@ class ThreeCardPokerFrame(tk.Frame):
                                      fill=face, outline=rim, width=2, tags=(tag,))
             self.canvas.create_oval(cx - token_r + 7, cy - token_r + 7, cx + token_r - 7, cy + token_r - 7,
                                      outline="#ffffff", width=1, tags=(tag,))
-            # A faint sheen near the chip's edge that brightens with the same
-            # breath as the glow -- subtle enough to read as light catching
-            # the chip rather than an animated shape of its own.
-            sheen_r = token_r * 0.25
-            sx, sy = cx - token_r * 0.4, cy - token_r * 0.45
-            sheen_color = _lerp_color(face, "#ffffff", 0.12 + 0.18 * t)
-            self.canvas.create_oval(sx - sheen_r, sy - sheen_r, sx + sheen_r, sy + sheen_r,
-                                     fill=sheen_color, outline="", tags=(tag,))
             self.canvas.create_text(cx, cy, text="£1", fill="#ffffff",
                                      font=theme.font(11, weight="bold"), tags=(tag,))
         else:
@@ -662,15 +752,18 @@ class ThreeCardPokerFrame(tk.Frame):
                                      font=theme.font(8, weight="bold"), justify="center", tags=(tag,))
         self._bind_spot(tag, "jackpot")
 
-    def _draw_chip_stack(self, tag, cx, cy, amount, max_r, budget):
+    def _draw_chip_stack(self, tag, cx, cy, amount, max_r):
         """Draws `amount` as a stack of chip icons (largest denomination at the
         base), each carrying a ×N badge if more than one of that chip is on the
         spot. Recomputed from the total each time, so e.g. five £1 chips are
         shown as a single £5 chip once the total reaches £5.
 
-        `budget` is the vertical space available for the stack; the chip
-        radius shrinks below `max_r` if needed so a stack of several different
-        denominations never overflows a small spot.
+        Every chip is always drawn at `max_r` -- the same size a single-
+        denomination stack gets -- so a big payout needing several different
+        denominations just grows taller, never shrinks its individual chips
+        to fit some notional budget the way this used to (a large payout
+        could end up with a correctly-sized bottom chip and comically small
+        ones stacked above it).
 
         `tag` is usually a single string, but the payout animation
         (_animate_payouts) needs to delete/redraw just the chips on a strip
@@ -679,8 +772,7 @@ class ThreeCardPokerFrame(tk.Frame):
         anything (e.g. tag_lower) that expects the whole spot as one unit."""
         tags = (tag,) if isinstance(tag, str) else tuple(tag)
         breakdown = _chip_breakdown(amount)  # largest denomination first
-        n = len(breakdown)
-        layer_r = min(max_r, budget / (2 + 0.85 * (n - 1)))
+        layer_r = max_r
         dy = layer_r * 0.85
         base_cy = cy + dy * (len(breakdown) - 1) / 2
         for i, (value, count) in enumerate(breakdown):
@@ -713,15 +805,18 @@ class ThreeCardPokerFrame(tk.Frame):
         self.jackpot_display.set_value(raw_amount)
 
     def _pulse_jackpot(self):
-        """Keeps the jackpot spot's glow gently breathing while a bet's
-        placed on it. Self-perpetuating for the frame's whole lifetime (like
-        JackpotManager's own tick loop) -- cheap enough that it's not worth
-        starting/stopping around visibility, and redrawing the whole table
-        is safe here since nothing else animates during betting. Runs at the
-        same ~30fps as the rest of the app's animations (see _animate) so the
-        glow reads as smooth rather than a visible step between frames."""
+        """Keeps the jackpot spot's ring smoothly breathing (brightness
+        fading in and out between the felt's accent and its dimmer
+        felt_dark) while a bet's placed on it. Self-perpetuating for the
+        frame's whole lifetime (like JackpotManager's own tick loop) --
+        cheap enough that it's not worth starting/stopping around
+        visibility, and redrawing the whole table is safe here since
+        nothing else animates during betting. Runs at ~30fps (the same
+        cadence as _animate) so the breathing reads as smooth rather than a
+        visible step between frames -- more redraw overhead than the
+        earlier hard blink, but reads far better."""
         if self.state == "betting" and self.bets.get("jackpot"):
-            self._jackpot_pulse_t += 0.055
+            self._jackpot_pulse_t += 0.06
             self._draw_table()
         self.after(33, self._pulse_jackpot)
 
@@ -730,8 +825,13 @@ class ThreeCardPokerFrame(tk.Frame):
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
         self.deal_btn.pack()
+        # Betting-screen-only spacing (see BETTING_ACTION_FRAME_PADY) -- every
+        # other state restores the ordinary (8, 0) below, so this never
+        # touches the dealt/resolved screens' own Play/Fold or New Deal
+        # spacing.
+        self.action_frame.pack(pady=BETTING_ACTION_FRAME_PADY)
         self.payout_canvas.pack_forget()
-        self.chip_frame.pack(expand=True)
+        self.chip_frame.pack(pady=CHIP_FRAME_PADY)
         self._draw_table()
         self._update_total()
 
@@ -740,6 +840,7 @@ class ThreeCardPokerFrame(tk.Frame):
         self.payout_canvas.pack_forget()
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
+        self.action_frame.pack(pady=(8, 0))
         self.play_btn.pack(side="left", padx=8)
         self.fold_btn.pack(side="left", padx=8)
 
@@ -747,6 +848,7 @@ class ThreeCardPokerFrame(tk.Frame):
         self.chip_frame.pack_forget()
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
+        self.action_frame.pack(pady=(8, 0))
         self.new_deal_btn.pack(side="left", padx=8)
         self.change_bets_btn.pack(side="left", padx=8)
 
@@ -758,6 +860,7 @@ class ThreeCardPokerFrame(tk.Frame):
         self.payout_canvas.pack_forget()
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
+        self.action_frame.pack(pady=(8, 0))
 
     # ------------------------------------------------------------------ betting
     def _on_place_chip(self, key):
@@ -918,7 +1021,13 @@ class ThreeCardPokerFrame(tk.Frame):
         self.app.game_stats.record_strategy_decision(GAME_KEY, result.folded, decision_correct)
         if result.jackpot_won:
             self.app.jackpot.win()  # resets it to its floor -- see JackpotManager.win
-        self._refresh_balance()
+        # The balance itself is credited right here (above) so it's correct
+        # immediately no matter what happens next -- but the *display* of it
+        # (both this screen's own top-bar figure and the Cashier's) is
+        # deliberately held back until _on_round_settled, once the payout
+        # chip animation has actually finished and the ROUND RESULT panel is
+        # showing, rather than jumping to the new total while the chips are
+        # still visibly sliding around.
 
         self._show_no_controls()
         on_settled = lambda: self._reveal_dealer(result)
@@ -1015,7 +1124,7 @@ class ThreeCardPokerFrame(tk.Frame):
         self.canvas.create_text(STACK_CX, cy, text=label, fill=theme.FG,
                                  font=theme.font(9, weight="bold"), tags=(tag,))
         if amount:
-            self._draw_chip_stack(tag, STACK_CX, cy, amount, max_r=20, budget=h * 0.85)
+            self._draw_chip_stack(tag, STACK_CX, cy, amount, max_r=20)
 
     def _draw_strip_circle(self, key, cx, cy, r, label):
         """One circular strip spot -- Ante (always) or Pair Plus/Prime/
@@ -1032,7 +1141,7 @@ class ThreeCardPokerFrame(tk.Frame):
         # Chips get their own extra tag alongside the shared one, so the
         # payout animation can delete/redraw just the chips later without
         # touching this spot's own circle+label -- see _draw_chip_stack.
-        self._draw_chip_stack((tag, f"{tag}_chips"), cx, cy, self.bets.get(key, 0), max_r=20, budget=r * 1.7)
+        self._draw_chip_stack((tag, f"{tag}_chips"), cx, cy, self.bets.get(key, 0), max_r=20)
 
     # See ui/theme.py for the canonical implementation -- shared with
     # ui/settings_screen.py's toggle switches, which drew the exact same
@@ -1268,7 +1377,7 @@ class ThreeCardPokerFrame(tk.Frame):
             # the played cards, not an empty spot, so a smaller stack leaves
             # the middle card's own index actually readable.
             self._draw_chip_stack(("strip_play", "strip_play_chips"), STACK_CX, play_cy, result.play_bet,
-                                   max_r=18, budget=PLAY_BOX_H * 0.55)
+                                   max_r=18)
             if on_done:
                 on_done()
 
@@ -1385,17 +1494,17 @@ class ThreeCardPokerFrame(tk.Frame):
         chips actually sit -- position, tag, sizing) attached, for the
         payout chip animation."""
         layout = {
-            "play": (STACK_CX, PLAY_BOX_CY, "strip_play", 18, PLAY_BOX_H * 0.55),
-            "ante": (STACK_CX, ANTE_STRIP_CY, "strip_ante", 20, ANTE_STRIP_R * 1.7),
-            "pair_plus": (PAIR_PLUS_STRIP_CX, PLAY_BOX_CY, "strip_pair_plus", 20, PAIR_PLUS_STRIP_R * 1.7),
-            "prime": (PRIME_STRIP_CX, PLAY_BOX_CY, "strip_prime", 20, PRIME_STRIP_R * 1.7),
-            "jackpot": (JACKPOT_STRIP_CX, PLAY_BOX_CY, "strip_jackpot", 20, JACKPOT_STRIP_R * 1.7),
+            "play": (STACK_CX, PLAY_BOX_CY, "strip_play", 18),
+            "ante": (STACK_CX, ANTE_STRIP_CY, "strip_ante", 20),
+            "pair_plus": (PAIR_PLUS_STRIP_CX, PLAY_BOX_CY, "strip_pair_plus", 20),
+            "prime": (PRIME_STRIP_CX, PLAY_BOX_CY, "strip_prime", 20),
+            "jackpot": (JACKPOT_STRIP_CX, PLAY_BOX_CY, "strip_jackpot", 20),
         }
         items = []
         for key, bet, ret in self._resolved_bet_totals(result):
-            cx, cy, spot_tag, max_r, budget = layout[key]
+            cx, cy, spot_tag, max_r = layout[key]
             items.append(dict(key=key, bet=bet, ret=ret, cx=cx, cy=cy, spot_tag=spot_tag,
-                               max_r=max_r, budget=budget))
+                               max_r=max_r))
         return items
 
     def _chip_move_away(self, item, on_done):
@@ -1416,7 +1525,7 @@ class ThreeCardPokerFrame(tk.Frame):
             self.canvas.delete(travel_tag)
             r = item["max_r"] * (1 - t)
             if r > 2:
-                self._draw_chip_stack(travel_tag, cx, cy, item["bet"], r, item["budget"] * (1 - t))
+                self._draw_chip_stack(travel_tag, cx, cy, item["bet"], r)
 
         def arrived():
             self.canvas.delete(travel_tag)
@@ -1441,7 +1550,7 @@ class ThreeCardPokerFrame(tk.Frame):
             cy = DEALER_CENTER_Y + (to_cy - DEALER_CENTER_Y) * t
             self.canvas.delete(travel_tag)
             if item["max_r"] * t > 2:
-                self._draw_chip_stack(travel_tag, cx, cy, win_amount, item["max_r"] * t, item["budget"] * t)
+                self._draw_chip_stack(travel_tag, cx, cy, win_amount, item["max_r"] * t)
 
         self._animate(260, frame, on_done=on_done)
 
@@ -1466,14 +1575,13 @@ class ThreeCardPokerFrame(tk.Frame):
         def frame(t):
             for it in remaining:
                 r = it["max_r"] * (1 - t)
-                budget = it["budget"] * (1 - t)
 
                 base_tag = f"{it['spot_tag']}_chips"
                 bcx, bcy = it["cx"], it["cy"]
                 ncx, ncy = bcx + (target_x - bcx) * t, bcy + (target_y - bcy) * t
                 self.canvas.delete(base_tag)
                 if r > 2:
-                    self._draw_chip_stack(base_tag, ncx, ncy, it["bet"], r, budget)
+                    self._draw_chip_stack(base_tag, ncx, ncy, it["bet"], r)
 
                 win_amount = it["ret"] - it["bet"]
                 if win_amount > 0:
@@ -1482,7 +1590,7 @@ class ThreeCardPokerFrame(tk.Frame):
                     nwcx, nwcy = wcx + (target_x - wcx) * t, wcy + (target_y - wcy) * t
                     self.canvas.delete(travel_tag)
                     if r > 2:
-                        self._draw_chip_stack(travel_tag, nwcx, nwcy, win_amount, r, budget)
+                        self._draw_chip_stack(travel_tag, nwcx, nwcy, win_amount, r)
 
         def finish():
             for it in remaining:
@@ -1521,6 +1629,14 @@ class ThreeCardPokerFrame(tk.Frame):
         # sit right after the Play/Fold row instead of leaving a gap where
         # the fan used to be.
         self.fan_canvas.pack_forget()
+        # The balance was actually credited back in _finish_round, but its
+        # *display* -- this screen's own top-bar figure, and the Cashier/
+        # Menu's -- only updates now, once the payout chip animation has
+        # actually finished and the ROUND RESULT panel is about to appear,
+        # rather than jumping to the new total while chips are still
+        # visibly sliding around.
+        self._refresh_balance()
+        self.app.on_balance_changed()
         self._show_result(result)
         self._show_round_over_controls()
         self.state = "resolved"
