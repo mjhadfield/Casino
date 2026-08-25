@@ -130,7 +130,7 @@ JACKPOT_PAYTABLE_ROWS = [
     ("3oaK (off-suit)", f"£{JACKPOT_THREE_OF_A_KIND_OFFSUIT_PAYOUT:.0f}"),
     ("Straight Flush", f"£{JACKPOT_STRAIGHT_FLUSH_PAYOUT:.0f}"),
     ("3oaK (suited)", f"£{JACKPOT_THREE_OF_A_KIND_SUITED_PAYOUT:.0f}"),
-    ("3oaK (A/K/Q)", "100% JACKPOT"),
+    ("3oaK (A/K/Q suited)", "JACKPOT"),
 ]
 JACKPOT_PAYTABLE_HIGHLIGHT_ROW = len(JACKPOT_PAYTABLE_ROWS) - 1
 
@@ -229,7 +229,7 @@ def _net_color(amount):
         return theme.WIN_COLOR
     if amount < 0:
         return theme.LOSE_COLOR
-    return theme.FG
+    return theme.PUSH_COLOR
 
 
 def _round_upfront_cost(bets, num_boxes):
@@ -413,7 +413,14 @@ class BlackjackFrame(tk.Frame):
         self.box_result_lbls = []
         self.box_payout_canvases = []
         for col in (left_col, right_col):
-            lbl = tk.Label(col, text="", bg=felt_theme["felt"], font=theme.font(11, weight="bold"))
+            # wraplength pins this column's width to its payout canvas
+            # below (ROUND_OVER_PAYOUT_W) -- a long headline (e.g. 4+ split
+            # hands' worth of "Lose/Lose/Lose/Lose/Lose") would otherwise
+            # stretch the label, and so this whole column, wider than its
+            # canvas, the same overflow that used to hit round_net_lbl (see
+            # its own wraplength below).
+            lbl = tk.Label(col, text="", bg=felt_theme["felt"], font=theme.font(11, weight="bold"),
+                            wraplength=ROUND_OVER_PAYOUT_W, justify="center")
             lbl.pack(pady=(0, 6))
             canvas = tk.Canvas(col, width=ROUND_OVER_PAYOUT_W, height=ROUND_OVER_PAYOUT_H,
                                 bg=felt_theme["felt"], highlightthickness=0)
@@ -421,8 +428,13 @@ class BlackjackFrame(tk.Frame):
             self.box_result_lbls.append(lbl)
             self.box_payout_canvases.append(canvas)
 
+        # wraplength keeps a long message (e.g. the "Dealer Blackjack -- "
+        # prefix) from stretching mid_col wider than the New Deal/Change
+        # Bets buttons below it -- unbounded, that used to widen
+        # round_over_frame (and so game_col) enough to push the whole
+        # canvas + paytable_col content off past the window's edge.
         self.round_net_lbl = tk.Label(mid_col, text="", bg=felt_theme["felt"],
-                                       font=theme.font(13, weight="bold"))
+                                       font=theme.font(13, weight="bold"), wraplength=180, justify="center")
         self.round_net_lbl.pack(pady=(2, 10))
         self.new_deal_btn = tk.Button(
             mid_col, text="New Deal", bg=theme.ACCENT_DIM_BG, fg=theme.FG,
@@ -1276,6 +1288,19 @@ class BlackjackFrame(tk.Frame):
             self._continue_after_action()
 
     # ------------------------------------------------------------------ dealer reveal / settle
+    def _dealer_fully_revealed(self):
+        """True once every one of the Dealer's cards -- hole card included,
+        and any hit-to-17 draws -- is actually showing face-up on screen.
+        settle() (see _begin_dealer_turn) resolves every hand's outcome
+        synchronously, well before any of that reveal has actually played
+        out, so a hand's own status badge (_draw_hand) checks this rather
+        than just hand.outcome being set."""
+        return (
+            self._hole_revealed
+            and self._dealer_display_count is not None
+            and self._dealer_display_count >= len(self.game.dealer_cards)
+        )
+
     def _begin_dealer_turn(self):
         self._show_no_controls()
         self.result_lbl.configure(text="Dealer's turn.", fg=theme.FG)
@@ -1576,8 +1601,10 @@ class BlackjackFrame(tk.Frame):
         theme.rounded_rect(self.canvas, DEALER_MAT_X1, DEALER_MAT_TOP, DEALER_MAT_X2, DEALER_MAT_BOTTOM,
                             radius=DEALER_MAT_RADIUS, fill=felt_theme["felt_dark"], outline=felt_theme["accent"],
                             width=2, tags=("dealer_mat",))
-        self.canvas.create_text(CANVAS_WIDTH / 2, DEALER_MAT_LABEL_Y, text="DEALER", fill=theme.ACCENT,
-                                 font=theme.font(9, weight="bold"), tags=("dealer_mat",))
+        # "DEALER" itself is drawn as part of _draw_dealer_cards, not here --
+        # it now shares a line with the running total, which needs to update
+        # on its own targeted redraws (a card landing, a stand, a bust)
+        # without this whole mat (and the deck) being redrawn too.
         self._draw_deck()
 
     def _draw_deck(self):
@@ -1623,16 +1650,49 @@ class BlackjackFrame(tk.Frame):
             if face_up:
                 visible_cards.append(cards[i])
 
-        # Own tag, deleted before every redraw -- this is now called as a
+        # Own tags, deleted before every redraw -- this is now called as a
         # standalone targeted redraw (see _fly_deal_card) as well as part of
         # a full _redraw_play_table, so it can't rely on canvas.delete("all")
-        # having already cleared the previous total for it.
+        # having already cleared the previous label/total/BUST for them.
         self.canvas.delete("dealer_total")
-        if visible_cards:
-            total, _ = hand_value(visible_cards)
-            self.canvas.create_text(DEALER_MAT_X2 - 16, DEALER_MAT_LABEL_Y, text=str(total),
-                                     fill=theme.ACCENT, font=theme.font(11, weight="bold"),
-                                     anchor="e", tags=("dealer_total",))
+        self.canvas.delete("dealer_bust")
+        label_font = theme.font(9, weight="bold")
+        if not visible_cards:
+            self.canvas.create_text(CANVAS_WIDTH / 2, DEALER_MAT_LABEL_Y, text="DEALER", fill=theme.ACCENT,
+                                     font=label_font, tags=("dealer_total",))
+            return
+
+        total, _ = hand_value(visible_cards)
+        if total > 21:
+            num_color = theme.LOSE_COLOR    # bust
+        elif self._dealer_fully_revealed():
+            num_color = theme.WIN_COLOR     # stood, done
+        else:
+            num_color = theme.WARN          # still being dealt/drawn to
+        num_text = str(total)
+        num_font = label_font
+
+        # Two colours in one line means two text items -- Tk canvas text
+        # only ever takes one fill -- placed side by side and measured with
+        # a real Font object so the pair sits centred as a unit, the same
+        # spot "DEALER" alone used to occupy.
+        mono = theme.mono_family()
+        label_w = tkfont.Font(family=mono, size=9, weight="bold").measure("DEALER")
+        num_w = tkfont.Font(family=mono, size=9, weight="bold").measure(num_text)
+        gap = 6
+        start_x = CANVAS_WIDTH / 2 - (label_w + gap + num_w) / 2
+        self.canvas.create_text(start_x, DEALER_MAT_LABEL_Y, text="DEALER", fill=theme.ACCENT,
+                                 font=label_font, anchor="w", tags=("dealer_total",))
+        self.canvas.create_text(start_x + label_w + gap, DEALER_MAT_LABEL_Y, text=num_text, fill=num_color,
+                                 font=num_font, anchor="w", tags=("dealer_total",))
+
+        if total > 21:
+            # Cards only ever stop landing here once the Dealer's actually
+            # bust (_play_dealer_hand), so a bust total is already final the
+            # moment it's computed -- no need to wait for anything further,
+            # same as the boxes' own BUST badge.
+            theme.outlined_glyph(self.canvas, CANVAS_WIDTH / 2, DEALER_Y + CARD_HEIGHT / 2, "BUST",
+                                  20, theme.LOSE_COLOR, "#000000", tags=("dealer_bust",))
 
     def _draw_box_skeleton(self, idx):
         felt_theme = self.app.settings.theme()
@@ -1720,17 +1780,27 @@ class BlackjackFrame(tk.Frame):
         self.canvas.create_text(x2 - 12, cy - row_h / 2 + 10, text=str(hand.total), fill=theme.FG,
                                  font=theme.font(9, weight="bold"), anchor="e", tags=(hand_tag,))
 
+        # A bust or a natural are both knowable (and already shown) the
+        # instant they happen, during the player's own turn -- only a
+        # settled Win/Lose/Push/Blackjack outcome, which depends on the
+        # Dealer's own final hand, waits for that hand to actually be fully
+        # revealed on screen, rather than popping up the moment settle()
+        # runs (well before the Dealer's cards finish animating in).
         status = None
-        if hand.outcome:
-            status = hand.outcome.upper()
-        elif hand.is_bust:
+        if hand.is_bust:
             status = "BUST"
         elif hand.is_blackjack and hand.done:
             status = "BLACKJACK"
+        elif hand.outcome and self._dealer_fully_revealed():
+            status = hand.outcome.upper()
         if status:
             color = {"BUST": theme.LOSE_COLOR, "LOSE": theme.LOSE_COLOR, "WIN": theme.WIN_COLOR,
                      "BLACKJACK": theme.WIN_COLOR, "PUSH": theme.PUSH_COLOR}.get(status, theme.FG)
-            theme.outlined_glyph(self.canvas, x1 + 22 + HAND_CARD_W / 2, cy + row_h / 2 - 8, status,
+            # Centred over the fanned-out cards actually on screen (not just
+            # the first one), the same overlay-on-the-cards treatment the
+            # Dealer's own BUST gets (see _draw_dealer_cards).
+            fan_w = (shown - 1) * HAND_CARD_OVERLAP_X + HAND_CARD_W
+            theme.outlined_glyph(self.canvas, cards_x_start + fan_w / 2, cy, status,
                                   11, color, "#000000", tags=(hand_tag,))
 
     def _redraw_play_table(self):

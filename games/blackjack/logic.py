@@ -246,16 +246,20 @@ def _top_three_multiplier(three_eval, three_cards):
 
 def _jackpot_tier(three_eval, three_cards):
     """Returns (amount, is_pool_share) for the flat £1 Jackpot side bet.
-    is_pool_share is True only for Three of a Kind Aces/Kings/Queens, which
-    pays out of the shared progressive pool rather than a fixed amount --
-    the caller divides the pool's current value by however many boxes hit
-    this tier in the same round (see BlackjackGame._resolve_side_bets)."""
+    is_pool_share is True only for a *suited* Three of a Kind Aces/Kings/
+    Queens, which pays out of the shared progressive pool rather than a
+    fixed amount -- the caller divides the pool's current value by however
+    many boxes hit this tier in the same round (see BlackjackGame.
+    _resolve_side_bets). An off-suit A/K/Q three of a kind is just another
+    off-suit three of a kind -- it doesn't get any special treatment for
+    its rank, only suited trips do."""
     rank = three_eval[0]
     if rank == THREE_OF_A_KIND:
         hand_rank = three_cards[0].rank  # a 3oak, so any one card's rank says it all
-        if hand_rank in _JACKPOT_POOL_RANKS:
+        suited = len({c.suit for c in three_cards}) == 1
+        if suited and hand_rank in _JACKPOT_POOL_RANKS:
             return 0.0, True
-        if len({c.suit for c in three_cards}) == 1:
+        if suited:
             return JACKPOT_THREE_OF_A_KIND_SUITED_PAYOUT, False
         return JACKPOT_THREE_OF_A_KIND_OFFSUIT_PAYOUT, False
     if rank == STRAIGHT_FLUSH:

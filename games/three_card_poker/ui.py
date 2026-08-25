@@ -293,7 +293,7 @@ def _net_color(amount):
         return theme.WIN_COLOR
     if amount < 0:
         return theme.LOSE_COLOR
-    return theme.FG
+    return theme.PUSH_COLOR
 
 
 class ThreeCardPokerFrame(tk.Frame):
