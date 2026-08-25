@@ -45,8 +45,6 @@ CANVAS_HEIGHT = 460
 
 PAYTABLE_WIDTH = 240
 PAYTABLE_HEIGHT = 320
-PAYOUT_PANEL_WIDTH = 380
-PAYOUT_PANEL_HEIGHT = 240
 
 CONTENT_TOP_MARGIN = 14
 
@@ -178,6 +176,12 @@ SIDE_BET_LABELS = {"jackpot": "JP", "super_pairs": "SP", "top_three": "T3", "twe
 SIDE_BET_ORDER = ("jackpot", "super_pairs", "top_three", "twenty_one_plus_three")
 
 PAYOUT_WIN_LANDING_OFFSET_Y = -18
+
+# Round-over state: each box's breakdown gets its own small panel below the
+# box area (roughly as wide as the box itself), rather than being squeezed
+# inside the box's own interior -- see _draw_box_payout.
+ROUND_OVER_PAYOUT_W = int(BOX_W)
+ROUND_OVER_PAYOUT_H = 170
 
 
 _BET_LABELS = dict(BET_TYPES)
@@ -365,18 +369,49 @@ class BlackjackFrame(tk.Frame):
             highlightthickness=1, highlightbackground=theme.ACCENT,
             command=self._on_split,
         )
+
+        # --- round-over state: three columns below the canvas, each aligned
+        # under its own box -- Box 1's result + paytable on the left, Box 2's
+        # on the right, Round Net + New Deal/Change Bets stacked in between.
+        # Not built from action_frame/result_lbl (used by every other state)
+        # since this is structurally a row of columns, not a single line.
+        self.round_over_frame = tk.Frame(game_col, bg=felt_theme["felt"])
+
+        left_col = tk.Frame(self.round_over_frame, bg=felt_theme["felt"])
+        mid_col = tk.Frame(self.round_over_frame, bg=felt_theme["felt"])
+        right_col = tk.Frame(self.round_over_frame, bg=felt_theme["felt"])
+        left_col.pack(side="left", padx=10, anchor="n")
+        mid_col.pack(side="left", padx=16, anchor="n")
+        right_col.pack(side="left", padx=10, anchor="n")
+
+        self.box_result_lbls = []
+        self.box_payout_canvases = []
+        for col in (left_col, right_col):
+            lbl = tk.Label(col, text="", bg=felt_theme["felt"], font=theme.font(11, weight="bold"))
+            lbl.pack(pady=(0, 6))
+            canvas = tk.Canvas(col, width=ROUND_OVER_PAYOUT_W, height=ROUND_OVER_PAYOUT_H,
+                                bg=felt_theme["felt"], highlightthickness=0)
+            canvas.pack()
+            self.box_result_lbls.append(lbl)
+            self.box_payout_canvases.append(canvas)
+
+        self.round_net_lbl = tk.Label(mid_col, text="", bg=felt_theme["felt"],
+                                       font=theme.font(13, weight="bold"))
+        self.round_net_lbl.pack(pady=(2, 10))
         self.new_deal_btn = tk.Button(
-            self.action_frame, text="New Deal", bg=theme.ACCENT_DIM_BG, fg=theme.FG,
+            mid_col, text="New Deal", bg=theme.ACCENT_DIM_BG, fg=theme.FG,
             font=theme.font(13, weight="bold"), relief="flat", padx=30, pady=10, cursor="hand2",
             highlightthickness=1, highlightbackground=theme.ACCENT,
             command=self._new_deal,
         )
+        self.new_deal_btn.pack(pady=(0, 6))
         self.change_bets_btn = tk.Button(
-            self.action_frame, text="Change Bets", bg=theme.GREY_BTN_BG, fg=theme.FG_DIM,
+            mid_col, text="Change Bets", bg=theme.GREY_BTN_BG, fg=theme.FG_DIM,
             font=theme.font(13, weight="bold"), relief="flat", padx=30, pady=10, cursor="hand2",
             highlightthickness=1, highlightbackground=theme.GREY_BTN_BORDER,
             command=self._new_round,
         )
+        self.change_bets_btn.pack()
 
         self.chip_zone = tk.Frame(game_col, bg=felt_theme["felt"])
         self.chip_zone.pack(pady=(61, 0))
@@ -415,19 +450,6 @@ class BlackjackFrame(tk.Frame):
             command=self._clear_bets,
         )
         self.clear_btn.pack(pady=(3, 0))
-
-        self.payout_canvas = tk.Canvas(
-            self.chip_zone, width=PAYOUT_PANEL_WIDTH, height=PAYOUT_PANEL_HEIGHT,
-            bg=felt_theme["felt"], highlightthickness=0,
-        )
-
-        self.chip_frame.pack()
-        self.chip_frame.update_idletasks()
-        self.chip_zone.configure(
-            width=max(self.chip_frame.winfo_reqwidth(), PAYOUT_PANEL_WIDTH),
-            height=max(self.chip_frame.winfo_reqheight(), PAYOUT_PANEL_HEIGHT),
-        )
-        self.chip_zone.pack_propagate(False)
 
     # ------------------------------------------------------------------ chip tray
     def _make_chip_button(self, parent, value, face, rim):
@@ -677,42 +699,57 @@ class BlackjackFrame(tk.Frame):
     # ------------------------------------------------------------------ state transitions
     def _show_betting_controls(self):
         self.canvas.configure(height=BETTING_CANVAS_HEIGHT)
-        self.result_lbl.pack(pady=BETTING_RESULT_LBL_PADY)
+        self.round_over_frame.pack_forget()
+        # result_lbl/action_frame get forgotten (as a whole, not just their
+        # children) in round-over -- see _show_round_over_controls -- so
+        # every re-pack here has to pin its position with before=, or a
+        # first-pack-after-forget re-appends it at the *end* of game_col's
+        # sibling list (after chip_zone) instead of back where it belongs.
+        self.result_lbl.pack(pady=BETTING_RESULT_LBL_PADY, before=self.chip_zone)
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
         self.box_count_frame.pack(side="left", padx=(0, 16))
         self.deal_btn.pack(side="left")
         self._refresh_box_buttons()
-        self.action_frame.pack(pady=BETTING_ACTION_FRAME_PADY)
-        self.payout_canvas.pack_forget()
+        self.action_frame.pack(pady=BETTING_ACTION_FRAME_PADY, before=self.chip_zone)
         self.chip_frame.pack(pady=CHIP_FRAME_PADY)
         self._draw_table()
         self._update_total()
 
     def _show_no_controls(self):
         self.canvas.configure(height=CANVAS_HEIGHT)
-        self.result_lbl.pack(pady=PLAY_RESULT_LBL_PADY)
+        self.round_over_frame.pack_forget()
+        self.result_lbl.pack(pady=PLAY_RESULT_LBL_PADY, before=self.chip_zone)
         self.chip_frame.pack_forget()
-        self.payout_canvas.pack_forget()
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
-        self.action_frame.pack(pady=(8, 0))
+        self.action_frame.pack(pady=(8, 0), before=self.chip_zone)
 
     def _show_round_over_controls(self):
         self.chip_frame.pack_forget()
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
-        self.action_frame.pack(pady=(8, 0))
-        self.new_deal_btn.pack(side="left", padx=8)
-        self.change_bets_btn.pack(side="left", padx=8)
-        self.payout_canvas.pack(pady=(10, 0))
+        self.result_lbl.pack_forget()
+        # action_frame itself isn't needed here either -- New Deal/Change
+        # Bets live in round_over_frame's own mid column now -- so forget it
+        # too rather than leave it sitting there empty (it was still eating
+        # a real, if small, slice of vertical space with nothing in it).
+        self.action_frame.pack_forget()
+        # round_over_frame is only ever packed here -- its very first pack()
+        # call would otherwise land it at the *end* of game_col's sibling
+        # order (i.e. after chip_zone, which has sat there since _build_ui),
+        # regardless of where it was created in source. before= pins it
+        # right after the canvas every time, where it belongs. pady is
+        # canvas's own bottom pady (2) plus enough to sit ~20px higher than
+        # a plain small gap would put it, per your last note.
+        self.round_over_frame.pack(pady=(39, 0), before=self.chip_zone)
 
     def _show_decision_controls(self):
+        self.round_over_frame.pack_forget()
         self.chip_frame.pack_forget()
-        self.payout_canvas.pack_forget()
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
-        self.action_frame.pack(pady=(8, 0))
+        self.action_frame.pack(pady=(8, 0), before=self.chip_zone)
 
         box = self.game.boxes[self.active_box_idx]
         hand = box.active_hand()
@@ -1244,50 +1281,78 @@ class BlackjackFrame(tk.Frame):
             self.app.jackpot.win()
         self._refresh_balance()
         self.app.on_balance_changed()
-        self._show_result(summary)
-        self._draw_payout_panel(summary)
-        self._show_round_over_controls()
         self.state = "resolved"
+        self._show_result(summary)
+        self._redraw_play_table()
+        self._draw_box_payout(0, summary)
+        self._draw_box_payout(1, summary)
+        self._show_round_over_controls()
 
     def _show_result(self, summary):
-        parts = []
-        for i, box_result in enumerate(summary.boxes):
-            prefix = f"Box {i + 1}: " if self.num_boxes_in_round == 2 else ""
-            parts.append(prefix + "/".join(h.outcome for h in box_result.hands))
-        headline = ("Dealer Blackjack -- " if summary.dealer_blackjack else "") + "   ".join(parts)
-        self.result_lbl.configure(text=headline, fg=_net_color(summary.net_result))
+        # The round-over screen is its own 3-column layout (round_over_frame)
+        # rather than the single result_lbl line every other state uses --
+        # this populates its two box-result labels plus the shared net line.
+        prefix = "Dealer Blackjack -- " if summary.dealer_blackjack else ""
+        self.round_net_lbl.configure(text=f"{prefix}Round Net: {_format_signed(summary.net_result)}",
+                                      fg=_net_color(summary.net_result))
+        for i, lbl in enumerate(self.box_result_lbls):
+            if i >= len(summary.boxes):
+                lbl.configure(text="", fg=theme.FG)
+                continue
+            box_result = summary.boxes[i]
+            headline = "/".join(h.outcome for h in box_result.hands)
+            box_net = sum(net for _, net in self._box_payout_rows(i, summary))
+            lbl.configure(text=f"Box {i + 1}: {headline}  {_format_signed(box_net)}", fg=_net_color(box_net))
 
-    def _payout_rows(self, summary):
+    def _box_payout_rows(self, box_idx, summary):
+        """Like the old combined _payout_rows, but scoped to one box and
+        unprefixed -- each box draws its own breakdown inside its own area
+        now (see _draw_box_payout), so there's no longer a shared panel that
+        needs "Box N" on every row to tell them apart.
+
+        A split box's hands are combined into one "Blackjack" row (rather
+        than one row per hand) so a box's row count -- and so the vertical
+        space it needs -- stays the same regardless of how many times it's
+        been split: each hand already shows its own Bust/Lose/Push/Win/
+        Blackjack badge right on its own card row (see _draw_hand), so
+        nothing is actually lost by not repeating it here too."""
+        box_result = summary.boxes[box_idx]
         rows = []
-        for i, box_result in enumerate(summary.boxes):
-            prefix = f"Box {i + 1} " if self.num_boxes_in_round == 2 else ""
-            for h_i, hand in enumerate(box_result.hands):
-                suffix = f" (hand {h_i + 1})" if len(box_result.hands) > 1 else ""
-                rows.append((f"{prefix}Blackjack{suffix}", hand.payout - hand.bet))
-            if box_result.insurance_bet > 0:
-                rows.append((f"{prefix}Insurance", box_result.insurance_return - box_result.insurance_bet))
-            for key, ret in box_result.side_bet_results.items():
-                wagered = getattr(box_result, f"{key}_bet")
-                rows.append((f"{prefix}{_BET_LABELS.get(key, key)}", ret - wagered))
+        hands = box_result.hands
+        label = "Blackjack" if len(hands) == 1 else f"Blackjack (x{len(hands)})"
+        rows.append((label, sum(hand.payout - hand.bet for hand in hands)))
+        if box_result.insurance_bet > 0:
+            rows.append(("Insurance", box_result.insurance_return - box_result.insurance_bet))
+        for key, ret in box_result.side_bet_results.items():
+            wagered = getattr(box_result, f"{key}_bet")
+            rows.append((_BET_LABELS.get(key, key), ret - wagered))
         return rows
 
-    def _draw_payout_panel(self, summary):
-        canvas = self.payout_canvas
+    def _draw_box_payout(self, box_idx, summary):
+        """Drawn into this box's own dedicated small panel below the box
+        area (self.box_payout_canvases), not inside the box itself -- see
+        round_over_frame. Replaces the old single combined ROUND RESULT
+        panel (a fixed-size widget off in the chip tray's spot) that had no
+        relationship to either box's actual width and would readily
+        overflow with 2 boxes' worth of hands/side bets in it at once."""
+        canvas = self.box_payout_canvases[box_idx]
         canvas.delete("all")
-        w, h = PAYOUT_PANEL_WIDTH, PAYOUT_PANEL_HEIGHT
-        theme.recessed_panel(canvas, 0, 0, w, h, title="ROUND RESULT")
-        y = 42
-        for label, net in self._payout_rows(summary):
-            canvas.create_text(20, y, text=label, fill=theme.FG, font=theme.font(10), anchor="w")
-            canvas.create_text(w - 20, y, text=_format_signed(net), fill=_net_color(net),
-                                font=theme.font(10, weight="bold"), anchor="e")
-            y += 19
-        y += 8
-        canvas.create_line(20, y, w - 20, y, fill=theme.BORDER)
-        y += 20
-        canvas.create_text(20, y, text="Round Net", fill=theme.FG, font=theme.font(11, weight="bold"), anchor="w")
-        canvas.create_text(w - 20, y, text=_format_signed(summary.net_result), fill=_net_color(summary.net_result),
-                            font=theme.font(11, weight="bold"), anchor="e")
+        if box_idx >= len(summary.boxes):
+            return
+        w, h = ROUND_OVER_PAYOUT_W, ROUND_OVER_PAYOUT_H
+        theme.recessed_panel(canvas, 0, 0, w, h, title=f"BOX {box_idx + 1} PAYOUT", title_font_size=11)
+        rows = self._box_payout_rows(box_idx, summary)
+        if not rows:
+            return
+
+        top, bottom = 40, h - 10
+        item_gap = min(18, (bottom - top) / len(rows))
+        y = top
+        for label, net in rows:
+            canvas.create_text(16, y, text=label, fill=theme.FG, font=theme.font(9), anchor="w")
+            canvas.create_text(w - 16, y, text=_format_signed(net), fill=_net_color(net),
+                                font=theme.font(9, weight="bold"), anchor="e")
+            y += item_gap
 
     def _new_deal(self):
         """New Deal: re-deals immediately with the same bets/box count as
