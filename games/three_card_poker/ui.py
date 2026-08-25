@@ -222,6 +222,28 @@ PLAY_REST_CARD_WIDTH = CARD_WIDTH * PLAY_REST_CARD_SCALE
 PLAY_REST_CARD_HEIGHT = CARD_HEIGHT * PLAY_REST_CARD_SCALE
 PLAY_REST_CARD_FAN_OFFSET = 34
 
+# Play's own pacing for _settle_played_hand -- half a second slower overall
+# than _animate_to_rest's Fold-preserving defaults (150ms/200ms, split
+# evenly: +250ms to each of the vanish-from-the-fan and grow-in-at-Play
+# phases that together read as one continuous "card to the Play box" slide),
+# plus its own half-second pause once the cards have landed before the Play
+# bet's chips are placed on top of them.
+PLAY_SETTLE_VANISH_MS = 400
+PLAY_SETTLE_GROW_MS = 450
+PLAY_CHIP_DELAY_MS = 500
+
+# Dealer reveal: a pause once the Play chips have landed before the first
+# card flips face up, then the same half-second beat between each of the 3
+# cards (_run_staggered's own stagger, not each flip's own -- brisker --
+# 200ms flip duration). Payout starts the instant the last card lands, no
+# extra pause of its own.
+DEALER_REVEAL_START_DELAY_MS = 500
+DEALER_REVEAL_STAGGER_MS = 500
+
+# Each payout chip's own travel animation (_chip_move_away/_chip_move_in) --
+# half of the previous (already-slowed) 560ms, to speed the payout back up.
+PAYOUT_CHIP_MOVE_MS = 280
+
 
 def _ease_out_cubic(t):
     return 1 - (1 - t) ** 3
@@ -1190,6 +1212,16 @@ class ThreeCardPokerFrame(tk.Frame):
             fns[i](lambda: step(i + 1))
         step(0)
 
+    def _after_delay(self, ms, fn):
+        """Runs fn() after a plain `ms` pause -- e.g. a beat between one
+        animation settling and the next one starting -- collapsing to an
+        immediate call when animations are off, same convention _animate/
+        _run_staggered already follow for anything driven frame-by-frame."""
+        if self.app.settings.get("animations_enabled"):
+            self.after(ms, fn)
+        else:
+            fn()
+
     def _animate_flip(self, canvas, tag, cx_slot, y, card, reveal, duration, on_done=None):
         """Flips a card in place by narrowing it to a sliver and back out,
         swapping the face at the midpoint. `reveal=True` turns a face-down
@@ -1241,7 +1273,8 @@ class ThreeCardPokerFrame(tk.Frame):
     def _animate_to_rest(self, cards, target_cx, target_cy, group_tag, spot_tag=None,
                           face_up=True, sort=False, on_done=None,
                           rest_width=REST_CARD_WIDTH, rest_height=REST_CARD_HEIGHT,
-                          fan_offset=REST_CARD_FAN_OFFSET):
+                          fan_offset=REST_CARD_FAN_OFFSET,
+                          vanish_ms=150, grow_ms=200):
         """Moves the player's 3 cards from the fan (in fan_canvas, below the
         Play/Fold buttons) to a resting spot on the strip (in self.canvas,
         above them) -- Play (win/push/lose) or Prime/Pair Plus (folding with
@@ -1259,7 +1292,11 @@ class ThreeCardPokerFrame(tk.Frame):
         top and the cards just peek out from underneath -- the "folded onto
         Prime/Pair Plus" look. `sort` orders them highest-to-lowest, left to
         right, matching how the hand reads once settled; folded cards stay
-        in dealt order since they land face-down anyway."""
+        in dealt order since they land face-down anyway.
+
+        `vanish_ms`/`grow_ms` are this pair's own durations -- default to
+        the Fold tuck-under-a-spot timing (Prime/Pair Plus), untouched;
+        _settle_played_hand passes its own slower pair for the Play spot."""
         assert self.result is not None
         fan_slots = self._fan_slots()
         order = sorted(range(3), key=lambda i: -cards[i].value) if sort else list(range(3))
@@ -1301,17 +1338,24 @@ class ThreeCardPokerFrame(tk.Frame):
                         self.canvas.tag_lower(tag, spot_tag)
 
         def start_grow():
-            self._animate(200, grow_frame, on_done=on_done)
+            self._animate(grow_ms, grow_frame, on_done=on_done)
 
-        self._animate(150, vanish_frame, on_done=start_grow)
+        self._animate(vanish_ms, vanish_frame, on_done=start_grow)
 
     def _settle_played_hand(self, on_done):
         """Play: the hand comes to rest centred on the Play spot -- now
         above the fan, so this moves the cards *up* -- sorted highest to
-        lowest, then the Play bet's chips are placed on top of the cards,
-        the traditional casino way of signalling "I'm playing this hand".
-        The "PLAY" label sits at this same centre point and ends up covered,
-        same as a printed felt spot would."""
+        lowest, then, after a beat, the Play bet's chips are placed on top
+        of the cards, the traditional casino way of signalling "I'm playing
+        this hand". The "PLAY" label sits at this same centre point and
+        ends up covered, same as a printed felt spot would.
+
+        Slower than Fold's own use of _animate_to_rest (PLAY_SETTLE_VANISH_
+        MS/PLAY_SETTLE_GROW_MS vs. that method's own Fold-preserving
+        defaults) and with its own pause (PLAY_CHIP_DELAY_MS) before the
+        chips actually land, rather than the instant of the cards -- this is
+        the moment the player commits real money, so it's given its own
+        unhurried beat rather than reusing Fold's brisker pacing."""
         assert self.result is not None
         result = self.result  # captured locally so the closure below doesn't dereference self.result directly
         play_cy = PLAY_BOX_CY
@@ -1325,10 +1369,14 @@ class ThreeCardPokerFrame(tk.Frame):
             if on_done:
                 on_done()
 
+        def cards_settled():
+            self._after_delay(PLAY_CHIP_DELAY_MS, show_play_chips)
+
         self._animate_to_rest(result.player_cards, STACK_CX, play_cy, "played_hand",
-                               sort=True, on_done=show_play_chips,
+                               sort=True, on_done=cards_settled,
                                rest_width=PLAY_REST_CARD_WIDTH, rest_height=PLAY_REST_CARD_HEIGHT,
-                               fan_offset=PLAY_REST_CARD_FAN_OFFSET)
+                               fan_offset=PLAY_REST_CARD_FAN_OFFSET,
+                               vanish_ms=PLAY_SETTLE_VANISH_MS, grow_ms=PLAY_SETTLE_GROW_MS)
 
     def _settle_folded_hand(self, on_done):
         """Fold: if Prime or Pair Plus actually *won* (both pay regardless
@@ -1393,9 +1441,12 @@ class ThreeCardPokerFrame(tk.Frame):
         self._flip_fan_face_down(lambda: self._run_staggered(3, 70, slide_one))
 
     def _reveal_dealer(self, result):
-        # Once all 3 dealer cards are face up, the payout chip animation
-        # runs (see _animate_payouts), and only once *that's* finished does
-        # the round actually settle -- see _on_round_settled.
+        # Called right as the Play chips land (see _settle_played_hand) --
+        # a pause (DEALER_REVEAL_START_DELAY_MS) before the first card flips
+        # face up, same beat (DEALER_REVEAL_STAGGER_MS) between each of the
+        # 3. Once all of them are up, the payout chip animation runs
+        # immediately (see _animate_payouts), and only once *that's*
+        # finished does the round actually settle -- see _on_round_settled.
         after_reveal = lambda: self._animate_payouts(result, lambda: self._on_round_settled(result))
 
         def flip_one(i):
@@ -1405,7 +1456,7 @@ class ThreeCardPokerFrame(tk.Frame):
                 on_done=after_reveal if i == 2 else None,
             )
 
-        self._run_staggered(3, 130, flip_one)
+        self._after_delay(DEALER_REVEAL_START_DELAY_MS, lambda: self._run_staggered(3, DEALER_REVEAL_STAGGER_MS, flip_one))
 
     # ------------------------------------------------------------------ payout chip animation
     def _resolved_bet_totals(self, result):
@@ -1476,7 +1527,7 @@ class ThreeCardPokerFrame(tk.Frame):
             if on_done:
                 on_done()
 
-        self._animate(260, frame, on_done=arrived)
+        self._animate(PAYOUT_CHIP_MOVE_MS, frame, on_done=arrived)
 
     def _chip_move_in(self, item, on_done):
         """Stage 2 -- one call per winning bet, chained by _animate_payouts:
@@ -1496,7 +1547,7 @@ class ThreeCardPokerFrame(tk.Frame):
             if item["max_r"] * t > 2:
                 self._draw_chip_stack(travel_tag, cx, cy, win_amount, item["max_r"] * t)
 
-        self._animate(260, frame, on_done=on_done)
+        self._animate(PAYOUT_CHIP_MOVE_MS, frame, on_done=on_done)
 
     def _sweep_remaining_chips(self, items, on_done):
         """Called from _new_deal, right as the player deals the next hand --
