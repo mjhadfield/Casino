@@ -45,8 +45,10 @@ _is_royal layers onto the same base evaluator:
   Top 3 (only playable alongside a 21+3 bet): Three of a Kind Suited 270:1,
     Straight Flush 180:1, Three of a Kind (any suits) 90:1.
   Jackpot (flat £1 on/off toggle, shares Three Card Poker's progressive
-    pool via app.jackpot): Three of a Kind Aces/Kings/Queens -> 100% of the
-    pool (split between boxes if more than one hits it the same round);
+    pool via app.jackpot): Three of a Kind Aces/Kings/Queens, suited ->
+    100% of the pool (split between boxes if more than one hits it the
+    same round; an off-suit Aces/Kings/Queens trip is just another
+    off-suit three of a kind, see below);
     Three of a Kind suited (other ranks) -> £625; Straight Flush -> £125;
     Three of a Kind off-suit (other ranks) -> £100; Straight -> £30;
     Flush -> £10.
@@ -106,8 +108,8 @@ JACKPOT_STRAIGHT_PAYOUT = 30
 JACKPOT_THREE_OF_A_KIND_OFFSUIT_PAYOUT = 100
 JACKPOT_STRAIGHT_FLUSH_PAYOUT = 125
 JACKPOT_THREE_OF_A_KIND_SUITED_PAYOUT = 625
-# Three of a Kind Aces/Kings/Queens (any suit arrangement) pays 100% of the
-# jackpot pool instead of a fixed amount -- see _jackpot_tier.
+# A *suited* Three of a Kind Aces/Kings/Queens pays 100% of the jackpot
+# pool instead of a fixed amount -- see _jackpot_tier.
 _JACKPOT_POOL_RANKS = {"A", "K", "Q"}
 
 

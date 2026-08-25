@@ -1,9 +1,18 @@
-# House Edge Casino
+# Hadfield Casino
 
 A small, extensible casino games library, built with Python's standard
-library only (`tkinter` — no extra installs needed).
+library only (`tkinter` — no extra installs needed). Two tables are fully
+playable — Three Card Poker and Blackjack — sharing one progressive
+jackpot, alongside a Cashier, Settings, and per-game Stats screen.
 
 ## Running it
+
+**Windows:** double-click `Launch Casino.bat`. If that reports Python is
+missing, run `Install prerequisites.bat` once first (no admin rights
+needed — it installs Python + tkinter for your user account only), then
+try `Launch Casino.bat` again.
+
+**Everyone else:**
 
 ```
 python3 main.py
@@ -22,19 +31,39 @@ sudo pacman -S tk                  # Arch/CachyOS
 ## What's here
 
 - **Main menu** — bank balance button, settings gear, and a grid of game
-  tiles. Three Card Poker is playable now; the rest are placeholder tiles
-  ready to be wired up as the library grows.
-- **Bank balance / Finances screen** — deposit funds (capped at £300 per
-  transaction, no limit on the number of deposits), see your current
-  balance, and track lifetime stats (total deposited, total wagered, total
-  returned, net profit/loss, hands played, biggest single-round win).
-- **Settings screen** — sound/animation toggles, a "confirm bets before
-  dealing" option, three table felt themes, and a way to reset lifetime
-  stats without touching your balance.
+  tiles. Three Card Poker and Blackjack are playable now; the rest
+  (Pai Gow Poker, Mississippi Stud, Baccarat, Let It Ride, and a few
+  still-unannounced ones) are placeholder tiles ready to be wired up as
+  the library grows.
+- **Cashier / Finances screen** — deposit funds (up to £200 per
+  transaction, and only while your balance is below £200 total — a
+  deposit is silently capped at whatever's needed to land you exactly on
+  £200, so the only way past that line is actually winning at the tables,
+  not depositing your way there) or withdraw, see your current balance,
+  and track lifetime stats (total deposited/withdrawn, total wagered,
+  total returned, net profit/loss, hands played, biggest single-round
+  win).
+- **Settings screen** — sound/animation toggles, five table felt themes,
+  the progressive jackpot's growth rate (£/second), and a way to reset
+  stats — per-game or the account's lifetime totals — without touching
+  your balance.
+- **Stats screen** — a game-by-game breakdown: money wagered/returned and
+  the house edge actually realised per bet type, how often each hand
+  outcome has come up, and that game's own biggest single-round net win.
+  Three Card Poker additionally tracks Play/Fold decisions against basic
+  strategy; Blackjack has no fold to track, so that section is skipped
+  for it.
+- **Progressive jackpot** — shared by both tables (Three Card Poker's
+  spade-suited Royal Flush and Blackjack's suited Ace/King/Queen three of
+  a kind both pay out of it). Grows continuously in real time between a
+  £5,000 floor and £50,000 ceiling — not funded by wagers — at a rate set
+  in Settings (1p/second by default). The level reached is saved between
+  sessions; only its growth "clock" resets when the app restarts.
 - **Three Card Poker** — full UK casino payout rules (see below).
+- **Blackjack** — 8-deck shoe with four side bets (see below).
 
-Balance, lifetime stats, and settings are saved to `data/*.json` and persist
-between sessions.
+Balance, lifetime stats, per-game stats, jackpot progress, and settings are
+all saved to `data/*.json` and persist between sessions.
 
 ## Three Card Poker rules implemented
 
@@ -57,43 +86,107 @@ Prime side bet (UK variation, based on suit colour):
 - All 6 cards (yours + dealer's) the same colour: **4:1** (this supersedes
   the 3:1 result rather than stacking with it)
 
+Jackpot side bet (flat £1, shared progressive pool): a spade-suited Royal
+Flush pays **100% of the pool**; any other Royal Flush **£500**; a
+non-royal Straight Flush **£100**; Three of a Kind **£60**; a Straight
+**£6**.
+
 Hand ranking order in 3-card poker (note Flush ranks *above* Straight,
 unlike 5-card poker, since 3-card flushes are rarer than 3-card straights):
 `Straight Flush > Three of a Kind > Straight > Flush > Pair > High Card`.
+
+## Blackjack rules implemented
+
+8-deck shoe, freshly reshuffled every round. Up to 2 boxes can be played
+at once, side by side, with identical bets on each.
+
+Main game:
+- American-style dealer hole card with a peek: an Ace/10-value up-card
+  checks the hole card immediately — an early Dealer Blackjack ends the
+  round for every box before anyone can Hit/Double/Split into extra
+  exposure.
+- Insurance is offered only on an Ace up-card, up to half a box's main
+  bet, and pays **2:1**.
+- No restriction on what a first-two-cards total can be to Double.
+  Splitting is allowed on any equal-*value* pair (so e.g. J+Q qualifies),
+  up to 4 splits (5 hands); Double is allowed after a split too. The one
+  exception is split Aces: each gets exactly one more card and then
+  automatically stands, no further Hit/Double/Split even on another Ace.
+- A 21 made on a split hand is just "21", not a bonus-paying natural — a
+  natural Blackjack only exists on an untouched original 2-card hand.
+- Dealer stands on all 17s (soft or hard) and always completes their hand
+  — reveals the hole card and draws to 17 — once every box is done, for a
+  consistent reveal every round, even after an early resolution.
+- Player Blackjack (Dealer not also Blackjack) pays **3:2**. Bust: lose.
+  Otherwise the higher total wins **1:1**; equal totals push.
+
+Side bets — all four are evaluated against the box's own first two cards
+plus the Dealer's up-card (i.e. a 3-card poker hand, same ranking order as
+Three Card Poker's above):
+
+- **Super Pairs** (the box's own 2 cards only): Any Pair **5:1**, Prime
+  Pair (same colour, different suits) **10:1**, Suited Pair **25:1**,
+  Suited Trips **50:1** (the pair *and* the Dealer's up-card all share
+  rank and suit — only possible thanks to the 8-deck shoe).
+- **21+3**: Flush or better pays a flat **9:1**.
+- **Top 3** (only playable alongside a 21+3 bet): Three of a Kind **90:1**,
+  Straight Flush **180:1**, Three of a Kind Suited **270:1**.
+- **Jackpot** (flat £1, shared progressive pool): a *suited* Three of a
+  Kind Aces/Kings/Queens pays **100% of the pool** (split between boxes if
+  more than one hits it the same round); Three of a Kind suited, other
+  ranks, **£625**; Straight Flush **£125**; Three of a Kind off-suit (any
+  rank, Aces/Kings/Queens included) **£100**; Straight **£30**; Flush
+  **£10**.
 
 ## Project layout (built for reuse across future games)
 
 ```
 main.py                          # app window, frame stack, wiring
+Launch Casino.bat                # Windows: double-click to run
+Install prerequisites.bat        # Windows: one-time Python + tkinter setup
 core/
-  cards.py                       # Card, Deck — shared by every game
+  cards.py                       # Card, Deck (multi-deck shoes) -- shared by every game
   hand_evaluator.py              # 3-card hand ranking/comparison logic
   finances.py                    # bank balance + lifetime stats, persisted
+  game_stats.py                  # per-game bets/hands/strategy stats, persisted
+  jackpot.py                     # shared progressive jackpot, ticks in real time
   settings.py                    # app-wide settings + table themes, persisted
   persistence.py                 # generic JSON load/save helper
 ui/
   main_menu.py                   # main menu + game tile grid
-  finances_screen.py             # deposit flow + lifetime stats
-  settings_screen.py             # toggles, theme picker, stats reset
+  finances_screen.py             # deposit/withdraw flow + lifetime stats
+  settings_screen.py             # toggles, theme picker, jackpot rate, stats reset
+  stats_screen.py                # per-game bets/hands/strategy breakdown
   card_widgets.py                # canvas card-drawing helpers, reusable
+  chips.py                       # canvas chip-stack drawing helpers, reusable
+  jackpot_display.py             # odometer-style progressive jackpot meter
+  game_icons.py                  # vector icons for the menu's game tiles
+  dialogs.py                     # styled modal dialogs (confirm/info/document)
+  collapsible.py                 # collapsible bordered section, used in Settings
+  scrollable.py                  # scrollable container, used in Stats
 games/
   three_card_poker/
     logic.py                     # game engine: dealing, payouts, no UI/finance coupling
     ui.py                        # table screen: betting, dealing, results
-data/                            # created at runtime — finances.json, settings.json
+  blackjack/
+    logic.py                     # game engine: shoe, boxes/hands, Hit/Stand/Double/Split
+    ui.py                        # table screen: betting, dealing, play, results
+data/                            # created at runtime -- finances.json, settings.json, ...
 ```
 
-`core/` and `ui/card_widgets.py` are written to be game-agnostic: a new game
-(Blackjack, Baccarat, Roulette, ...) reuses `Deck`/`Card`, the
-`FinanceManager`/`SettingsManager`, and the JSON persistence helper, and only
-needs its own `logic.py` (rules) + `ui.py` (table screen) under `games/`,
-plus a tile added to `main_menu.py` and a frame registered in `main.py`.
+`core/` and the reusable bits of `ui/` are written to be game-agnostic: a
+new game reuses `Deck`/`Card`, `FinanceManager`/`SettingsManager`/
+`GameStatsManager`, the chip/card drawing helpers, and the JSON persistence
+helper, and only needs its own `logic.py` (rules) + `ui.py` (table screen)
+under `games/`, plus a tile added to `main_menu.py`, a section added to
+`stats_screen.py`, and a frame registered in `main.py`.
 
 ## Roadmap ideas (not yet built)
 
-- More tables: Blackjack, Roulette, Baccarat, Craps
+- More tables: Pai Gow Poker, Mississippi Stud, Baccarat, Let It Ride
+  (already placeholder tiles on the main menu), plus whatever's behind the
+  three still-`<REDACTED>` ones
 - AI/CPU players at the table for a more social feel
-- Progressive jackpots on side bets
 - Milestone-based unlocks (new tables, higher bet limits, cosmetic themes)
 - Bonus/free-bet promotions
-- A stats/achievements screen alongside the existing lifetime stats
+- An achievements screen alongside the existing lifetime/per-game stats
