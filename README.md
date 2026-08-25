@@ -1,9 +1,7 @@
 # Hadfield Casino
 
 A small, extensible casino games library, built with Python's standard
-library only (`tkinter` — no extra installs needed). Two tables are fully
-playable — Three Card Poker and Blackjack — sharing one progressive
-jackpot, alongside a Cashier, Settings, and per-game Stats screen.
+library only (`tkinter` — no extra installs needed).
 
 ## Running it
 
@@ -28,42 +26,14 @@ sudo apt install python3-tk        # Debian/Ubuntu
 sudo pacman -S tk                  # Arch/CachyOS
 ```
 
-## What's here
+## Games Implemented
 
-- **Main menu** — bank balance button, settings gear, and a grid of game
-  tiles. Three Card Poker and Blackjack are playable now; the rest
-  (Pai Gow Poker, Mississippi Stud, Baccarat, Let It Ride, and a few
-  still-unannounced ones) are placeholder tiles ready to be wired up as
-  the library grows.
-- **Cashier / Finances screen** — deposit funds (up to £200 per
-  transaction, and only while your balance is below £200 total — a
-  deposit is silently capped at whatever's needed to land you exactly on
-  £200, so the only way past that line is actually winning at the tables,
-  not depositing your way there) or withdraw, see your current balance,
-  and track lifetime stats (total deposited/withdrawn, total wagered,
-  total returned, net profit/loss, hands played, biggest single-round
-  win).
-- **Settings screen** — sound/animation toggles, five table felt themes,
-  the progressive jackpot's growth rate (£/second), and a way to reset
-  stats — per-game or the account's lifetime totals — without touching
-  your balance.
-- **Stats screen** — a game-by-game breakdown: money wagered/returned and
-  the house edge actually realised per bet type, how often each hand
-  outcome has come up, and that game's own biggest single-round net win.
-  Three Card Poker additionally tracks Play/Fold decisions against basic
-  strategy; Blackjack has no fold to track, so that section is skipped
-  for it.
-- **Progressive jackpot** — shared by both tables (Three Card Poker's
-  spade-suited Royal Flush and Blackjack's suited Ace/King/Queen three of
-  a kind both pay out of it). Grows continuously in real time between a
-  £5,000 floor and £50,000 ceiling — not funded by wagers — at a rate set
-  in Settings (1p/second by default). The level reached is saved between
-  sessions; only its growth "clock" resets when the app restarts.
 - **Three Card Poker** — full UK casino payout rules (see below).
 - **Blackjack** — 8-deck shoe with four side bets (see below).
 
 Balance, lifetime stats, per-game stats, jackpot progress, and settings are
 all saved to `data/*.json` and persist between sessions.
+
 
 ## Three Card Poker rules implemented
 

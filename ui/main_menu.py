@@ -182,13 +182,25 @@ class MainMenuFrame(tk.Frame):
         sub_lbl.pack(pady=(4, 0))
 
         status_widgets = [tile, icon_widget, name_lbl, sub_lbl]
-        if not enabled:
+        # height=24 (not the pill's own ~19px) with the pill centred in it,
+        # not flush against the top -- sized exactly to the pill's own
+        # height, its outline's bottom edge sat right on (or just past) the
+        # canvas's own bottom boundary and got clipped off, invisible
+        # against the felt but obvious once PLAY's brighter accent outline
+        # made the same clipping show up clearly.
+        pill_canvas = tk.Canvas(tile, width=TILE_TEXT_WRAP, height=24, bg=bg, highlightthickness=0)
+        pill_canvas.pack(pady=(6, 0))
+        if enabled:
+            # Same small rounded pill as "SOON" below, just in the tile's
+            # own accent colour (matching its highlighted border) rather
+            # than the muted "not yet built" grey, and "PLAY" instead.
+            theme.pill(pill_canvas, TILE_TEXT_WRAP / 2, 12, "PLAY",
+                       fill=theme.ACCENT_DIM_BG, outline=theme.ACCENT, text_fg=theme.ACCENT)
+        else:
             # A small rounded "SOON" pill, matching the site's .link-btn__tag
             # -- replaces the old plain "COMING SOON" text label.
-            pill_canvas = tk.Canvas(tile, width=TILE_TEXT_WRAP, height=20, bg=bg, highlightthickness=0)
-            pill_canvas.pack(pady=(6, 0))
-            theme.pill(pill_canvas, TILE_TEXT_WRAP / 2, 10, "SOON")
-            status_widgets.append(pill_canvas)
+            theme.pill(pill_canvas, TILE_TEXT_WRAP / 2, 12, "SOON")
+        status_widgets.append(pill_canvas)
 
         if enabled and command:
             for widget in status_widgets:

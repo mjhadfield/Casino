@@ -138,13 +138,14 @@ JACKPOT_PAYTABLE_HIGHLIGHT_ROW = len(JACKPOT_PAYTABLE_ROWS) - 1
 # Everything below is read only once a round's actually been dealt -- the
 # betting screen above never touches it. Unlike Three Card Poker's fixed
 # 3-card fan, a box here can hold anywhere from 1 to 5 hands (via Split), so
-# nothing about a box's own height is a fixed constant -- see
-# _hand_positions, which compresses each hand's row height to fit however
-# many that box currently has.
-CARD_SCALE = 0.6
-HAND_CARD_W = CARD_WIDTH * CARD_SCALE
-HAND_CARD_H = CARD_HEIGHT * CARD_SCALE
-HAND_CARD_OVERLAP_X = HAND_CARD_W * 0.55
+# nothing about a box's own height -- or its cards' own size -- is a fixed
+# constant. See _hand_positions: an unsplit hand gets full, dealer-sized
+# cards, vertically centred between the box's header and its bottom edge;
+# each split adds one row above the stack (hand 0 anchors the bottom row and
+# never moves once placed) and shrinks every row's cards together just
+# enough to keep the whole stack fitting that same space.
+HAND_CARD_OVERLAP_RATIO = 0.55   # how much of a card's own width its neighbour overlaps by
+HAND_ROW_GAP = 8                 # vertical breathing room between adjacent rows' cards
 
 DEALER_MAT_RADIUS = 14
 DEALER_MAT_TOP = 10
@@ -181,16 +182,19 @@ BOX_TOP = DEALER_MAT_BOTTOM + 22
 BOX_HEIGHT = CANVAS_HEIGHT - BOX_TOP - 14
 BOX_HEADER_H = 30
 BOX_RADIUS = 12
-BOX_SIDE_BET_ROW_H = 38  # only reserved when the round actually has side bets
-
-HAND_ROW_H = 62       # a hand's row height when there's room to spare
-HAND_CHIP_R = 20
-
 SIDE_BET_TOKEN_R = 13
+SIDE_BET_TOKEN_SPACING = 44      # a token's own footprint (chip + widest label, "21+3") clears its neighbour
+# Room for a token's own chip stack (win chips land directly overlaying the
+# stake -- see _draw_header_tokens/_chip_move_in -- rather than beside or
+# above it) plus its label below. Only reserved when the round actually has
+# side bets/Insurance in play.
+BOX_SIDE_BET_ROW_H = 56
+TOKEN_TOP_PAD = 10
+
+HAND_CHIP_R = 20      # a hand's stake-chip radius at full (unsplit, dealer-sized) card scale
+
 SIDE_BET_LABELS = {"jackpot": "JP", "super_pairs": "SP", "top_three": "T3", "twenty_one_plus_three": "21+3"}
 SIDE_BET_ORDER = ("jackpot", "super_pairs", "top_three", "twenty_one_plus_three")
-
-PAYOUT_WIN_LANDING_OFFSET_Y = -18
 
 # One even beat for every card that lands during a round -- the initial
 # deal (including a full pause before the very first card) and each of the
@@ -209,6 +213,23 @@ _BET_LABELS = dict(BET_TYPES)
 
 def _ease_out_cubic(t):
     return 1 - (1 - t) ** 3
+
+
+# How much of the stake stack's own diameter still peeks out from beneath
+# the win stack once it lands on top of it -- overlaid (mostly hiding it,
+# same spot), but not so exactly on top that the two are indistinguishable.
+PAYOUT_OVERLAY_PEEK_RATIO = 0.25
+
+
+def _payout_overlay_offset(radius):
+    """The win stack's own vertical offset from the stake's centre so it
+    overlays the stake stack (same spot, on top) while leaving roughly
+    PAYOUT_OVERLAY_PEEK_RATIO of the stake's diameter showing beneath it --
+    used identically by the win-chip fly-in animation (_chip_move_in) and
+    both places that redraw the resting state (_draw_hand, _draw_header_
+    tokens), so the animation's landing spot and the redrawn resting spot
+    never drift apart."""
+    return -(radius * 2 * PAYOUT_OVERLAY_PEEK_RATIO)
 
 
 def _format_signed(amount):
@@ -377,11 +398,12 @@ class BlackjackFrame(tk.Frame):
             highlightthickness=1, highlightbackground=theme.GREY_BTN_BORDER,
             command=self._on_stand,
         )
-        # Double/Split live in their own frame, placed off action_frame's own
-        # right edge rather than packed inside it -- action_frame's decision-
-        # state content is always exactly Hit+Stand now, so its centred pack
-        # position under the canvas is fixed round to round; Double/Split
-        # appearing/disappearing next to it (place, not pack) never moves it.
+        # Double/Split live in their own frame, placed below action_frame's
+        # own bottom edge rather than packed inside it -- action_frame's
+        # decision-state content is always exactly Hit+Stand now, so its
+        # centred pack position under the canvas is fixed round to round;
+        # Double/Split appearing/disappearing below it (place, not pack)
+        # never moves it.
         self.extra_action_frame = tk.Frame(game_col, bg=felt_theme["felt"])
         self.double_btn = tk.Button(
             self.extra_action_frame, text="DOUBLE", bg=theme.WARN_DIM_BG, fg=theme.FG,
@@ -823,10 +845,12 @@ class BlackjackFrame(tk.Frame):
                 bg=theme.ACCENT_DIM_BG if affordable else theme.GREY_BTN_BG,
                 fg=theme.FG if affordable else theme.GREY_BTN_TEXT,
             )
-        # Placed off action_frame's own right edge (not packed inside it) --
-        # appearing/disappearing here never moves Hit/Stand.
+        # Placed off action_frame's own bottom edge (not packed inside it) --
+        # a second row below Hit/Stand, centred to match -- so it never
+        # moves Hit/Stand, whether it's showing one button, both, or
+        # neither.
         if self.extra_action_frame.pack_slaves():
-            self.extra_action_frame.place(in_=self.action_frame, relx=1.0, rely=0.5, anchor="w", x=14)
+            self.extra_action_frame.place(in_=self.action_frame, relx=0.5, rely=1.0, anchor="n", y=8)
         else:
             self.extra_action_frame.place_forget()
 
@@ -1045,11 +1069,10 @@ class BlackjackFrame(tk.Frame):
         else:
             hand = self.game.boxes[box_idx].hands[0]
             card = hand.cards[card_idx]
-            _, _, _, ys = self._hand_positions(box_idx)
-            x1, _ = self._box_x1x2(box_idx)
-            target_x = x1 + 22 + card_idx * HAND_CARD_OVERLAP_X
-            target_y = ys[0] - HAND_CARD_H / 2
-            target_w, target_h = HAND_CARD_W, HAND_CARD_H
+            x1, _, card_w, card_h, ys = self._hand_positions(box_idx)
+            target_x = x1 + 22 + card_idx * (card_w * HAND_CARD_OVERLAP_RATIO)
+            target_y = ys[0] - card_h / 2
+            target_w, target_h = card_w, card_h
             face_up_at_end = True
             on_arrive = lambda: self._draw_hand(box_idx, 0)
 
@@ -1063,11 +1086,11 @@ class BlackjackFrame(tk.Frame):
         rather than stepping through the deal order."""
         hand = self.game.boxes[box_idx].hands[hand_idx]
         card = hand.cards[card_idx]
-        x1, _, _, ys = self._hand_positions(box_idx)
-        target_x = x1 + 22 + card_idx * HAND_CARD_OVERLAP_X
-        target_y = ys[hand_idx] - HAND_CARD_H / 2
+        x1, _, card_w, card_h, ys = self._hand_positions(box_idx)
+        target_x = x1 + 22 + card_idx * (card_w * HAND_CARD_OVERLAP_RATIO)
+        target_y = ys[hand_idx] - card_h / 2
         tag = f"flycard_hit_{box_idx}_{hand_idx}_{card_idx}"
-        self._animate_card_flight(tag, card, target_x, target_y, HAND_CARD_W, HAND_CARD_H, True, on_done)
+        self._animate_card_flight(tag, card, target_x, target_y, card_w, card_h, True, on_done)
 
     def _fly_split_cards(self, box_idx, hand_idx):
         """A Split (see _on_split) replaces one hand with two, each keeping
@@ -1379,12 +1402,13 @@ class BlackjackFrame(tk.Frame):
         items = []
         for box_idx in range(len(self.game.boxes)):
             box_result = self.summary.boxes[box_idx]
-            _, x2, _, ys = self._hand_positions(box_idx)
+            _, x2, _, card_h, ys = self._hand_positions(box_idx)
             chip_cx = x2 - 56
+            chip_r = HAND_CHIP_R * (card_h / CARD_HEIGHT)
             for hand_idx, hand_result in enumerate(box_result.hands):
                 items.append(dict(
                     cx=chip_cx, cy=ys[hand_idx], bet=hand_result.bet, ret=hand_result.payout,
-                    max_r=HAND_CHIP_R, tag=f"handchip_{box_idx}_{hand_idx}",
+                    max_r=chip_r, tag=f"handchip_{box_idx}_{hand_idx}",
                 ))
             if box_result.insurance_bet > 0:
                 i = len(self._active_side_bet_keys())  # Insurance is always the last header token, see _header_tokens
@@ -1418,8 +1442,13 @@ class BlackjackFrame(tk.Frame):
             on_done()
             return
         travel_tag = f"travelwin_{item['tag']}"
-        landing_cy = item["cy"] + PAYOUT_WIN_LANDING_OFFSET_Y
+        landing_cy = item["cy"] + _payout_overlay_offset(item["max_r"])
 
+        # Lands overlaying the stake's own spot -- on top of it, not beside
+        # or above it -- so there's no second "shuffle apart into a tidy
+        # gap" step once it arrives; it just settles where it lands, a hair
+        # off the stake's own centre so a sliver of it still peeks out from
+        # underneath (see _payout_overlay_offset).
         def frame(t):
             cx = DEALER_CENTER_X + (item["cx"] - DEALER_CENTER_X) * t
             cy = DEALER_CENTER_Y + (landing_cy - DEALER_CENTER_Y) * t
@@ -1430,7 +1459,7 @@ class BlackjackFrame(tk.Frame):
 
         # Deliberately doesn't delete travel_tag once it lands -- like Three
         # Card Poker's own win chips, it stays sitting there (the grown-in
-        # win amount, just above the original stake) until whatever redraws
+        # win amount, overlaying the original stake) until whatever redraws
         # next reconstructs the resting state itself (see _draw_header_tokens
         # for side bets, or a fresh deal for hands) -- not because this tag
         # is expected to survive indefinitely on its own.
@@ -1579,22 +1608,46 @@ class BlackjackFrame(tk.Frame):
         return tokens
 
     def _header_token_pos(self, box_idx, i):
-        # 44px apart -- wide enough that even the widest label ("21+3")
-        # clears its neighbour's chip, with all 5 possible tokens (4 side
-        # bets + Insurance) still comfortably inside BOX_W.
-        x1, _ = self._box_x1x2(box_idx)
-        return x1 + 26 + i * 44, BOX_TOP + BOX_HEADER_H + 16
+        # Centred as a group across the box's own width -- SIDE_BET_TOKEN_
+        # SPACING apart (wide enough that even the widest label, "21+3",
+        # clears its neighbour's chip), rather than left-anchored from a
+        # fixed offset regardless of how many tokens this round actually
+        # has. Even all 5 possible tokens (4 side bets + Insurance) sit
+        # comfortably inside BOX_W this way.
+        x1, x2 = self._box_x1x2(box_idx)
+        n = len(self._header_tokens(box_idx))
+        row_w = (n - 1) * SIDE_BET_TOKEN_SPACING
+        start_x = (x1 + x2) / 2 - row_w / 2
+        cx = start_x + i * SIDE_BET_TOKEN_SPACING
+        cy = BOX_TOP + BOX_HEADER_H + TOKEN_TOP_PAD + SIDE_BET_TOKEN_R
+        return cx, cy
 
     def _hand_positions(self, box_idx):
+        """x1/x2 (this box's own left/right edges), this round's card size
+        for this box, and each hand's card-centre y.
+
+        The boundary is the space between the header row (bet + any bonus-
+        chip side-bet tokens) and the box's own bottom edge. An unsplit hand
+        (n=1) gets one row spanning that whole boundary, at full dealer
+        size -- CARD_WIDTH/CARD_HEIGHT, same as the Dealer's own cards --
+        centred vertically in it. Each split hands that boundary out into
+        one more equal-height row: hand 0 (the original) always anchors the
+        bottom-most row and never moves once placed, since a split only ever
+        inserts a new hand *after* the one it split -- so higher hand
+        indices stack upward, newest on top -- and every row's cards shrink
+        together (bounded below so they never grow past dealer size) just
+        enough for the whole stack to keep fitting."""
         x1, x2 = self._box_x1x2(box_idx)
         box = self.game.boxes[box_idx] if box_idx < len(self.game.boxes) else None
         n = len(box.hands) if box else 1
         has_tokens = bool(self._header_tokens(box_idx))
         header_bottom = BOX_TOP + BOX_HEADER_H + (BOX_SIDE_BET_ROW_H if has_tokens else 0)
         available = BOX_TOP + BOX_HEIGHT - header_bottom - 6
-        row_h = min(HAND_ROW_H, max(34, available / n))
-        ys = [header_bottom + row_h * (i + 0.5) for i in range(n)]
-        return x1, x2, row_h, ys
+        row_h = available / n
+        card_h = max(20, min(CARD_HEIGHT, row_h - HAND_ROW_GAP))
+        card_w = CARD_WIDTH * (card_h / CARD_HEIGHT)
+        ys = [header_bottom + row_h * (n - 1 - i + 0.5) for i in range(n)]
+        return x1, x2, card_w, card_h, ys
 
     def _draw_dealer_mat(self):
         felt_theme = self.app.settings.theme()
@@ -1714,6 +1767,22 @@ class BlackjackFrame(tk.Frame):
             self.canvas.create_text((x1 + x2) / 2, BOX_TOP + BOX_HEIGHT / 2, text="(not in play)",
                                      fill=theme.GREY_BTN_TEXT, font=theme.font(9), tags=("box_bg",))
 
+    def _draw_side_bet_area(self, box_idx):
+        """The bonus-chip band (JP/SP/T3/21+3/Insurance tokens) gets the
+        same textured felt the BLACKJACK spot has on the betting screen,
+        and a border line separating it from the play area (this box's own
+        hand rows) below -- only when this round actually has a token to
+        show there (see _hand_positions' own has_tokens check, which this
+        mirrors)."""
+        if not self._header_tokens(box_idx):
+            return
+        felt_theme = self.app.settings.theme()
+        x1, x2 = self._box_x1x2(box_idx)
+        y1 = BOX_TOP + BOX_HEADER_H
+        y2 = y1 + BOX_SIDE_BET_ROW_H
+        self._draw_felt_texture(x1, y1, x2, y2, felt_theme, "box_bg")
+        self.canvas.create_line(x1, y2, x2, y2, fill=felt_theme["accent"], width=1, tags=("box_bg",))
+
     def _draw_header_tokens(self, box_idx):
         if box_idx >= len(self.game.boxes):
             return
@@ -1722,37 +1791,60 @@ class BlackjackFrame(tk.Frame):
             cx, cy = self._header_token_pos(box_idx, i)
             label_tag = f"tokenlabel_{box_idx}_{key}"
             chip_tag = f"tokenchip_{box_idx}_{key}"
+            win_chip_tag = f"tokenchipwin_{box_idx}_{key}"
             self.canvas.delete(label_tag)
             self.canvas.delete(chip_tag)
+            self.canvas.delete(win_chip_tag)
+
+            # Same "two separate amounts, not one consolidated total" idea
+            # _draw_hand gives the main bet, at this token's own scale: once
+            # resolved, the stake stays put (0 -- nothing drawn -- if it
+            # lost) and any winnings are drawn as their own stack overlaying
+            # it (on top in z-order, offset by _payout_overlay_offset so a
+            # sliver of the stake still peeks out beneath -- see
+            # _chip_move_in, which lands them there too), rather than both
+            # being merged into one bigger stack. Without this, a token's
+            # chips would visibly grow in during _animate_side_bet_payouts/
+            # _animate_payouts and then either vanish or silently merge the
+            # moment anything else redraws the table.
             if key == "insurance":
-                amount = box.insurance_bet
-            elif self._side_bets_swept:
-                # Already paid out (see _animate_side_bet_payouts) -- shows
-                # its resting amount from here on: 0 (nothing drawn) if it
-                # lost, or its full return (stake + winnings together) if it
-                # won, since the separate win-chip animation that grew that
-                # in doesn't survive this method's own redraw.
-                amount = box.side_bet_results.get(key, 0.0)
+                stake = box.insurance_bet
+                ret = self.summary.boxes[box_idx].insurance_return if self.state == "resolved" and self.summary else None
             else:
-                amount = getattr(box, f"{key}_bet")
-            if amount:
-                draw_chip_stack(self.canvas, chip_tag, cx, cy, amount, SIDE_BET_TOKEN_R)
+                stake = getattr(box, f"{key}_bet")
+                ret = box.side_bet_results.get(key, 0.0) if self._side_bets_swept else None
+            stake_amount, win_amount = stake, 0.0
+            if ret is not None:
+                win_amount = max(0.0, ret - stake)
+                stake_amount = stake if ret > 0 else 0.0
+            if stake_amount:
+                draw_chip_stack(self.canvas, chip_tag, cx, cy, stake_amount, SIDE_BET_TOKEN_R)
+            if win_amount:
+                win_cy = cy + _payout_overlay_offset(SIDE_BET_TOKEN_R)
+                draw_chip_stack(self.canvas, win_chip_tag, cx, win_cy, win_amount, SIDE_BET_TOKEN_R)
             self.canvas.create_text(cx, cy + SIDE_BET_TOKEN_R + 8, text=label, fill=theme.FG_DIM,
                                      font=theme.font(7, weight="bold"), tags=(label_tag,))
 
     def _draw_hand(self, box_idx, hand_idx):
         box = self.game.boxes[box_idx]
         hand = box.hands[hand_idx]
-        x1, x2, row_h, ys = self._hand_positions(box_idx)
+        x1, x2, card_w, card_h, ys = self._hand_positions(box_idx)
         cy = ys[hand_idx]
+        overlap = card_w * HAND_CARD_OVERLAP_RATIO
         hand_tag = f"hand_{box_idx}_{hand_idx}"
         chip_tag = f"handchip_{box_idx}_{hand_idx}"
+        win_chip_tag = f"handchipwin_{box_idx}_{hand_idx}"
         self.canvas.delete(hand_tag)
         self.canvas.delete(chip_tag)
+        self.canvas.delete(win_chip_tag)
 
         is_active = self._turns_active and box_idx == self.active_box_idx and box.active_hand() is hand
         if is_active:
-            self.canvas.create_rectangle(x1 + 8, cy - row_h / 2 + 2, x2 - 8, cy + row_h / 2 - 2,
+            # Hugs this row's own cards (not the row's full allotted height,
+            # which stretches to fill the whole boundary when n=1) so the
+            # highlight always reads as "this hand", not "this whole box".
+            pad = HAND_ROW_GAP / 2
+            self.canvas.create_rectangle(x1 + 8, cy - card_h / 2 - pad, x2 - 8, cy + card_h / 2 + pad,
                                           outline=theme.ACCENT, width=2, tags=(hand_tag,))
 
         cards_x_start = x1 + 22
@@ -1760,15 +1852,37 @@ class BlackjackFrame(tk.Frame):
         for i, card in enumerate(hand.cards):
             if hand_idx == 0 and i < 2 and not self._card_revealed("box", box_idx, i):
                 continue
-            cx = cards_x_start + shown * HAND_CARD_OVERLAP_X
-            draw_card(self.canvas, cx, cy - HAND_CARD_H / 2, card, width=int(HAND_CARD_W), height=int(HAND_CARD_H),
+            cx = cards_x_start + shown * overlap
+            draw_card(self.canvas, cx, cy - card_h / 2, card, width=int(card_w), height=int(card_h),
                       tags=(hand_tag,))
             shown += 1
         if not shown:
             return
 
-        if hand.bet:
-            draw_chip_stack(self.canvas, chip_tag, x2 - 56, cy, hand.bet, HAND_CHIP_R)
+        # Once resolved, these are the hand's resting chips from here on,
+        # kept as two separate amounts -- the original stake in place, and
+        # (for a win) the winnings drawn overlaying it: on top in z-order,
+        # offset by _payout_overlay_offset (so a sliver of the stake still
+        # peeks out beneath it) exactly where _chip_move_in's animation
+        # already lands them, so there's no further "settle into a separate
+        # stack" step once they arrive. Rather than one consolidated total,
+        # neither survives this method's own redraw on its own (same
+        # reasoning as _draw_header_tokens' side-bet chips below), so
+        # without this a winning hand's win chips would visibly grow in
+        # during the payout animation and then vanish, or (consolidating
+        # instead) silently merge into one bigger stack, the moment
+        # anything (e.g. the next dealer-card reveal) redraws the table.
+        stake_amount, win_amount = hand.bet, 0.0
+        if self.state == "resolved":
+            win_amount = max(0.0, hand.payout - hand.bet)
+            if hand.payout <= 0:
+                stake_amount = 0.0  # lost -- swept away, nothing stays
+        chip_r = HAND_CHIP_R * (card_h / CARD_HEIGHT)
+        if stake_amount:
+            draw_chip_stack(self.canvas, chip_tag, x2 - 56, cy, stake_amount, chip_r)
+        if win_amount:
+            win_cy = cy + _payout_overlay_offset(chip_r)
+            draw_chip_stack(self.canvas, win_chip_tag, x2 - 56, win_cy, win_amount, chip_r)
 
         # hand.total/is_blackjack read the full hand.cards regardless of how
         # much of it is currently revealed -- both are meaningless (and, for
@@ -1777,7 +1891,7 @@ class BlackjackFrame(tk.Frame):
         if shown < 2:
             return
 
-        self.canvas.create_text(x2 - 12, cy - row_h / 2 + 10, text=str(hand.total), fill=theme.FG,
+        self.canvas.create_text(x2 - 12, cy - card_h / 2 + 10, text=str(hand.total), fill=theme.FG,
                                  font=theme.font(9, weight="bold"), anchor="e", tags=(hand_tag,))
 
         # A bust or a natural are both knowable (and already shown) the
@@ -1799,7 +1913,7 @@ class BlackjackFrame(tk.Frame):
             # Centred over the fanned-out cards actually on screen (not just
             # the first one), the same overlay-on-the-cards treatment the
             # Dealer's own BUST gets (see _draw_dealer_cards).
-            fan_w = (shown - 1) * HAND_CARD_OVERLAP_X + HAND_CARD_W
+            fan_w = (shown - 1) * overlap + card_w
             theme.outlined_glyph(self.canvas, cards_x_start + fan_w / 2, cy, status,
                                   11, color, "#000000", tags=(hand_tag,))
 
@@ -1810,6 +1924,7 @@ class BlackjackFrame(tk.Frame):
         for idx in range(2):
             self._draw_box_skeleton(idx)
             if idx < len(self.game.boxes):
+                self._draw_side_bet_area(idx)
                 self._draw_header_tokens(idx)
                 for hand_idx in range(len(self.game.boxes[idx].hands)):
                     self._draw_hand(idx, hand_idx)

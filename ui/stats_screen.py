@@ -144,16 +144,12 @@ class StatsFrame(tk.Frame):
             self._build_hands_summary(panel_body, hands, strategy, section["tracks_folding"], biggest_win)
 
             # Everything wagered/returned so far, grouped under one house-edge
-            # figure per bet type plus the combined figure across all of them
-            # -- previously just an unlabelled table; the heading is what was
-            # missing to make clear that's what this whole block is.
+            # figure per bet type -- previously just an unlabelled table; the
+            # heading is what was missing to make clear that's what this
+            # whole block is. A running TOTAL row underneath the per-bet
+            # ones (see _build_bet_table) replaces the old standalone
+            # "Combined across every bet" line that used to sit above it.
             self._section_header(panel_body, "Overall House Edge", pady_top=4)
-            edge = self.app.game_stats.game_house_edge(section["key"])
-            edge_text = f"{edge:.2f}%" if edge is not None else "-"
-            tk.Label(
-                panel_body, text=f"Combined across every bet: {edge_text}", bg=theme.BG_ELEVATED, fg=theme.FG,
-                font=theme.font(10, weight="bold"),
-            ).pack(anchor="w", pady=(2, 8))
             self._build_bet_table(panel_body, section["bet_types"], bets)
 
             self._section_header(panel_body, "Hands Made", pady_top=18)
@@ -242,6 +238,8 @@ class StatsFrame(tk.Frame):
     def _build_bet_table(self, parent, bet_types, bets):
         headers = ["Bet", "Wagered", "Returned", "Net", "Win / Loss / Push", "House Edge"]
         rows = []
+        total_wagered = total_returned = 0.0
+        total_wins = total_losses = total_pushes = 0
         for key, label in bet_types:
             stats = bets.get(key)
             if stats is None:
@@ -253,6 +251,11 @@ class StatsFrame(tk.Frame):
             else:
                 wagered, returned = stats["wagered"], stats["returned"]
                 wins, losses, pushes = stats["wins"], stats["losses"], stats["pushes"]
+            total_wagered += wagered
+            total_returned += returned
+            total_wins += wins
+            total_losses += losses
+            total_pushes += pushes
             net = returned - wagered
             bet_edge = self.app.game_stats.house_edge(wagered, returned)
             edge_text = f"{bet_edge:.2f}%" if bet_edge is not None else "-"
@@ -267,6 +270,25 @@ class StatsFrame(tk.Frame):
             ]
             net_color = theme.WIN_COLOR if net > 0 else (theme.LOSE_COLOR if net < 0 else theme.FG)
             rows.append((values, [theme.FG, theme.FG, theme.FG, net_color, theme.FG, theme.FG]))
+
+        # A running TOTAL row -- Wagered/Returned/Net summed across every
+        # bet type above, plus the average house edge realised over all of
+        # them combined (the same figure the old standalone "Combined
+        # across every bet" line used to show above this table).
+        total_net = total_returned - total_wagered
+        avg_edge = self.app.game_stats.house_edge(total_wagered, total_returned)
+        avg_edge_text = f"{avg_edge:.2f}%" if avg_edge is not None else "-"
+        total_values = [
+            "TOTAL",
+            f"£{total_wagered:,.2f}",
+            f"£{total_returned:,.2f}",
+            f"{'+' if total_net > 0 else ''}£{total_net:,.2f}" if total_net else "£0.00",
+            f"{total_wins} / {total_losses} / {total_pushes}",
+            avg_edge_text,
+        ]
+        total_net_color = theme.WIN_COLOR if total_net > 0 else (theme.LOSE_COLOR if total_net < 0 else theme.FG)
+        rows.append((total_values,
+                     [theme.ACCENT, theme.ACCENT, theme.ACCENT, total_net_color, theme.ACCENT, theme.ACCENT]))
         self._build_table(parent, headers, rows)
 
     def _build_hand_table(self, parent, hand_labels, hand_counts):
