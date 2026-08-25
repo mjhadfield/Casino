@@ -44,14 +44,20 @@ CANVAS_WIDTH = 760
 CANVAS_HEIGHT = 460
 
 PAYTABLE_WIDTH = 240
-PAYTABLE_HEIGHT = 300
+PAYTABLE_HEIGHT = 320
 PAYOUT_PANEL_WIDTH = 380
 PAYOUT_PANEL_HEIGHT = 240
 
-CONTENT_TOP_MARGIN = 35
+CONTENT_TOP_MARGIN = 14
 
-BETTING_ACTION_FRAME_PADY = (23, 0)
-CHIP_FRAME_PADY = (16, 30)
+# result_lbl sits right below the canvas in every state, but only the
+# betting state needs the extra top gap -- it shares the canvas's dead space
+# below the spot row with the caption/Boxes/Deal row (see BETTING_CANVAS_
+# HEIGHT), while the play states already fill the canvas edge-to-edge.
+BETTING_RESULT_LBL_PADY = (50, 3)
+PLAY_RESULT_LBL_PADY = (0, 3)
+BETTING_ACTION_FRAME_PADY = (8, 0)
+CHIP_FRAME_PADY = (6, 30)
 
 RULES_BUTTON_WIDTH = 106
 RULES_BUTTON_HEIGHT = 54
@@ -64,25 +70,40 @@ RULES_BUTTON_RADIUS = RULES_BUTTON_HEIGHT // 2
 RULES_BUTTON_CX = 70
 
 # --- Betting-screen spot geometry -------------------------------------------
-# The main Blackjack bet sits centre, card-shaped, exactly where Three Card
-# Poker's Ante sits. Super Pairs/21+3 flank it at the same height (the "left
-# side"/"right side" bets per the brief); Jackpot/Top 3 are the smaller
-# flag-style bets stacked directly above their partner on each side.
+# The main Blackjack bet sits centre, card-shaped, bottom-aligned with the
+# Super Pairs/21+3/Rules row below (SIDE_SPOT_CY) rather than sharing their
+# centre -- it's a taller shape than those circles, so lining up centres left
+# it hanging well below them. Jackpot/Top 3 are the smaller flag-style bets
+# stacked directly above their partner on each side.
 BLACKJACK_SPOT_W = CARD_WIDTH * 1.6
 BLACKJACK_SPOT_H = CARD_HEIGHT * 1.6
-BLACKJACK_SPOT_CY = 275
 
 SIDE_OFFSET = 165        # Super Pairs / 21+3 distance from centre
 MAIN_SIDE_R = 36         # Super Pairs / 21+3 circle radius
 FLAG_R = 24              # Jackpot / Top 3 circle radius
-STACK_GAP = 16           # vertical gap between a flag spot and its partner below
+STACK_GAP = 28           # vertical gap between a flag spot and its partner below
+                         # (clears the flag spot's own label, drawn just above
+                         # the partner spot's circle -- STACK_GAP=16 let that
+                         # label clip into the flag spot's circle above it)
 
 LEFT_CX = CANVAS_WIDTH / 2 - SIDE_OFFSET
 RIGHT_CX = CANVAS_WIDTH / 2 + SIDE_OFFSET
-SUPER_PAIRS_CY = BLACKJACK_SPOT_CY
-TWENTY_ONE_PLUS_THREE_CY = BLACKJACK_SPOT_CY
+SIDE_SPOT_CY = 275
+SUPER_PAIRS_CY = SIDE_SPOT_CY
+TWENTY_ONE_PLUS_THREE_CY = SIDE_SPOT_CY
 JACKPOT_CY = SUPER_PAIRS_CY - MAIN_SIDE_R - STACK_GAP - FLAG_R
 TOP_THREE_CY = TWENTY_ONE_PLUS_THREE_CY - MAIN_SIDE_R - STACK_GAP - FLAG_R
+BLACKJACK_SPOT_CY = SIDE_SPOT_CY + MAIN_SIDE_R - BLACKJACK_SPOT_H / 2
+RULES_BUTTON_CY = SIDE_SPOT_CY + MAIN_SIDE_R - RULES_BUTTON_HEIGHT / 2
+
+# The canvas is fixed at CANVAS_HEIGHT (460) so a dealt round has room for a
+# box's split hands to cascade -- but the betting screen only ever draws down
+# to the spot row's bottom edge (SIDE_SPOT_CY + MAIN_SIDE_R), so left at full
+# height it trails ~150px of empty felt below the spots before the caption/
+# Deal controls (packed right after the canvas) even start. Betting state
+# shrinks the canvas to just past that row instead; _show_no_controls sets it
+# back to CANVAS_HEIGHT the moment a round is dealt.
+BETTING_CANVAS_HEIGHT = int(SIDE_SPOT_CY + MAIN_SIDE_R + 40)
 
 _lerp_color = theme.lerp_color
 
@@ -286,13 +307,13 @@ class BlackjackFrame(tk.Frame):
 
         self.canvas = tk.Canvas(game_col, bg=felt_theme["felt"], highlightthickness=0,
                                  width=CANVAS_WIDTH, height=CANVAS_HEIGHT)
-        self.canvas.pack(padx=12, pady=(10, 4))
+        self.canvas.pack(padx=12, pady=(6, 2))
 
         self.result_lbl = tk.Label(
             game_col, text="Place your bets to continue.", bg=felt_theme["felt"], fg=theme.FG,
             font=theme.font(13, weight="bold"), wraplength=900, justify="center",
         )
-        self.result_lbl.pack(pady=(0, 6))
+        self.result_lbl.pack(pady=(0, 3))
 
         self.action_frame = tk.Frame(game_col, bg=felt_theme["felt"])
         self.action_frame.pack(pady=(8, 0))
@@ -358,20 +379,20 @@ class BlackjackFrame(tk.Frame):
         )
 
         self.chip_zone = tk.Frame(game_col, bg=felt_theme["felt"])
-        self.chip_zone.pack(pady=(10, 0))
+        self.chip_zone.pack(pady=(61, 0))
 
         self.chip_frame = tk.Frame(self.chip_zone, bg=felt_theme["felt"])
         tk.Label(
             self.chip_frame, text="Tap a chip, then tap a spot on the table to place it",
             bg=felt_theme["felt"], fg=theme.FG_DIM, font=theme.font(9),
-        ).pack(pady=(0, 6))
+        ).pack(pady=(0, 3))
         self.chip_row = tk.Frame(self.chip_frame, bg=felt_theme["felt"])
         self.chip_row.pack()
         for value, face, rim in CHIP_DENOMINATIONS:
             self._make_chip_button(self.chip_row, value, face, rim)
 
         self.total_frame = tk.Frame(self.chip_frame, bg=felt_theme["felt"])
-        self.total_frame.pack(pady=(8, 0))
+        self.total_frame.pack(pady=(4, 0))
         self._total_normal_font = theme.font(12, weight="bold")
         self._total_strike_font = tkfont.Font(
             family=theme.mono_family(), size=12, weight="bold", overstrike=True,
@@ -393,7 +414,7 @@ class BlackjackFrame(tk.Frame):
             highlightthickness=1, highlightbackground=theme.GREY_BTN_BORDER,
             command=self._clear_bets,
         )
-        self.clear_btn.pack(pady=(6, 0))
+        self.clear_btn.pack(pady=(3, 0))
 
         self.payout_canvas = tk.Canvas(
             self.chip_zone, width=PAYOUT_PANEL_WIDTH, height=PAYOUT_PANEL_HEIGHT,
@@ -487,7 +508,7 @@ class BlackjackFrame(tk.Frame):
         self._draw_spot_jackpot(LEFT_CX, JACKPOT_CY, FLAG_R)
         self._draw_spot_top_three(RIGHT_CX, TOP_THREE_CY, FLAG_R)
 
-        self._draw_rules_button(RULES_BUTTON_CX, BLACKJACK_SPOT_CY)
+        self._draw_rules_button(RULES_BUTTON_CX, RULES_BUTTON_CY)
 
     def _draw_rules_button(self, cx, cy):
         tag = "rules_button"
@@ -655,6 +676,8 @@ class BlackjackFrame(tk.Frame):
 
     # ------------------------------------------------------------------ state transitions
     def _show_betting_controls(self):
+        self.canvas.configure(height=BETTING_CANVAS_HEIGHT)
+        self.result_lbl.pack(pady=BETTING_RESULT_LBL_PADY)
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
         self.box_count_frame.pack(side="left", padx=(0, 16))
@@ -667,6 +690,8 @@ class BlackjackFrame(tk.Frame):
         self._update_total()
 
     def _show_no_controls(self):
+        self.canvas.configure(height=CANVAS_HEIGHT)
+        self.result_lbl.pack(pady=PLAY_RESULT_LBL_PADY)
         self.chip_frame.pack_forget()
         self.payout_canvas.pack_forget()
         for w in self.action_frame.pack_slaves():

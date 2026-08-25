@@ -100,13 +100,7 @@ TOP_THREE_STRAIGHT_FLUSH_MULTIPLIER = 180
 TOP_THREE_THREE_OF_A_KIND_SUITED_MULTIPLIER = 270
 
 # --- Jackpot side bet (flat £1, shares Three Card Poker's progressive pool) -
-# Always exactly this amount if played -- see ui.py, which enforces it as an
-# on/off toggle rather than a stackable chip amount, the same as Three Card
-# Poker's own jackpot spot.
 JACKPOT_BET_AMOUNT = 1.0
-
-# Fixed £ amounts, taken from the reference paytable's £5-stake column
-# applied to this flat £1 bet (see module docstring).
 JACKPOT_FLUSH_PAYOUT = 10
 JACKPOT_STRAIGHT_PAYOUT = 30
 JACKPOT_THREE_OF_A_KIND_OFFSUIT_PAYOUT = 100
@@ -156,20 +150,12 @@ class Hand:
         self.cards = list(cards)
         self.bet = bet
         self.doubled = False
-        # `from_split`: this hand came from a Split, so it can never count
-        # as a bonus-paying natural Blackjack even if it totals 21 (see
-        # is_blackjack). `split_aces`: this hand is specifically one half of
-        # a split pair of Aces -- gets exactly one more card, then must
-        # stand, no further action, ever (see BlackjackGame.split).
         self.from_split = from_split
         self.split_aces = split_aces
         self.done = False
-        self.outcome = None   # set by settle(): "Bust"|"Lose"|"Push"|"Win"|"Blackjack"
+        self.outcome: Optional[str] = None   # set by settle(): "Bust"|"Lose"|"Push"|"Win"|"Blackjack"
         self.payout = 0.0     # total returned for this hand once settled
         if self.total == 21:
-            # A fresh natural Blackjack, or a split hand that lands on a
-            # bare 21 -- either way, "not allowed to draw or double on any
-            # hand that is 21".
             self.done = True
 
     @property
@@ -415,16 +401,19 @@ class BlackjackGame:
             three_eval = evaluate_three_card_hand(three) if need_three_eval else None
 
             if box.twenty_one_plus_three_bet > 0:
+                assert three_eval is not None
                 qualifies = three_eval[0] >= FLUSH
                 box.side_bet_results["twenty_one_plus_three"] = (
                     box.twenty_one_plus_three_bet * (TWENTY_ONE_PLUS_THREE_MULTIPLIER + 1) if qualifies else 0.0
                 )
 
             if box.top_three_bet > 0:
+                assert three_eval is not None
                 mult = _top_three_multiplier(three_eval, three)
                 box.side_bet_results["top_three"] = box.top_three_bet * (mult + 1) if mult else 0.0
 
             if box.jackpot_bet > 0:
+                assert three_eval is not None
                 amount, is_pool = _jackpot_tier(three_eval, three)
                 if is_pool:
                     pool_hit_boxes.append(box)

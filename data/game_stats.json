@@ -2,98 +2,98 @@
   "three_card_poker": {
     "bets": {
       "play": {
-        "wagered": 3210.0,
-        "returned": 3135.0,
-        "wins": 219,
-        "losses": 234,
-        "pushes": 189
+        "wagered": 3315.0,
+        "returned": 3230.0,
+        "wins": 226,
+        "losses": 243,
+        "pushes": 194
       },
       "ante": {
-        "wagered": 4555.0,
-        "returned": 4255.0,
-        "wins": 407,
-        "losses": 501,
+        "wagered": 4750.0,
+        "returned": 4385.0,
+        "wins": 419,
+        "losses": 528,
         "pushes": 3
       },
       "pair_plus": {
-        "wagered": 4504.0,
-        "returned": 4004.0,
-        "wins": 225,
-        "losses": 679,
+        "wagered": 4699.0,
+        "returned": 4139.0,
+        "wins": 232,
+        "losses": 711,
         "pushes": 0
       },
       "prime": {
-        "wagered": 4534.0,
-        "returned": 4351.0,
-        "wins": 211,
-        "losses": 699,
+        "wagered": 4729.0,
+        "returned": 4516.0,
+        "wins": 219,
+        "losses": 730,
         "pushes": 0
       },
       "jackpot": {
-        "wagered": 904.0,
-        "returned": 364.0,
-        "wins": 27,
-        "losses": 877,
+        "wagered": 943.0,
+        "returned": 376.0,
+        "wins": 29,
+        "losses": 914,
         "pushes": 0
       }
     },
     "hands": {
-      "Pair": 152,
-      "High Card": 399,
-      "Fold": 265,
-      "Flush": 45,
-      "Straight": 23,
+      "Pair": 156,
+      "High Card": 413,
+      "Fold": 283,
+      "Flush": 46,
+      "Straight": 25,
       "Straight Flush": 1,
       "Three of a Kind": 2
     },
     "strategy": {
       "played_incorrectly": 11,
-      "folded_incorrectly": 1
+      "folded_incorrectly": 2
     },
     "biggest_win": 45.0
   },
   "blackjack": {
     "bets": {
       "blackjack": {
-        "wagered": 405.0,
-        "returned": 340.0,
-        "wins": 30,
-        "losses": 44,
+        "wagered": 465.0,
+        "returned": 420.0,
+        "wins": 32,
+        "losses": 46,
         "pushes": 5
       },
       "super_pairs": {
-        "wagered": 78.0,
+        "wagered": 86.0,
         "returned": 81.0,
         "wins": 6,
-        "losses": 72,
+        "losses": 76,
         "pushes": 0
       },
       "twenty_one_plus_three": {
-        "wagered": 78.0,
+        "wagered": 86.0,
         "returned": 60.0,
         "wins": 6,
-        "losses": 72,
+        "losses": 76,
         "pushes": 0
       },
       "jackpot": {
-        "wagered": 78.0,
+        "wagered": 82.0,
         "returned": 195.0,
         "wins": 6,
-        "losses": 72,
+        "losses": 76,
         "pushes": 0
       },
       "top_three": {
-        "wagered": 99.0,
+        "wagered": 107.0,
         "returned": 362.0,
         "wins": 1,
-        "losses": 73,
+        "losses": 77,
         "pushes": 0
       }
     },
     "hands": {
       "Push": 5,
-      "Lose": 33,
-      "Win": 28,
+      "Lose": 35,
+      "Win": 30,
       "Bust": 11,
       "Blackjack": 2
     },
