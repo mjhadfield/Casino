@@ -24,6 +24,7 @@ from games.blackjack.logic import (
     TOP_THREE_THREE_OF_A_KIND_MULTIPLIER,
     TOP_THREE_THREE_OF_A_KIND_SUITED_MULTIPLIER,
     TWENTY_ONE_PLUS_THREE_MULTIPLIER,
+    hand_value,
 )
 from ui import dialogs, theme
 from ui.card_widgets import CARD_HEIGHT, CARD_WIDTH, draw_card, draw_card_back
@@ -150,11 +151,25 @@ DEALER_MAT_TOP = 10
 DEALER_MAT_LABEL_Y = DEALER_MAT_TOP + 9
 DEALER_Y = DEALER_MAT_TOP + 26
 DEALER_MAT_BOTTOM = DEALER_Y + CARD_HEIGHT + 18
-DEALER_MAT_X1 = 40
+# Narrower on the left than the right (60px, vs. the mat's own 40px right
+# margin) -- the extra room is the face-down DECK spot's home, sitting to
+# the mat's left at the same height as the Dealer's own cards.
+DEALER_MAT_X1 = 100
 DEALER_MAT_X2 = CANVAS_WIDTH - 40
 DEALER_CENTER_X = CANVAS_WIDTH / 2
 DEALER_CENTER_Y = DEALER_Y + CARD_HEIGHT / 2
 DEALER_CARD_GAP_MAX = CARD_WIDTH + 12
+
+DECK_X1 = 10
+DECK_Y = DEALER_Y
+DECK_LABEL_Y = DEALER_MAT_LABEL_Y
+
+# How long one dealt card's fly-from-deck-and-flip takes -- comfortably
+# inside the 1-second beat between cards (DEAL_CARD_STAGGER_MS), so each
+# card is fully settled before the next one starts. Each flight uses its
+# own uniquely-tagged canvas items (see _animate_card_flight) regardless,
+# so overlapping flights -- e.g. a Hit landing mid-deal-in -- are harmless.
+DEAL_FLIGHT_MS = 220
 
 # Two box regions side by side -- always both drawn (per the brief), even
 # when only 1 box is in play, so the table's shape doesn't jump between
@@ -176,6 +191,11 @@ SIDE_BET_LABELS = {"jackpot": "JP", "super_pairs": "SP", "top_three": "T3", "twe
 SIDE_BET_ORDER = ("jackpot", "super_pairs", "top_three", "twenty_one_plus_three")
 
 PAYOUT_WIN_LANDING_OFFSET_Y = -18
+
+# One even beat for every card that lands during a round -- the initial
+# deal (including a full pause before the very first card) and each of the
+# Dealer's own hit-to-17 draws alike: a 1-second pause, then the card.
+DEAL_CARD_STAGGER_MS = 1000
 
 # Round-over state: each box's breakdown gets its own small panel below the
 # box area (roughly as wide as the box itself), rather than being squeezed
@@ -357,14 +377,20 @@ class BlackjackFrame(tk.Frame):
             highlightthickness=1, highlightbackground=theme.GREY_BTN_BORDER,
             command=self._on_stand,
         )
+        # Double/Split live in their own frame, placed off action_frame's own
+        # right edge rather than packed inside it -- action_frame's decision-
+        # state content is always exactly Hit+Stand now, so its centred pack
+        # position under the canvas is fixed round to round; Double/Split
+        # appearing/disappearing next to it (place, not pack) never moves it.
+        self.extra_action_frame = tk.Frame(game_col, bg=felt_theme["felt"])
         self.double_btn = tk.Button(
-            self.action_frame, text="DOUBLE", bg=theme.WARN_DIM_BG, fg=theme.FG,
+            self.extra_action_frame, text="DOUBLE", bg=theme.WARN_DIM_BG, fg=theme.FG,
             font=theme.font(12, weight="bold"), relief="flat", padx=20, pady=9, cursor="hand2",
             highlightthickness=1, highlightbackground=theme.WARN,
             command=self._on_double,
         )
         self.split_btn = tk.Button(
-            self.action_frame, text="SPLIT", bg=theme.ACCENT_DIM_BG, fg=theme.FG,
+            self.extra_action_frame, text="SPLIT", bg=theme.ACCENT_DIM_BG, fg=theme.FG,
             font=theme.font(12, weight="bold"), relief="flat", padx=20, pady=9, cursor="hand2",
             highlightthickness=1, highlightbackground=theme.ACCENT,
             command=self._on_split,
@@ -700,6 +726,7 @@ class BlackjackFrame(tk.Frame):
     def _show_betting_controls(self):
         self.canvas.configure(height=BETTING_CANVAS_HEIGHT)
         self.round_over_frame.pack_forget()
+        self.extra_action_frame.place_forget()
         # result_lbl/action_frame get forgotten (as a whole, not just their
         # children) in round-over -- see _show_round_over_controls -- so
         # every re-pack here has to pin its position with before=, or a
@@ -719,6 +746,7 @@ class BlackjackFrame(tk.Frame):
     def _show_no_controls(self):
         self.canvas.configure(height=CANVAS_HEIGHT)
         self.round_over_frame.pack_forget()
+        self.extra_action_frame.place_forget()
         self.result_lbl.pack(pady=PLAY_RESULT_LBL_PADY, before=self.chip_zone)
         self.chip_frame.pack_forget()
         for w in self.action_frame.pack_slaves():
@@ -726,6 +754,7 @@ class BlackjackFrame(tk.Frame):
         self.action_frame.pack(pady=(8, 0), before=self.chip_zone)
 
     def _show_round_over_controls(self):
+        self.extra_action_frame.place_forget()
         self.chip_frame.pack_forget()
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
@@ -757,9 +786,15 @@ class BlackjackFrame(tk.Frame):
         # they've already confirmed this box has a live hand -- narrows the
         # type for everything below rather than actually guarding anything.
         assert hand is not None
+        # Hit/Stand are action_frame's *only* decision-state content now, so
+        # its centred pack position under the canvas never depends on
+        # whether Double/Split are also on offer -- they used to share this
+        # frame, which shifted Hit/Stand left/right as they came and went.
         self.hit_btn.pack(side="left", padx=6)
         self.stand_btn.pack(side="left", padx=6)
 
+        for w in self.extra_action_frame.pack_slaves():
+            w.pack_forget()
         if hand.can_double:
             affordable = self.app.finance.can_afford(hand.bet)
             self.double_btn.pack(side="left", padx=6)
@@ -776,6 +811,12 @@ class BlackjackFrame(tk.Frame):
                 bg=theme.ACCENT_DIM_BG if affordable else theme.GREY_BTN_BG,
                 fg=theme.FG if affordable else theme.GREY_BTN_TEXT,
             )
+        # Placed off action_frame's own right edge (not packed inside it) --
+        # appearing/disappearing here never moves Hit/Stand.
+        if self.extra_action_frame.pack_slaves():
+            self.extra_action_frame.place(in_=self.action_frame, relx=1.0, rely=0.5, anchor="w", x=14)
+        else:
+            self.extra_action_frame.place_forget()
 
     def _refresh_box_buttons(self):
         for n, btn in ((1, self.box1_btn), (2, self.box2_btn)):
@@ -953,15 +994,122 @@ class BlackjackFrame(tk.Frame):
         self._reveal_count = 0
         self._redraw_play_table()
 
-        def reveal(i):
-            self._reveal_count = i + 1
-            self._redraw_play_table()
+        order = self._deal_reveal_order
+        total = len(order)
+        # Every card -- box or Dealer alike -- gets the same even beat, a
+        # full second's pause before it lands, starting with a pause before
+        # the very first card too (offsets are 1-indexed in units of
+        # DEAL_CARD_STAGGER_MS: card 0 at t=1s, card 1 at t=2s, ...).
+        offsets = [(i + 1) * DEAL_CARD_STAGGER_MS for i in range(total)]
 
-        total = len(self._deal_reveal_order)
-        self._run_staggered(total, 110, reveal)
         animated = self.app.settings.get("animations_enabled")
-        delay = total * 110 + 260 if animated else 30
+        if animated:
+            for i in range(total):
+                self.after(offsets[i], self._fly_deal_card, i)
+            delay = (offsets[-1] + DEAL_FLIGHT_MS + 260) if total else 0
+        else:
+            for i in range(total):
+                self._reveal_count = i + 1
+            self._redraw_play_table()
+            delay = 30
         self.after(delay, self._on_deal_in_done)
+
+    def _fly_deal_card(self, i):
+        """One card's entrance: flies out of the face-down DECK spot to its
+        real resting spot (a box's hand, or the Dealer's row), shrinking
+        from full card size to the box's smaller in-hand size along the way
+        where that applies, then flips face-up on arrival -- except the
+        Dealer's own hole card, which lands and stays face-down until
+        _flip_hole_card, well after the deal (see _begin_dealer_turn)."""
+        self._reveal_count = i + 1
+        kind, box_idx, card_idx = self._deal_reveal_order[i]
+
+        if kind == "dealer":
+            card = self.game.dealer_cards[card_idx]
+            target_x, target_y = self._dealer_card_x(card_idx, 2), DEALER_Y
+            target_w, target_h = CARD_WIDTH, CARD_HEIGHT
+            face_up_at_end = card_idx == 0
+            on_arrive = self._draw_dealer_cards
+        else:
+            hand = self.game.boxes[box_idx].hands[0]
+            card = hand.cards[card_idx]
+            _, _, _, ys = self._hand_positions(box_idx)
+            x1, _ = self._box_x1x2(box_idx)
+            target_x = x1 + 22 + card_idx * HAND_CARD_OVERLAP_X
+            target_y = ys[0] - HAND_CARD_H / 2
+            target_w, target_h = HAND_CARD_W, HAND_CARD_H
+            face_up_at_end = True
+            on_arrive = lambda: self._draw_hand(box_idx, 0)
+
+        self._animate_card_flight(f"flycard_{i}", card, target_x, target_y, target_w, target_h,
+                                   face_up_at_end, on_arrive)
+
+    def _fly_new_card(self, box_idx, hand_idx, card_idx, on_done):
+        """A card landing outside the initial deal -- a Hit or a Double (see
+        _on_hit/_on_double) -- same fly-from-deck-and-flip as _fly_deal_card,
+        just aimed at wherever this card belongs in an already-dealt hand
+        rather than stepping through the deal order."""
+        hand = self.game.boxes[box_idx].hands[hand_idx]
+        card = hand.cards[card_idx]
+        x1, _, _, ys = self._hand_positions(box_idx)
+        target_x = x1 + 22 + card_idx * HAND_CARD_OVERLAP_X
+        target_y = ys[hand_idx] - HAND_CARD_H / 2
+        tag = f"flycard_hit_{box_idx}_{hand_idx}_{card_idx}"
+        self._animate_card_flight(tag, card, target_x, target_y, HAND_CARD_W, HAND_CARD_H, True, on_done)
+
+    def _fly_split_cards(self, box_idx, hand_idx):
+        """A Split (see _on_split) replaces one hand with two, each keeping
+        one card from the original pair and getting one new one -- the box
+        is redrawn straight away showing just each hand's original card in
+        its new (post-split) row, then this flies the two new second cards
+        in one after the other, the same as any other card landing."""
+        box = self.game.boxes[box_idx]
+        hand_a, hand_b = box.hands[hand_idx], box.hands[hand_idx + 1]
+        new_a, new_b = hand_a.cards.pop(), hand_b.cards.pop()
+        self._redraw_play_table()
+
+        def fly_b():
+            # Hand A's own flight tag was just deleted on arrival -- draw it
+            # at rest before Hand B's card starts flying, or it'd sit blank
+            # until the final redraw all the way at the end of Hand B's own
+            # flight too.
+            self._draw_hand(box_idx, hand_idx)
+            hand_b.cards.append(new_b)
+            self._fly_new_card(box_idx, hand_idx + 1, len(hand_b.cards) - 1, self._continue_after_action)
+
+        hand_a.cards.append(new_a)
+        self._fly_new_card(box_idx, hand_idx, len(hand_a.cards) - 1, fly_b)
+
+    def _animate_card_flight(self, tag, card, tx, ty, tw, th, face_up_at_end, on_arrive):
+        sx, sy = DECK_X1, DECK_Y
+        accent = self.app.settings.theme()["accent"]
+
+        def frame(t):
+            self.canvas.delete(tag)
+            x = sx + (tx - sx) * t
+            y = sy + (ty - sy) * t
+            w = CARD_WIDTH + (tw - CARD_WIDTH) * t
+            h = CARD_HEIGHT + (th - CARD_HEIGHT) * t
+            # The flip itself happens in the last third of the flight, once
+            # the card's basically arrived -- a squeeze effect, same as the
+            # Dealer's own hole-card flip (_flip_hole_card).
+            if face_up_at_end and t > 0.65:
+                flip_t = min(1.0, (t - 0.65) / 0.35)
+                squeeze = abs(1 - 2 * flip_t)
+                fw = max(4, w * squeeze)
+                fx = x + (w - fw) / 2
+                if flip_t >= 0.5:
+                    draw_card(self.canvas, fx, y, card, width=fw, height=h, tags=(tag,))
+                else:
+                    draw_card_back(self.canvas, fx, y, self._current_felt, accent, width=fw, height=h, tags=(tag,))
+            else:
+                draw_card_back(self.canvas, x, y, self._current_felt, accent, width=w, height=h, tags=(tag,))
+
+        def done():
+            self.canvas.delete(tag)
+            on_arrive()
+
+        self._animate(DEAL_FLIGHT_MS, frame, on_done=done)
 
     def _on_deal_in_done(self):
         self._reveal_count = None
@@ -1070,15 +1218,27 @@ class BlackjackFrame(tk.Frame):
             self._show_decision_controls()
 
     def _on_hit(self):
-        self.game.hit(self.active_box_idx)
-        self._continue_after_action()
+        box_idx = self.active_box_idx
+        box = self.game.boxes[box_idx]
+        hand = box.active_hand()
+        # Only reachable via hit_btn, which _show_decision_controls only
+        # ever packs while there's a live active hand to hit.
+        assert hand is not None
+        hand_idx = box.hands.index(hand)
+        self.game.hit(box_idx)
+        if self.app.settings.get("animations_enabled"):
+            self._fly_new_card(box_idx, hand_idx, len(hand.cards) - 1, self._continue_after_action)
+        else:
+            self._continue_after_action()
 
     def _on_stand(self):
         self.game.stand(self.active_box_idx)
         self._continue_after_action()
 
     def _on_double(self):
-        hand = self.game.boxes[self.active_box_idx].active_hand()
+        box_idx = self.active_box_idx
+        box = self.game.boxes[box_idx]
+        hand = box.active_hand()
         # Only reachable via double_btn, which _show_decision_controls only
         # ever packs while there's a live active hand to double.
         assert hand is not None
@@ -1087,12 +1247,18 @@ class BlackjackFrame(tk.Frame):
                          "You don't have enough balance to double this hand.", accent=theme.WARN)
             return
         self.app.finance.place_wager(hand.bet)
-        self.game.double(self.active_box_idx)
+        hand_idx = box.hands.index(hand)
+        self.game.double(box_idx)
         self._refresh_balance()
-        self._continue_after_action()
+        if self.app.settings.get("animations_enabled"):
+            self._fly_new_card(box_idx, hand_idx, len(hand.cards) - 1, self._continue_after_action)
+        else:
+            self._continue_after_action()
 
     def _on_split(self):
-        hand = self.game.boxes[self.active_box_idx].active_hand()
+        box_idx = self.active_box_idx
+        box = self.game.boxes[box_idx]
+        hand = box.active_hand()
         # Only reachable via split_btn, which _show_decision_controls only
         # ever packs while there's a live active hand to split.
         assert hand is not None
@@ -1101,9 +1267,13 @@ class BlackjackFrame(tk.Frame):
                          "You don't have enough balance to split this hand.", accent=theme.WARN)
             return
         self.app.finance.place_wager(hand.bet)
-        self.game.split(self.active_box_idx)
+        hand_idx = box.hands.index(hand)
+        self.game.split(box_idx)
         self._refresh_balance()
-        self._continue_after_action()
+        if self.app.settings.get("animations_enabled"):
+            self._fly_split_cards(box_idx, hand_idx)
+        else:
+            self._continue_after_action()
 
     # ------------------------------------------------------------------ dealer reveal / settle
     def _begin_dealer_turn(self):
@@ -1167,9 +1337,9 @@ class BlackjackFrame(tk.Frame):
             self._dealer_display_count += 1
             self._redraw_play_table()
 
-        self._run_staggered(remaining, 260, reveal_next)
+        self._run_staggered(remaining, DEAL_CARD_STAGGER_MS, reveal_next)
         animated = self.app.settings.get("animations_enabled")
-        delay = remaining * 260 + 220 if animated else 30
+        delay = remaining * DEAL_CARD_STAGGER_MS + 260 if animated else 30
         self.after(delay, self._start_payout_sequence)
 
     # ------------------------------------------------------------------ payout animation
@@ -1408,6 +1578,18 @@ class BlackjackFrame(tk.Frame):
                             width=2, tags=("dealer_mat",))
         self.canvas.create_text(CANVAS_WIDTH / 2, DEALER_MAT_LABEL_Y, text="DEALER", fill=theme.ACCENT,
                                  font=theme.font(9, weight="bold"), tags=("dealer_mat",))
+        self._draw_deck()
+
+    def _draw_deck(self):
+        """The shoe every dealt card visibly flies out of (see
+        _fly_deal_card) -- a permanent table fixture, not tied to how many
+        cards are actually left in play.core.cards.Deck (which this app
+        reshuffles fresh every round anyway, same as Three Card Poker)."""
+        tag = "deck"
+        felt_theme = self.app.settings.theme()
+        self.canvas.create_text(DECK_X1 + CARD_WIDTH / 2, DECK_LABEL_Y, text="DECK", fill=theme.FG_DIM,
+                                 font=theme.font(9, weight="bold"), tags=(tag,))
+        draw_card_back(self.canvas, DECK_X1, DECK_Y, self._current_felt, felt_theme["accent"], tags=(tag,))
 
     def _dealer_card_x(self, pos, n):
         gap = min(DEALER_CARD_GAP_MAX, max(30, (DEALER_MAT_X2 - DEALER_MAT_X1 - 40) / max(1, n)))
@@ -1434,9 +1616,23 @@ class BlackjackFrame(tk.Frame):
         else:
             indices = list(range(min(self._dealer_display_count, len(cards))))
         n = len(indices)
+        visible_cards = []
         for pos, i in enumerate(indices):
             face_up = (i == 0) or (i >= 2) or (i == 1 and self._hole_revealed)
             self._draw_dealer_card_at(pos, n, cards[i], face_up)
+            if face_up:
+                visible_cards.append(cards[i])
+
+        # Own tag, deleted before every redraw -- this is now called as a
+        # standalone targeted redraw (see _fly_deal_card) as well as part of
+        # a full _redraw_play_table, so it can't rely on canvas.delete("all")
+        # having already cleared the previous total for it.
+        self.canvas.delete("dealer_total")
+        if visible_cards:
+            total, _ = hand_value(visible_cards)
+            self.canvas.create_text(DEALER_MAT_X2 - 16, DEALER_MAT_LABEL_Y, text=str(total),
+                                     fill=theme.ACCENT, font=theme.font(11, weight="bold"),
+                                     anchor="e", tags=("dealer_total",))
 
     def _draw_box_skeleton(self, idx):
         felt_theme = self.app.settings.theme()
@@ -1514,6 +1710,13 @@ class BlackjackFrame(tk.Frame):
         if hand.bet:
             draw_chip_stack(self.canvas, chip_tag, x2 - 56, cy, hand.bet, HAND_CHIP_R)
 
+        # hand.total/is_blackjack read the full hand.cards regardless of how
+        # much of it is currently revealed -- both are meaningless (and, for
+        # a natural, actively misleading) until the second initial card has
+        # actually landed, so nothing below draws off just the first one.
+        if shown < 2:
+            return
+
         self.canvas.create_text(x2 - 12, cy - row_h / 2 + 10, text=str(hand.total), fill=theme.FG,
                                  font=theme.font(9, weight="bold"), anchor="e", tags=(hand_tag,))
 
@@ -1527,8 +1730,8 @@ class BlackjackFrame(tk.Frame):
         if status:
             color = {"BUST": theme.LOSE_COLOR, "LOSE": theme.LOSE_COLOR, "WIN": theme.WIN_COLOR,
                      "BLACKJACK": theme.WIN_COLOR, "PUSH": theme.PUSH_COLOR}.get(status, theme.FG)
-            self.canvas.create_text(x1 + 22 + HAND_CARD_W / 2, cy + row_h / 2 - 8, text=status, fill=color,
-                                     font=theme.font(8, weight="bold"), tags=(hand_tag,))
+            theme.outlined_glyph(self.canvas, x1 + 22 + HAND_CARD_W / 2, cy + row_h / 2 - 8, status,
+                                  11, color, "#000000", tags=(hand_tag,))
 
     def _redraw_play_table(self):
         self.canvas.delete("all")

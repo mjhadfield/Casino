@@ -134,18 +134,18 @@ def pill(canvas, cx, cy, text, fill=GREY_BTN_BG, outline=GREY_BTN_BORDER,
     return shape_id, text_id
 
 
-def outlined_glyph(canvas, cx, cy, text, size, fill, outline, outline_width=1, weight="bold"):
-    """A single character with a solid fill and a colored outline -- Tk canvas
-    text only ever takes one fill color, so the outline is faked by drawing
-    the glyph several times at small offsets in `outline`, then once more
-    dead-center in `fill` on top. Good enough at icon sizes (a handful of px
-    of offset); not meant for large display type."""
+def outlined_glyph(canvas, cx, cy, text, size, fill, outline, outline_width=1, weight="bold", tags=()):
+    """A single character (or short word) with a solid fill and a colored
+    outline -- Tk canvas text only ever takes one fill color, so the outline
+    is faked by drawing the glyph several times at small offsets in
+    `outline`, then once more dead-center in `fill` on top. Good enough at
+    icon sizes (a handful of px of offset); not meant for large display type."""
     f = font(size, weight=weight)
     for dx in (-outline_width, 0, outline_width):
         for dy in (-outline_width, 0, outline_width):
             if dx or dy:
-                canvas.create_text(cx + dx, cy + dy, text=text, font=f, fill=outline)
-    canvas.create_text(cx, cy, text=text, font=f, fill=fill)
+                canvas.create_text(cx + dx, cy + dy, text=text, font=f, fill=outline, tags=tags)
+    canvas.create_text(cx, cy, text=text, font=f, fill=fill, tags=tags)
 
 
 def breadcrumb(parent, path, bg, host="hadfield-casino"):
