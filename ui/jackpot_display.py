@@ -93,8 +93,9 @@ class JackpotDisplay(tk.Frame):
         super().__init__(parent, bg=panel_bg, highlightbackground=border, highlightthickness=1)
         reel_font = _reel_font()
 
-        tk.Label(self, text=title, bg=panel_bg, fg=border,
-                 font=theme.font(12, weight="bold")).pack(pady=(10, 6))
+        self._title_lbl = tk.Label(self, text=title, bg=panel_bg, fg=border,
+                                    font=theme.font(12, weight="bold"))
+        self._title_lbl.pack(pady=(10, 6))
 
         meter = tk.Frame(self, bg=REEL_BG, highlightbackground="#3a1010", highlightthickness=2)
         meter.pack(padx=14)
@@ -114,17 +115,50 @@ class JackpotDisplay(tk.Frame):
         for reel in self._dec_reels:
             reel.pack(side="left")
 
+        # Kept for retheme() below -- a table felt theme change needs to
+        # update every one of these panel_bg/border-coloured widgets, not
+        # just the ones set at construction time here. A highlighted row's
+        # fg is REEL_FG (the fixed arcade accent, see module docstring),
+        # and every other row's fg is the plain neutral theme.FG -- neither
+        # is felt-themed, so retheme only ever needs to touch bg on these.
+        self._divider = None
+        self._panel_frames: list[tk.Frame] = [self]
+        self._row_labels: list[tk.Label] = []
         if rows:
-            tk.Frame(self, bg=border, height=1).pack(fill="x", padx=14, pady=(12, 8))
+            self._divider = tk.Frame(self, bg=border, height=1)
+            self._divider.pack(fill="x", padx=14, pady=(12, 8))
             table = tk.Frame(self, bg=panel_bg)
             table.pack(fill="x", padx=16, pady=(0, 12))
+            self._panel_frames.append(table)
             for i, (label, value_text) in enumerate(rows):
-                fg = REEL_FG if i == highlight_row else theme.FG
-                font = theme.font(9, weight="bold") if i == highlight_row else theme.font(9)
+                highlighted = i == highlight_row
+                fg = REEL_FG if highlighted else theme.FG
+                font = theme.font(9, weight="bold") if highlighted else theme.font(9)
                 row = tk.Frame(table, bg=panel_bg)
                 row.pack(fill="x", pady=2)
-                tk.Label(row, text=label, bg=panel_bg, fg=fg, font=font, anchor="w").pack(side="left")
-                tk.Label(row, text=value_text, bg=panel_bg, fg=fg, font=font, anchor="e").pack(side="right")
+                self._panel_frames.append(row)
+                lbl1 = tk.Label(row, text=label, bg=panel_bg, fg=fg, font=font, anchor="w")
+                lbl1.pack(side="left")
+                lbl2 = tk.Label(row, text=value_text, bg=panel_bg, fg=fg, font=font, anchor="e")
+                lbl2.pack(side="right")
+                self._row_labels += [lbl1, lbl2]
+
+    def retheme(self, panel_bg, border):
+        """Updates every panel_bg/border-coloured element to match a newly
+        selected table felt theme -- called by each game's own
+        _apply_theme() whenever the felt theme actually changes, so this
+        widget stops being frozen at whatever theme was active when the
+        table screen was first built. The meter's own red "LED" look
+        (REEL_BG/REEL_FG) is untouched -- see the module docstring, that's
+        a deliberate fixed arcade accent, not felt-themed."""
+        self.configure(background=panel_bg, highlightbackground=border)
+        self._title_lbl.configure(background=panel_bg, foreground=border)
+        if self._divider is not None:
+            self._divider.configure(background=border)
+        for frame in self._panel_frames:
+            frame.configure(background=panel_bg)
+        for label in self._row_labels:
+            label.configure(background=panel_bg)  # fg (theme.FG, or the fixed REEL_FG highlight) is unaffected
 
     def set_value(self, amount):
         """`amount`: a float in pounds (sub-penny precision is fine and is

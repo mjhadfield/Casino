@@ -156,6 +156,13 @@ class PaiGowFaceUpGame(PaiGowPokerGame):
         result.player_front_eval = evaluate_two_card_hand(result.player_front)
         result.player_back_eval = best_five_card_eval_with_joker(result.player_back)
 
+        # dealer_front_eval/dealer_back_eval are typed Optional on the base
+        # RoundResult (only ever populated once settle() itself runs, for
+        # standard Pai Gow) -- but deal() above always fills them in
+        # unconditionally, well before settle() is ever reachable, so they
+        # can't actually still be None here. Asserted, not just assumed, so
+        # this stays true even if that ordering ever changes.
+        assert result.dealer_front_eval is not None and result.dealer_back_eval is not None
         front_win = compare_hands(result.player_front_eval, result.dealer_front_eval) > 0
         back_win = compare_hands(result.player_back_eval, result.dealer_back_eval) > 0
 

@@ -394,6 +394,7 @@ class ThreeCardPokerFrame(tk.Frame):
 
         self.jackpot_display = JackpotDisplay(
             paytable_col, rows=JACKPOT_PAYTABLE_ROWS, highlight_row=JACKPOT_PAYTABLE_HIGHLIGHT_ROW,
+            panel_bg=felt_theme["felt_dark"], border=felt_theme["accent"],
         )
         self.jackpot_display.pack(pady=(0, 14))
 
@@ -556,24 +557,30 @@ class ThreeCardPokerFrame(tk.Frame):
         canvas = self.paytable_canvas
         canvas.delete("all")
         w, h = PAYTABLE_WIDTH, PAYTABLE_HEIGHT
+        # Panel chrome (border/title/multiplier accent) follows the selected
+        # table felt theme, same as the felt/spots themselves -- only plain
+        # informational text (labels, dividers) stays the fixed neutral
+        # FG/BORDER every screen already uses regardless of table theme.
+        felt_theme = self.app.settings.theme()
 
-        theme.recessed_panel(canvas, 0, 0, w, h, title="PAYTABLE", title_font_size=14)
+        theme.recessed_panel(canvas, 0, 0, w, h, title="PAYTABLE", title_font_size=14,
+                              fill=felt_theme["felt_dark"], outline=felt_theme["accent"])
 
         y = 46
         for i, (title, rows) in enumerate(PAYTABLE_SECTIONS):
             if i:
                 canvas.create_line(20, y, w - 20, y, fill=theme.BORDER)
                 y += 12
-            y = self._draw_paytable_section(canvas, y, title, rows)
+            y = self._draw_paytable_section(canvas, y, title, rows, felt_theme["accent"])
 
-    def _draw_paytable_section(self, canvas, y, title, rows):
+    def _draw_paytable_section(self, canvas, y, title, rows, accent):
         w = PAYTABLE_WIDTH
-        canvas.create_text(20, y, text=title, fill=theme.ACCENT,
+        canvas.create_text(20, y, text=title, fill=accent,
                             font=theme.font(10, weight="bold"), anchor="w")
         y += 20
         for label, multiplier in rows:
             canvas.create_text(20, y, text=label, fill=theme.FG, font=theme.font(9), anchor="w")
-            canvas.create_text(w - 20, y, text=f"{multiplier}:1", fill=theme.WIN_COLOR,
+            canvas.create_text(w - 20, y, text=f"{multiplier}:1", fill=accent,
                                 font=theme.font(9, weight="bold"), anchor="e")
             y += 19
         return y
@@ -1686,8 +1693,10 @@ class ThreeCardPokerFrame(tk.Frame):
         canvas = self.payout_canvas
         canvas.delete("all")
         w, h = PAYOUT_PANEL_WIDTH, PAYOUT_PANEL_HEIGHT
+        felt_theme = self.app.settings.theme()
 
-        theme.recessed_panel(canvas, 0, 0, w, h, title="ROUND RESULT")
+        theme.recessed_panel(canvas, 0, 0, w, h, title="ROUND RESULT",
+                              fill=felt_theme["felt_dark"], outline=felt_theme["accent"])
 
         rows = self._payout_rows(result)
         y = 46
@@ -1721,12 +1730,21 @@ class ThreeCardPokerFrame(tk.Frame):
         anywhere but this outer frame -- which every visible widget sits on
         top of, so the change was invisible until a full app restart rebuilt
         everything from scratch."""
-        new_felt = self.app.settings.theme()["felt"]
+        felt_theme = self.app.settings.theme()
+        new_felt = felt_theme["felt"]
         if new_felt == self._current_felt:
             return
         old_felt = self._current_felt
         self._current_felt = new_felt
         self._retheme_widget(self, old_felt, new_felt)
+        # The paytable/jackpot panels aren't plain-bg widgets this walk can
+        # catch -- they're canvas-drawn (or, for JackpotDisplay, built with
+        # their own explicit panel_bg/border at construction time), so they
+        # need their own refresh whenever the felt theme actually changes.
+        self.jackpot_display.retheme(felt_theme["felt_dark"], felt_theme["accent"])
+        self._draw_paytable()
+        if self.state == "resolved" and self.result is not None:
+            self._draw_payout_panel(self.result)
 
     def _retheme_widget(self, widget, old_felt, new_felt):
         try:

@@ -76,7 +76,7 @@ class MainMenuFrame(tk.Frame):
 
         self._make_spade(top_bar).pack(side="left", padx=(20, 8), pady=14)
         tk.Label(
-            top_bar, text="HADFIELD CASINO v1.1.0", bg=theme.MENU_BG, fg=theme.SECONDARY,
+            top_bar, text="HADFIELD CASINO v1.1.1", bg=theme.MENU_BG, fg=theme.SECONDARY,
             font=theme.font(18, weight="bold"),
         ).pack(side="left")
         self._make_spade(top_bar).pack(side="left", padx=(8, 0), pady=14)

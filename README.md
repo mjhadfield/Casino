@@ -1,6 +1,6 @@
 # Hadfield Casino
 
-**Version 1.1.0**
+**Version 1.1.1**
 
 A small, extensible casino games library, built with Python's standard
 library only (`tkinter` — no extra installs needed).

@@ -471,6 +471,7 @@ class PaiGowPokerFrame(tk.Frame):
 
         self.jackpot_display = JackpotDisplay(
             paytable_col, rows=JACKPOT_PAYTABLE_ROWS, highlight_row=JACKPOT_PAYTABLE_HIGHLIGHT_ROW,
+            panel_bg=felt_theme["felt_dark"], border=felt_theme["accent"],
         )
         self.jackpot_display.pack(pady=(0, 14))
         self._build_paytable(paytable_col)
@@ -626,10 +627,17 @@ class PaiGowPokerFrame(tk.Frame):
         canvas = self.paytable_canvas
         canvas.delete("all")
         w, h = PAYTABLE_WIDTH, PAYTABLE_HEIGHT
-        theme.recessed_panel(canvas, 0, 0, w, h, title="FORTUNE PAYTABLE", title_font_size=13)
+        # Panel chrome (border/title/multiplier accent) follows the selected
+        # table felt theme, same as the felt/spots themselves -- only plain
+        # informational text (labels, dividers) stays the fixed neutral
+        # FG/BORDER every screen already uses regardless of table theme.
+        felt_theme = self.app.settings.theme()
+        accent = felt_theme["accent"]
+        theme.recessed_panel(canvas, 0, 0, w, h, title="FORTUNE PAYTABLE", title_font_size=13,
+                              fill=felt_theme["felt_dark"], outline=accent)
         y = 44  # a genuine gap below the title, not crowding straight into it
         canvas.create_text(20, y, text="Ante", fill=theme.FG, font=theme.font(9), anchor="w")
-        canvas.create_text(w - 20, y, text="1:1", fill=theme.WIN_COLOR,
+        canvas.create_text(w - 20, y, text="1:1", fill=accent,
                             font=theme.font(9, weight="bold"), anchor="e")
         y += 15
         canvas.create_text(20, y, text=self.ANTE_COMMISSION_NOTE, fill=theme.FG_DIM,
@@ -644,7 +652,7 @@ class PaiGowPokerFrame(tk.Frame):
         row_h = (h - bottom_margin - y) / (len(FORTUNE_PAYTABLE_ROWS) - 1)
         for label, mult in FORTUNE_PAYTABLE_ROWS:
             canvas.create_text(20, y, text=label, fill=theme.FG, font=theme.font(8), anchor="w")
-            canvas.create_text(w - 20, y, text=mult, fill=theme.WIN_COLOR,
+            canvas.create_text(w - 20, y, text=mult, fill=accent,
                                 font=theme.font(8, weight="bold"), anchor="e")
             y += row_h
 
@@ -1742,7 +1750,9 @@ class PaiGowPokerFrame(tk.Frame):
         canvas = self.payout_canvas
         canvas.delete("all")
         w, h = ROUND_RESULT_PANEL_W, ROUND_RESULT_PANEL_H
-        theme.recessed_panel(canvas, 0, 0, w, h, title="ROUND RESULT")
+        felt_theme = self.app.settings.theme()
+        theme.recessed_panel(canvas, 0, 0, w, h, title="ROUND RESULT",
+                              fill=felt_theme["felt_dark"], outline=felt_theme["accent"])
 
         row_font = theme.font(9)
         row_font_bold = theme.font(9, weight="bold")
@@ -1838,12 +1848,24 @@ class PaiGowPokerFrame(tk.Frame):
             self._update_total()
 
     def _apply_theme(self):
-        new_felt = self.app.settings.theme()["felt"]
+        felt_theme = self.app.settings.theme()
+        new_felt = felt_theme["felt"]
         if new_felt == self._current_felt:
             return
         old_felt = self._current_felt
         self._current_felt = new_felt
         self._retheme_widget(self, old_felt, new_felt)
+        # The paytable/jackpot panels aren't plain-bg widgets this walk can
+        # catch -- they're canvas-drawn (or, for JackpotDisplay, built with
+        # their own explicit panel_bg/border at construction time), so they
+        # need their own refresh whenever the felt theme actually changes.
+        # _show_result (not _draw_round_result_panel directly) is what Face
+        # Up Pai Gow overrides, so redrawing through it here keeps this one
+        # method correct for both games with no extra work.
+        self.jackpot_display.retheme(felt_theme["felt_dark"], felt_theme["accent"])
+        self._draw_paytable()
+        if self.state == "resolved" and self.result is not None:
+            self._show_result(self.result)
 
     def _retheme_widget(self, widget, old_felt, new_felt):
         try:

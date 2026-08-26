@@ -1,8 +1,7 @@
 """
 Hadfield Casino
 =================
-A small, extensible casino games library. Currently ships Three Card Poker;
-built so future games (Blackjack, Roulette, Baccarat, ...) can be dropped in
+A small, extensible casino games library. New games can be dropped in
 as another entry in games/ plus a UI frame, reusing the same core deck,
 hand-evaluation, finance, and settings modules.
 
@@ -46,16 +45,10 @@ class CasinoApp(tk.Tk):
         super().__init__()
         self.title(APP_TITLE)
         self.geometry("1200x820")
-        # Fixed-size window -- no drag-to-resize, no maximize -- rather than
-        # a minsize floor: this is headed for a static-size embed in a
-        # webpage, so a resizable window isn't a real requirement here.
         self.resizable(False, False)
         self.configure(bg=theme.BG)
 
         self.data_dir = DATA_DIR
-        # Whole-app-session admin gate (see ui/dialogs.py's
-        # ensure_admin_unlocked) -- entering the password once, anywhere it's
-        # asked for, unlocks every admin section for the rest of this run.
         self.admin_unlocked = False
         self.finance = FinanceManager(FINANCE_SAVE_PATH)
         self.settings = SettingsManager(SETTINGS_SAVE_PATH)
