@@ -1,8 +1,8 @@
 {
   "bets": {
-    "ante": 0,
-    "fortune": 0,
-    "jackpot": 0
+    "ante": 10,
+    "fortune": 5,
+    "jackpot": 1
   },
   "selected_chip": 5
 }

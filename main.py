@@ -28,6 +28,7 @@ from games.three_card_poker.ui import ThreeCardPokerFrame
 from games.blackjack.ui import BlackjackFrame
 from games.pai_gow_poker.ui import PaiGowPokerFrame
 from games.pai_gow_poker_face_up.ui import PaiGowPokerFaceUpFrame
+from games.mississippi_stud.ui import MississippiStudFrame
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(APP_DIR, "data")
@@ -74,6 +75,7 @@ class CasinoApp(tk.Tk):
             (BlackjackFrame, "blackjack"),
             (PaiGowPokerFrame, "pai_gow_poker"),
             (PaiGowPokerFaceUpFrame, "pai_gow_poker_face_up"),
+            (MississippiStudFrame, "mississippi_stud"),
         ):
             frame = frame_class(parent=container, app=self)
             self.frames[name] = frame

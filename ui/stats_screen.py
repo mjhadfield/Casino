@@ -4,6 +4,7 @@ from games.three_card_poker import logic as tcp_logic
 from games.blackjack import logic as bj_logic
 from games.pai_gow_poker import logic as pgp_logic
 from games.pai_gow_poker_face_up import logic as pgpfu_logic
+from games.mississippi_stud import logic as ms_logic
 from ui import theme
 from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
@@ -32,6 +33,13 @@ GAME_SECTIONS = [
      "bet_types": pgp_logic.BET_TYPES, "hand_labels": pgp_logic.HAND_OUTCOME_LABELS},
     {"key": pgpfu_logic.GAME_KEY, "label": pgpfu_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
      "bet_types": pgpfu_logic.BET_TYPES, "hand_labels": pgpfu_logic.HAND_OUTCOME_LABELS},
+    # tracks_folding=False despite this game genuinely having a Fold decision
+    # at every street -- same reasoning as pai_gow_poker_face_up's own entry
+    # above: no optimal-strategy checker was built for it (see logic.py's own
+    # module docstring), so there's nothing real to show a "Correctly" line
+    # against.
+    {"key": ms_logic.GAME_KEY, "label": ms_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
+     "bet_types": ms_logic.BET_TYPES, "hand_labels": ms_logic.HAND_OUTCOME_LABELS},
 ]
 
 LIFETIME_STAT_ROWS = [

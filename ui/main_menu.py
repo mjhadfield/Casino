@@ -30,7 +30,7 @@ GAMES = [
     (game_icons.draw_pai_gow_face_up_icon, "Pai Gow Poker\n(Face Up!)",
      "Dealer plays face up, with no commission.", "pai_gow_poker_face_up", "pai_gow_poker_face_up"),
     (game_icons.draw_mississippi_stud_icon, "Mississippi Stud", "3 Card Bonus side bet",
-     "mississippi_stud", None),
+     "mississippi_stud", "mississippi_stud"),
     (game_icons.draw_baccarat_icon, "Baccarat", "Perfect Pair & Dragon Bonus side bets",
      "baccarat", None),
     (game_icons.draw_let_it_ride_icon, "Let It Ride", "3 starter bets -- pull back or let it ride",

@@ -119,6 +119,14 @@ def rounded_rect(canvas, x1, y1, x2, y2, radius=RADIUS, **kwargs):
     return canvas.create_polygon(points, smooth=True, **kwargs)
 
 
+def diamond(canvas, cx, cy, r, **kwargs):
+    """A diamond (rotated square) centred at (cx, cy), its 4 points r away
+    from centre -- used for Mississippi Stud's "3 Card Bonus" bet spot, the
+    first bet spot in the app that isn't a circle or rounded rect."""
+    points = [cx, cy - r, cx + r, cy, cx, cy + r, cx - r, cy]
+    return canvas.create_polygon(points, **kwargs)
+
+
 def dashed_rect(canvas, x1, y1, x2, y2, radius=RADIUS, dash=(4, 2), **kwargs):
     """Same rounded shape as rounded_rect, dashed -- Tk Frames/Buttons have no
     dashed-border option at all, so anywhere the site's dashed "soon" look is

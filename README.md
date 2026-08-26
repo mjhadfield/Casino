@@ -1,6 +1,6 @@
 # Hadfield Casino
 
-**Version 1.1.1**
+**Version 1.2.0**
 
 A small, extensible casino games library, built with Python's standard
 library only (`tkinter` — no extra installs needed).
@@ -37,6 +37,8 @@ sudo pacman -S tk                  # Arch/CachyOS
 - **Pai Gow Poker (Face Up!)** — the same core game, with the Dealer's hand
   set and revealed *before* you set your own, an automatic Ante push on an
   Ace-high Pai Gow, and no commission (see below).
+- **Mississippi Stud** — a 5-card Ante/3rd-4th-5th-Street game, plus a
+  3 Card Bonus and a shared Jackpot side bet (see below).
 
 Balance, lifetime stats, per-game stats, jackpot progress, and settings are
 all saved to `data/*.json` and persist between sessions.
@@ -82,6 +84,9 @@ games/
   pai_gow_poker_face_up/
     logic.py                     # PaiGowFaceUpGame -- subclasses pai_gow_poker's own engine
     ui.py                        # PaiGowPokerFaceUpFrame -- subclasses pai_gow_poker's own table screen
+  mississippi_stud/
+    logic.py                     # game engine: Ante/3rd-4th-5th Street, 3 Card Bonus, Jackpot
+    ui.py                        # table screen: betting, per-street bet-or-fold, results
 data/                            # created at runtime -- finances.json, settings.json, ...
 ```
 
@@ -219,11 +224,48 @@ and unchanged), with three differences:
 - **No commission.** A win pays a flat **1:1** on the Ante — none of the
   standard game's 5% vig.
 
+## Mississippi Stud rules implemented
+
+Deck: a plain 52-card deck (no Joker), reshuffled each round.
+
+Deal & streets: you're dealt 2 cards face up; 3 community cards are dealt
+face down at the same time, revealed one at a time. At 3rd, 4th, and 5th
+Street in turn you either fold (forfeiting the Ante and any street bets
+already placed) or bet **1x-3x** your Ante — each played bet reveals that
+street's community card. Your balance must be at least **3x your Ante** to
+deal at all, and a 2x/3x bet at 3rd or 4th Street is only offered if you'd
+still be able to afford at least a 1x bet on the next street afterwards.
+
+Main game: your final hand is your 2 cards plus all 3 community cards.
+Every bet still in play (Ante + whichever streets you played) pays the
+**same** odds, looked up once from that hand:
+
+| Hand | Pays | Hand | Pays |
+|---|---|---|---|
+| Royal Flush | 500:1 | Three of a Kind | 3:1 |
+| Straight Flush | 100:1 | Two Pair | 2:1 |
+| Four of a Kind | 40:1 | Pair, Jacks or better | 1:1 |
+| Full House | 10:1 | Pair, 6s-10s | Push |
+| Flush | 6:1 | Pair, 2s-5s / High Card | Lose |
+| Straight | 4:1 | | |
+
+3 Card Bonus side bet (own spot, resolved on the 3 community cards alone,
+independent of your own hand or fold — it stays "in action" until all 3 are
+exposed, even forcing a reveal on a fold): Mini-Royal (A-K-Q suited)
+**50:1**, Straight Flush **40:1**, Three of a Kind **30:1**, Straight
+**6:1**, Flush **3:1**, Pair **1:1**.
+
+Jackpot side bet (flat £1, shared progressive pool — same as the other
+tables; never pays on a folded round): Royal Flush **100% of the pool**;
+Straight Flush **10% of the pool** (a partial drawdown, doesn't reset it);
+Four of a Kind **£300**; Full House **£50**; Flush **£40**; Straight
+**£30**; Three of a Kind **£9**.
+
 ## Roadmap ideas (not yet built)
 
-- More tables: Mississippi Stud, Baccarat, Let It Ride, Ultimate Texas
-  Hold'em, High Card Flush — already placeholder tiles on the main menu,
-  each starting locked (see core/unlocks.py) until built
+- More tables: Baccarat, Let It Ride, Ultimate Texas Hold'em, High Card
+  Flush — already placeholder tiles on the main menu, each starting locked
+  (see core/unlocks.py) until built
 - AI/CPU players at the table for a more social feel
 - Milestone-based unlocks (new tables, higher bet limits, cosmetic themes)
 - Bonus/free-bet promotions

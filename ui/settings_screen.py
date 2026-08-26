@@ -5,6 +5,7 @@ from core.settings import TABLE_THEMES
 from games.three_card_poker import logic as tcp_logic
 from games.pai_gow_poker import logic as pgp_logic
 from games.pai_gow_poker_face_up import logic as pgpfu_logic
+from games.mississippi_stud import logic as ms_logic
 from ui import dialogs, main_menu, theme
 from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
@@ -135,6 +136,13 @@ class SettingsFrame(tk.Frame):
             "breakdown on the Stats screen.",
             "Pai Gow Poker (Face Up!)'s statistics have been reset.",
             lambda: self.app.game_stats.reset_game(pgpfu_logic.GAME_KEY),
+        )
+        self._make_reset_row(
+            danger_inner, "$ rm --stats --game mississippi_stud",
+            "This permanently deletes Mississippi Stud's bet, hand and payout breakdown "
+            "on the Stats screen.",
+            "Mississippi Stud's statistics have been reset.",
+            lambda: self.app.game_stats.reset_game(ms_logic.GAME_KEY),
         )
 
         tk.Frame(danger_inner, bg=theme.LOSE_COLOR, height=1).pack(fill="x", pady=(4, 12))
