@@ -3,7 +3,7 @@ from tkinter import messagebox
 
 from core.settings import TABLE_THEMES
 from games.three_card_poker import logic as tcp_logic
-from ui import dialogs, theme
+from ui import dialogs, main_menu, theme
 from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
 
@@ -68,6 +68,25 @@ class SettingsFrame(tk.Frame):
         self._make_jackpot_rate_row(jackpot_inner)
         tk.Frame(jackpot_inner, bg=theme.BORDER, height=1).pack(fill="x", pady=16)
         self._make_jackpot_debug_row(jackpot_inner)
+
+        # --- Game Unlocks -- same gating; each checkbox applies immediately
+        # (no Save needed), the same immediate-apply convention the Jackpot
+        # debug "Set" button and Danger Zone's own actions already use.
+        # Foundation for a future achievements/unlock-progression system
+        # (see core/unlocks.py) -- today an admin toggling this panel is the
+        # only way a game ever gets unlocked.
+        unlock_inner = make_collapsible(
+            body, "$ game --unlock",
+            before_expand=lambda: dialogs.ensure_admin_unlocked(self.app, self, "unlock"),
+            reset_list=self._collapsers,
+        )
+        tk.Label(
+            unlock_inner, text="Toggle which games are unlocked on the Main Menu. Applies immediately.",
+            bg=theme.BG_ELEVATED, fg=theme.FG_DIM, font=theme.font(9),
+        ).pack(anchor="w", pady=(0, 14))
+        self._unlock_vars = []
+        for _icon, name, _subtitle, game_key, _frame_name in main_menu.GAMES:
+            self._make_unlock_row(unlock_inner, name, game_key)
 
         # --- Danger Zone -- same gating, red-tinted throughout.
         danger_inner = make_collapsible(
@@ -226,6 +245,23 @@ class SettingsFrame(tk.Frame):
         self.jackpot_debug_var.set(f"{self.app.jackpot.amount:.2f}")
         messagebox.showinfo("Jackpot Updated", f"Jackpot set to £{self.app.jackpot.amount:,.2f}.")
 
+    # ------------------------------------------------------------------ game unlocks
+    def _make_unlock_row(self, parent, name, game_key):
+        row = tk.Frame(parent, bg=theme.BG_ELEVATED)
+        row.pack(fill="x", pady=4)
+        var = tk.BooleanVar(value=self.app.unlocks.is_unlocked(game_key))
+
+        def on_toggle():
+            self.app.unlocks.set_unlocked(game_key, var.get())
+
+        tk.Checkbutton(
+            row, text=name, variable=var, command=on_toggle,
+            bg=theme.BG_ELEVATED, fg=theme.FG, font=theme.font(11),
+            activebackground=theme.BG_ELEVATED, activeforeground=theme.FG,
+            selectcolor=theme.BG, highlightthickness=0, bd=0, cursor="hand2", anchor="w",
+        ).pack(side="left", fill="x")
+        self._unlock_vars.append((var, game_key))
+
     # ------------------------------------------------------------------ danger zone
     def _make_reset_row(self, parent, command_text, warn_message, done_message, action, pady=(0, 12)):
         """One "$ rm ..." reset command: a button styled like the terminal
@@ -297,6 +333,8 @@ class SettingsFrame(tk.Frame):
         self.theme_var.set(self.app.settings.get("table_theme"))
         self.jackpot_rate_var.set(f"{self.app.settings.get('jackpot_rate_per_second'):.2f}")
         self.jackpot_debug_var.set(f"{self.app.jackpot.amount:.2f}")
+        for var, game_key in self._unlock_vars:
+            var.set(self.app.unlocks.is_unlocked(game_key))
         for redraw in self._toggle_redraws:
             redraw()
         self._draw_theme_swatches()

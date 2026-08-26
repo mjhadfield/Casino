@@ -1,1 +1,31 @@
-{}
+{
+  "pai_gow_poker": {
+    "bets": {
+      "ante": {
+        "wagered": 10.0,
+        "returned": 5.0,
+        "wins": 0,
+        "losses": 1,
+        "pushes": 1
+      },
+      "fortune": {
+        "wagered": 10.0,
+        "returned": 0.0,
+        "wins": 0,
+        "losses": 2,
+        "pushes": 0
+      },
+      "jackpot": {
+        "wagered": 2.0,
+        "returned": 0.0,
+        "wins": 0,
+        "losses": 2,
+        "pushes": 0
+      }
+    },
+    "hands": {
+      "Lose": 1,
+      "Push": 1
+    }
+  }
+}

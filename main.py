@@ -19,6 +19,7 @@ from core.finances import FinanceManager
 from core.game_stats import GameStatsManager
 from core.jackpot import JackpotManager
 from core.settings import SettingsManager
+from core.unlocks import UnlocksManager
 from ui import theme
 from ui.main_menu import MainMenuFrame
 from ui.finances_screen import FinancesFrame
@@ -34,6 +35,7 @@ FINANCE_SAVE_PATH = os.path.join(DATA_DIR, "finances.json")
 SETTINGS_SAVE_PATH = os.path.join(DATA_DIR, "settings.json")
 JACKPOT_SAVE_PATH = os.path.join(DATA_DIR, "jackpot.json")
 GAME_STATS_SAVE_PATH = os.path.join(DATA_DIR, "game_stats.json")
+UNLOCKS_SAVE_PATH = os.path.join(DATA_DIR, "unlocks.json")
 
 APP_TITLE = "Hadfield Casino"
 
@@ -58,6 +60,7 @@ class CasinoApp(tk.Tk):
         self.settings = SettingsManager(SETTINGS_SAVE_PATH)
         self.jackpot = JackpotManager(JACKPOT_SAVE_PATH, self.settings)
         self.game_stats = GameStatsManager(GAME_STATS_SAVE_PATH)
+        self.unlocks = UnlocksManager(UNLOCKS_SAVE_PATH)
         # Grows for as long as the app is open, independent of which screen
         # is showing -- started here rather than by any one game's frame.
         self.jackpot.start(self)

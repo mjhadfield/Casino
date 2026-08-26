@@ -1,6 +1,6 @@
 # Hadfield Casino
 
-**Version 1.0.1**
+**Version 1.0.2**
 
 A small, extensible casino games library, built with Python's standard
 library only (`tkinter` — no extra installs needed).
@@ -52,6 +52,7 @@ core/
   game_stats.py                  # per-game bets/hands/strategy stats, persisted
   jackpot.py                     # shared progressive jackpot, ticks in real time
   settings.py                    # app-wide settings + table themes, persisted
+  unlocks.py                     # per-game locked/unlocked status, persisted -- foundation for future achievements
   persistence.py                 # generic JSON load/save helper
 ui/
   main_menu.py                   # main menu + game tile grid

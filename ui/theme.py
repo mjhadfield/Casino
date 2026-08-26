@@ -80,6 +80,14 @@ SECONDARY_DIM_MENU_BG = lerp_color(MENU_BG, SECONDARY, 0.16)
 # invisible against the lighter MENU_BG, so this is its own, brighter token.
 MENU_DIVIDER = lerp_color(MENU_BG, "#ffffff", 0.15)
 
+# Locked-game tile styling (ui/main_menu.py, core/unlocks.py) 
+LOCK_RED = "#c23b3b"
+LOCK_DARK_RED = "#5B1313"
+LOCK_BORDER = lerp_color(BG, LOCK_RED, 0.55)
+LOCK_BG = lerp_color(BG, LOCK_RED, 0.05)
+LOCK_FG = lerp_color(BG, LOCK_DARK_RED, 0.75)
+LOCK_FG_DIM = lerp_color(BG, LOCK_RED, 0.55)
+
 # ---------------------------------------------------------------------- fonts
 _FONT_FAMILY = None  # resolved lazily -- tkinter.font.families() needs a live
                       # root window, so this can't run at import time; the

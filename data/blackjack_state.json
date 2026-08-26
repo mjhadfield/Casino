@@ -1,10 +1,10 @@
 {
   "bets": {
-    "blackjack": 0,
-    "super_pairs": 0,
-    "twenty_one_plus_three": 0,
-    "top_three": 0,
-    "jackpot": 0
+    "blackjack": 5,
+    "super_pairs": 5,
+    "twenty_one_plus_three": 5,
+    "top_three": 5,
+    "jackpot": 1
   },
   "selected_chip": 5,
   "num_boxes": 2
