@@ -1,6 +1,6 @@
 {
   "sound_enabled": true,
   "animations_enabled": true,
-  "table_theme": "Amber CRT",
+  "table_theme": "Terminal",
   "jackpot_rate_per_second": 0.01
 }

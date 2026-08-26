@@ -137,6 +137,17 @@ class SettingsFrame(tk.Frame):
             lambda: self.app.game_stats.reset_game(pgpfu_logic.GAME_KEY),
         )
 
+        tk.Frame(danger_inner, bg=theme.LOSE_COLOR, height=1).pack(fill="x", pady=(4, 12))
+        self._make_reset_row(
+            danger_inner, "$ rm --stats --all",
+            "This permanently deletes every statistic in the app -- lifetime deposit, "
+            "withdrawal and wagering totals, plus every game's bet, hand and payout "
+            "breakdown on the Stats screen.",
+            "All statistics have been reset.",
+            self._reset_all_stats,
+            pady=(0, 0),
+        )
+
         action_row = tk.Frame(body, bg=theme.BG)
         action_row.pack(pady=(28, 0))
         tk.Button(
@@ -294,6 +305,14 @@ class SettingsFrame(tk.Frame):
     def _reset_lifetime(self):
         self.app.finance.reset_stats_only()
         self.app.on_balance_changed()
+
+    def _reset_all_stats(self):
+        """Everything the individual reset rows above do, combined -- the
+        lifetime finance totals plus every game's own bet/hand/payout
+        breakdown in one shot. Balance is untouched, same as every other
+        reset row here."""
+        self._reset_lifetime()
+        self.app.game_stats.reset()
 
     # ------------------------------------------------------------------ save / cancel
     def _snapshot(self):
