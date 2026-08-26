@@ -30,10 +30,58 @@ sudo pacman -S tk                  # Arch/CachyOS
 
 - **Three Card Poker** — full UK casino payout rules (see below).
 - **Blackjack** — 8-deck shoe with four side bets (see below).
+- **Pai Gow Poker** — 53-card deck (with a Joker), Fortune and
+  Jackpot side bets (see below).
 
 Balance, lifetime stats, per-game stats, jackpot progress, and settings are
 all saved to `data/*.json` and persist between sessions.
 
+
+## Project layout (built for reuse across future games)
+
+```
+main.py                          # app window, frame stack, wiring
+Launch Casino.bat                # Windows: double-click to run
+Install prerequisites.bat        # Windows: one-time Python + tkinter setup
+core/
+  cards.py                       # Card, Deck (multi-deck shoes, optional Joker) -- shared by every game
+  hand_evaluator.py              # 3-card and standard 5-card hand ranking/comparison logic
+  finances.py                    # bank balance + lifetime stats, persisted
+  game_stats.py                  # per-game bets/hands/strategy stats, persisted
+  jackpot.py                     # shared progressive jackpot, ticks in real time
+  settings.py                    # app-wide settings + table themes, persisted
+  persistence.py                 # generic JSON load/save helper
+ui/
+  main_menu.py                   # main menu + game tile grid
+  finances_screen.py             # deposit/withdraw flow + lifetime stats
+  settings_screen.py             # toggles, theme picker, jackpot rate, stats reset
+  stats_screen.py                # per-game bets/hands/strategy breakdown
+  card_widgets.py                # canvas card-drawing helpers, reusable
+  chips.py                       # canvas chip-stack drawing helpers, reusable
+  jackpot_display.py             # odometer-style progressive jackpot meter
+  game_icons.py                  # vector icons for the menu's game tiles
+  dialogs.py                     # styled modal dialogs (confirm/info/document)
+  collapsible.py                 # collapsible bordered section, used in Settings
+  scrollable.py                  # scrollable container, used in Stats
+games/
+  three_card_poker/
+    logic.py                     # game engine: dealing, payouts, no UI/finance coupling
+    ui.py                        # table screen: betting, dealing, results
+  blackjack/
+    logic.py                     # game engine: shoe, boxes/hands, Hit/Stand/Double/Split
+    ui.py                        # table screen: betting, dealing, play, results
+  pai_gow_poker/
+    logic.py                     # game engine: Joker rules, House Way, Fortune/Jackpot
+    ui.py                        # table screen: betting, dealing, setting your hand, results
+data/                            # created at runtime -- finances.json, settings.json, ...
+```
+
+`core/` and the reusable bits of `ui/` are written to be game-agnostic: a
+new game reuses `Deck`/`Card`, `FinanceManager`/`SettingsManager`/
+`GameStatsManager`, the chip/card drawing helpers, and the JSON persistence
+helper, and only needs its own `logic.py` (rules) + `ui.py` (table screen)
+under `games/`, plus a tile added to `main_menu.py`, a section added to
+`stats_screen.py`, and a frame registered in `main.py`.
 
 ## Three Card Poker rules implemented
 
@@ -108,54 +156,47 @@ Three Card Poker's above):
   rank, Aces/Kings/Queens included) **£100**; Straight **£30**; Flush
   **£10**.
 
-## Project layout (built for reuse across future games)
+## Pai Gow Poker rules implemented
 
-```
-main.py                          # app window, frame stack, wiring
-Launch Casino.bat                # Windows: double-click to run
-Install prerequisites.bat        # Windows: one-time Python + tkinter setup
-core/
-  cards.py                       # Card, Deck (multi-deck shoes) -- shared by every game
-  hand_evaluator.py              # 3-card hand ranking/comparison logic
-  finances.py                    # bank balance + lifetime stats, persisted
-  game_stats.py                  # per-game bets/hands/strategy stats, persisted
-  jackpot.py                     # shared progressive jackpot, ticks in real time
-  settings.py                    # app-wide settings + table themes, persisted
-  persistence.py                 # generic JSON load/save helper
-ui/
-  main_menu.py                   # main menu + game tile grid
-  finances_screen.py             # deposit/withdraw flow + lifetime stats
-  settings_screen.py             # toggles, theme picker, jackpot rate, stats reset
-  stats_screen.py                # per-game bets/hands/strategy breakdown
-  card_widgets.py                # canvas card-drawing helpers, reusable
-  chips.py                       # canvas chip-stack drawing helpers, reusable
-  jackpot_display.py             # odometer-style progressive jackpot meter
-  game_icons.py                  # vector icons for the menu's game tiles
-  dialogs.py                     # styled modal dialogs (confirm/info/document)
-  collapsible.py                 # collapsible bordered section, used in Settings
-  scrollable.py                  # scrollable container, used in Stats
-games/
-  three_card_poker/
-    logic.py                     # game engine: dealing, payouts, no UI/finance coupling
-    ui.py                        # table screen: betting, dealing, results
-  blackjack/
-    logic.py                     # game engine: shoe, boxes/hands, Hit/Stand/Double/Split
-    ui.py                        # table screen: betting, dealing, play, results
-data/                            # created at runtime -- finances.json, settings.json, ...
-```
+53-card deck (52 + one Joker), freshly reshuffled every round. You and the
+Dealer each get 7 cards; you arrange yours into a 2-card **Front** hand and
+a 5-card **Back** hand, and the Back must rank strictly higher than the
+Front (a "foul" — Confirm stays disabled until it does). The Dealer always
+sets their own hand by the exact Casino Real House Way chart, which also
+backs your own optional House Way button. The Joker is semi-wild, not a
+pure wildcard: it can only complete a Straight, Flush, or Straight Flush,
+or otherwise stand in as a bare Ace — it can never impersonate an arbitrary
+card just to fake an unrelated pair, trips, quads, or full house.
 
-`core/` and the reusable bits of `ui/` are written to be game-agnostic: a
-new game reuses `Deck`/`Card`, `FinanceManager`/`SettingsManager`/
-`GameStatsManager`, the chip/card drawing helpers, and the JSON persistence
-helper, and only needs its own `logic.py` (rules) + `ui.py` (table screen)
-under `games/`, plus a tile added to `main_menu.py`, a section added to
-`stats_screen.py`, and a frame registered in `main.py`.
+Main game (Ante):
+- Win both Front and Back: Ante pays **1:1**, less a **5% commission on
+  the win** (the standard "vig" — nothing's deducted on a loss or push).
+- Lose both: Ante is lost.
+- Split (win one hand, lose the other): **push**, stake returned.
+- A tied hand ("copy") is won by the Dealer.
+
+Fortune side bet (own stake, no cap) — the best hand from your own 7 cards:
+7-Card Straight Flush **5000:1**, Royal Flush + Royal Match (a Royal Flush
+plus the other 2 cards King-Queen suited) **2000:1**, 7-Card Straight
+Flush with the Joker **1000:1**, Five Aces **400:1**, Royal Flush
+**150:1**, Straight Flush **50:1**, Four of a Kind **25:1**, Full House
+**5:1**, Flush **4:1**, Three of a Kind **3:1**, Straight **2:1**.
+
+Jackpot side bet (flat £1, shares the same progressive pool as the other
+tables): 7-Card Straight Flush **100% of the pool**; Royal Flush + Royal
+Match **50% of the pool**; 7-Card Straight Flush with the Joker **25% of
+the pool**; Five Aces **£2,500**; Royal Flush **£200**; Straight Flush
+**£100**; Four of a Kind **£75**; Full House **£6**.
+
+Hand ranking here is standard 5-card poker (unlike the 3-card ranking used
+above): `Straight Flush > Four of a Kind > Full House > Flush > Straight >
+Three of a Kind > Two Pair > One Pair > High Card`.
 
 ## Roadmap ideas (not yet built)
 
-- More tables: Pai Gow Poker, Mississippi Stud, Baccarat, Let It Ride
-  (already placeholder tiles on the main menu), plus whatever's behind the
-  three still-`<REDACTED>` ones
+- More tables: Mississippi Stud, Baccarat, Let It Ride (already placeholder
+  tiles on the main menu), plus whatever's behind the three still-
+  `<REDACTED>` ones
 - AI/CPU players at the table for a more social feel
 - Milestone-based unlocks (new tables, higher bet limits, cosmetic themes)
 - Bonus/free-bet promotions

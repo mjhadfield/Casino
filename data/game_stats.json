@@ -1,1 +1,33 @@
-{}
+{
+  "pai_gow_poker": {
+    "bets": {
+      "ante": {
+        "wagered": 2275.0,
+        "returned": 2254.75,
+        "wins": 76,
+        "losses": 71,
+        "pushes": 91
+      },
+      "fortune": {
+        "wagered": 1190.0,
+        "returned": 1065.0,
+        "wins": 45,
+        "losses": 193,
+        "pushes": 0
+      },
+      "jackpot": {
+        "wagered": 238.0,
+        "returned": 123.0,
+        "wins": 9,
+        "losses": 229,
+        "pushes": 0
+      }
+    },
+    "hands": {
+      "Win": 76,
+      "Push": 91,
+      "Lose": 71
+    },
+    "biggest_win": 208.5
+  }
+}

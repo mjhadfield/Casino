@@ -38,19 +38,47 @@ def draw_blackjack_icon(canvas, cx, cy, size, color):
 
 
 def draw_pai_gow_icon(canvas, cx, cy, size, color):
-    """Two overlapping Chinese domino tiles with pips -- "Pai Gow" is named
-    for the tile game; the poker variant keeps the tiles as its visual
-    shorthand."""
-    tw, th = size * 0.42, size * 0.78
-    for ox, oy in ((-size * 0.16, size * 0.10), (size * 0.16, -size * 0.10)):
-        x1, y1 = cx - tw / 2 + ox, cy - th / 2 + oy
-        x2, y2 = cx + tw / 2 + ox, cy + th / 2 + oy
-        canvas.create_rectangle(x1, y1, x2, y2, outline=color, width=2)
-        canvas.create_line(x1, cy + oy, x2, cy + oy, fill=color, width=1)  # tile's halfway divider
-        pip_r = size * 0.045
-        for px, py in ((-0.09, -0.16), (0.09, -0.16), (-0.09, 0.16), (0.09, 0.16)):
-            pcx, pcy = cx + ox + px * size, cy + oy + py * size
-            canvas.create_oval(pcx - pip_r, pcy - pip_r, pcx + pip_r, pcy + pip_r, fill=color, outline="")
+    """A serpentine dragon -- the "red dragon" motif traditionally tied to
+    Pai Gow's Chinese-tile origins -- rather than the two domino tiles used
+    before. A bold S-bodied line with a few back-spikes and a horned head,
+    in the same single-colour line-art style every other icon here uses."""
+    body = [
+        cx - size * 0.46, cy + size * 0.34,
+        cx - size * 0.30, cy + size * 0.30,
+        cx - size * 0.34, cy + size * 0.08,
+        cx - size * 0.12, cy + size * 0.04,
+        cx - size * 0.16, cy - size * 0.18,
+        cx + size * 0.08, cy - size * 0.18,
+        cx + size * 0.06, cy - size * 0.36,
+        cx + size * 0.24, cy - size * 0.34,
+    ]
+    canvas.create_line(*body, fill=color, width=3, smooth=True, capstyle="round", joinstyle="round")
+
+    # Back-spikes riding the body's upper curve, evenly along its length.
+    for bx, by, spike_dx, spike_dy in (
+        (cx - size * 0.32, cy + size * 0.18, -size * 0.02, -size * 0.16),
+        (cx - size * 0.20, cy - size * 0.04, size * 0.00, -size * 0.18),
+        (cx - size * 0.02, cy - size * 0.18, size * 0.02, -size * 0.18),
+        (cx + size * 0.14, cy - size * 0.28, size * 0.06, -size * 0.16),
+    ):
+        canvas.create_line(bx, by, bx + spike_dx, by + spike_dy, fill=color, width=3)
+
+    # Head: an open-jawed snout at the neck end, with two horns and an eye.
+    hx, hy = cx + size * 0.24, cy - size * 0.34
+    canvas.create_polygon(
+        hx, hy,
+        hx + size * 0.26, hy - size * 0.10,
+        hx + size * 0.24, hy + size * 0.10,
+        hx + size * 0.02, hy + size * 0.12,
+        outline=color, fill="", width=3, joinstyle="round",
+    )
+    canvas.create_line(hx + size * 0.10, hy - size * 0.08,
+                        hx + size * 0.08, hy - size * 0.26, fill=color, width=3)  # front horn
+    canvas.create_line(hx + size * 0.18, hy - size * 0.08,
+                        hx + size * 0.22, hy - size * 0.24, fill=color, width=3)  # back horn
+    eye_r = size * 0.045
+    ex, ey = hx + size * 0.16, hy - size * 0.01
+    canvas.create_oval(ex - eye_r, ey - eye_r, ex + eye_r, ey + eye_r, fill=color, outline="")
 
 
 def draw_mississippi_stud_icon(canvas, cx, cy, size, color):

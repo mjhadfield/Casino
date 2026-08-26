@@ -28,7 +28,15 @@ def draw_card(canvas, x, y, card, width=CARD_WIDTH, height=CARD_HEIGHT, tags=())
     default CARD_WIDTH/CARD_HEIGHT (identical output at the defaults -- the
     scaling is a no-op there), so a smaller card -- e.g. Three Card Poker's
     bet-indicator "resting" cards -- still reads cleanly instead of full-size
-    rank/suit text overflowing a shrunken rectangle."""
+    rank/suit text overflowing a shrunken rectangle.
+
+    A Joker (Pai Gow Poker's 53rd card -- see core.cards) has no rank/suit to
+    print, so it gets its own distinct face here rather than falling through
+    to the rank/suit-pip rendering below, which would crash on its None
+    suit -- no other game's cards can ever hit this branch."""
+    if getattr(card, "is_joker", False):
+        _draw_joker_face(canvas, x, y, width, height, tags)
+        return
     tags = _card_tags(tags)
     text_color = "#c0392b" if card.color == "red" else "#1a1a1a"
     corner_font = max(8, round(13 * height / CARD_HEIGHT))
@@ -50,6 +58,30 @@ def draw_card(canvas, x, y, card, width=CARD_WIDTH, height=CARD_HEIGHT, tags=())
     canvas.create_text(
         x + width / 2, y + height / 2, text=card.symbol,
         font=("Helvetica", symbol_font), fill=text_color, tags=tags,
+    )
+
+
+def _draw_joker_face(canvas, x, y, width, height, tags):
+    """The Joker's own face -- gold on deep purple, clearly distinct from
+    every real rank/suit (no suit pip, no red/black rank text) so it reads
+    at a glance as the one card in the deck that isn't a normal playing
+    card. Scales the same way draw_card's own rank/suit text does."""
+    tags = _card_tags(tags)
+    gold = "#e0b040"
+    corner_font = max(7, round(11 * height / CARD_HEIGHT))
+    star_font = max(10, round(50 * height / CARD_HEIGHT))
+    margin_x = 6 * width / CARD_WIDTH
+    margin_y = 5 * height / CARD_HEIGHT
+    canvas.create_rectangle(
+        x, y, x + width, y + height,
+        fill="#2a1240", outline=gold, width=2, tags=tags,
+    )
+    for cx, cy, anchor in ((x + margin_x, y + margin_y, "nw"), (x + width - margin_x, y + height - margin_y, "se")):
+        canvas.create_text(cx, cy, text="JKR", font=("Helvetica", corner_font, "bold"),
+                            fill=gold, anchor=anchor, tags=tags)
+    canvas.create_text(
+        x + width / 2, y + height / 2, text="★",  # ★
+        font=("Helvetica", star_font), fill=gold, tags=tags,
     )
 
 

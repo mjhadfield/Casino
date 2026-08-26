@@ -19,8 +19,8 @@ GAMES = [
      True, "three_card_poker"),
     (game_icons.draw_blackjack_icon, "Blackjack", "Super Pairs, 21+3, Top 3 & Jackpot side bets",
      True, "blackjack"),
-    (game_icons.draw_pai_gow_icon, "Pai Gow Poker", "Fortune Bonus & Pai Gow Insurance",
-     False, None),
+    (game_icons.draw_pai_gow_icon, "Pai Gow Poker", "Fortune Bonus & Jackpot side bets",
+     True, "pai_gow_poker"),
     (game_icons.draw_mississippi_stud_icon, "Mississippi Stud", "3 Card Bonus side bet",
      False, None),
     (game_icons.draw_baccarat_icon, "Baccarat", "Perfect Pair & Dragon Bonus side bets",
@@ -61,7 +61,7 @@ class MainMenuFrame(tk.Frame):
 
         self._make_spade(top_bar).pack(side="left", padx=(20, 8), pady=14)
         tk.Label(
-            top_bar, text="HADFIELD CASINO v0.9", bg=theme.MENU_BG, fg=theme.SECONDARY,
+            top_bar, text="HADFIELD CASINO v1.0", bg=theme.MENU_BG, fg=theme.SECONDARY,
             font=theme.font(18, weight="bold"),
         ).pack(side="left")
         self._make_spade(top_bar).pack(side="left", padx=(8, 0), pady=14)
