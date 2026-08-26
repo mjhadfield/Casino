@@ -341,6 +341,22 @@ def _sort_key(card):
     return (14 if card.is_joker else card.value, "" if card.is_joker else card.suit.value)
 
 
+def _back_display_rank(card):
+    return 14 if card.is_joker else card.value
+
+
+def _back_display_key(card, counts):
+    """Arranges a 5-card hand the way a made poker hand naturally reads --
+    any pair/trips/quads shown together as a block, the bigger group
+    first (ties broken by rank), then the remaining singles by rank
+    descending. A straight or flush has no rank repeats at all, so it
+    falls out of the very same rule as a plain descending run -- no
+    separate straight/flush-specific case needed. `counts` is each rank's
+    own count within the 5 cards (build once per hand, not per card)."""
+    r = _back_display_rank(card)
+    return (counts[r], r)
+
+
 class PaiGowPokerFrame(tk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent, bg=theme.BG)
@@ -448,9 +464,14 @@ class PaiGowPokerFrame(tk.Frame):
             highlightthickness=1, highlightbackground=theme.WARN,
             command=self._on_house_way,
         )
+        # Doubles as "SET" (while the hand's still being placed -- see
+        # _refresh_confirm_state) and "CONFIRM" (once it is) rather than two
+        # separate buttons. A fixed character width keeps its on-screen size
+        # the same either way, so neither label swap nor the Sort/House Way
+        # buttons beside it ever shift.
         self.confirm_btn = tk.Button(
             self.action_frame, text="CONFIRM", bg=theme.ACCENT_DIM_BG, fg=theme.FG,
-            font=theme.font(12, weight="bold"), relief="flat", padx=18, pady=9, cursor="hand2",
+            font=theme.font(12, weight="bold"), relief="flat", width=9, pady=9, cursor="hand2",
             highlightthickness=1, highlightbackground=theme.ACCENT,
             command=self._on_confirm,
         )
@@ -1200,18 +1221,70 @@ class PaiGowPokerFrame(tk.Frame):
         return compare_hands(back_eval, front_eval) > 0
 
     def _refresh_confirm_state(self):
-        valid = self._current_split_valid()
-        self.confirm_btn.configure(
-            state="normal" if valid else "disabled",
-            bg=theme.ACCENT_DIM_BG if valid else theme.GREY_BTN_BG,
-            fg=theme.FG if valid else theme.GREY_BTN_TEXT,
-            highlightbackground=theme.ACCENT if valid else theme.GREY_BTN_BORDER,
-        )
-        if len(self.front_order) == 2 and len(self.back_order) == 5 and not valid:
-            self.result_lbl.configure(text="That's a foul -- the Back hand must outrank the Front. Rearrange it.",
-                                       fg=theme.WARN)
-        elif self.state == "setting":
-            self.result_lbl.configure(text="Set your hand: 2 cards Front, 5 Back.", fg=theme.FG)
+        front_ready = len(self.front_order) == 2
+        back_ready = len(self.back_order) == 5
+        if front_ready and back_ready:
+            # Fully placed -- CONFIRM, gated by the normal foul check.
+            valid = self._current_split_valid()
+            self.confirm_btn.configure(
+                text="CONFIRM", command=self._on_confirm,
+                state="normal" if valid else "disabled",
+                bg=theme.ACCENT_DIM_BG if valid else theme.GREY_BTN_BG,
+                fg=theme.FG if valid else theme.GREY_BTN_TEXT,
+                highlightbackground=theme.ACCENT if valid else theme.GREY_BTN_BORDER,
+            )
+            if not valid:
+                self.result_lbl.configure(
+                    text="That's a foul -- the Back hand must outrank the Front. Rearrange it.", fg=theme.WARN)
+            elif self.state == "setting":
+                self.result_lbl.configure(text="Set your hand: 2 cards Front, 5 Back.", fg=theme.FG)
+        else:
+            # Still being placed -- SET, a shortcut that drops the rest of
+            # the felt straight into Back once Front's own 2 cards are in
+            # (see _on_set_shortcut), rather than requiring every Back card
+            # to be clicked one at a time.
+            self.confirm_btn.configure(
+                text="SET", command=self._on_set_shortcut,
+                state="normal" if front_ready else "disabled",
+                bg=theme.ACCENT_DIM_BG if front_ready else theme.GREY_BTN_BG,
+                fg=theme.FG if front_ready else theme.GREY_BTN_TEXT,
+                highlightbackground=theme.ACCENT if front_ready else theme.GREY_BTN_BORDER,
+            )
+            if self.state == "setting":
+                self.result_lbl.configure(text="Set your hand: 2 cards Front, 5 Back.", fg=theme.FG)
+
+    def _on_set_shortcut(self):
+        """SET's shortcut: once Front has its 2 cards, places every card
+        still on the felt into Back one at a time -- the same beat House
+        Way's own placement uses -- rather than making you click each of
+        the (up to 5) remaining cards individually. Placed in hand-display
+        order (see _back_display_key), not raw felt order, so e.g. a pair
+        lands together up front and a straight lands in sequence."""
+        if self.state != "setting" or len(self.front_order) != 2:
+            return
+        assert self.result is not None
+        cards = self.result.player_cards
+        remaining = [i for i in range(7) if self.card_zone.get(i) == "felt"]
+        counts = {}
+        for i in remaining:
+            r = _back_display_rank(cards[i])
+            counts[r] = counts.get(r, 0) + 1
+        remaining.sort(key=lambda i: _back_display_key(cards[i], counts), reverse=True)
+
+        def place_next(rem):
+            if not rem:
+                self._activate_needed_zone()
+                self._redraw_felt()
+                self._refresh_confirm_state()
+                return
+            idx = rem[0]
+            self.card_zone[idx] = "back"
+            self.back_order.append(idx)
+            self._redraw_felt()
+            self._after_delay(HOUSE_WAY_FLIGHT_MS, lambda: place_next(rem[1:]))
+
+        self._on_card_unhover()
+        self._after_delay(HOUSE_WAY_FLIGHT_MS, lambda: place_next(remaining))
 
     # ------------------------------------------------------------------ Sort / House Way
     def _on_sort(self):

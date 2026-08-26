@@ -101,6 +101,13 @@ class SettingsFrame(tk.Frame):
             "Blackjack's statistics have been reset.",
             lambda: self.app.game_stats.reset_game("blackjack"),
         )
+        self._make_reset_row(
+                    danger_inner, "$ rm --stats --game pai_gow_poker",
+                    "This permanently deletes Pai Gow Poker's statistics breakdown. Pai Gow Poker isn't "
+                    "implemented yet, so this currently has nothing to remove.",
+                    "Pai Gow Poker's statistics have been reset.",
+                    lambda: self.app.game_stats.reset_game("pai_gow_poker"),
+                )
 
         action_row = tk.Frame(body, bg=theme.BG)
         action_row.pack(pady=(28, 0))
