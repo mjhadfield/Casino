@@ -296,36 +296,46 @@ goto :end
 :: ============================================================
 
 :banner
+chcp 437 >nul
 
-echo.                                                                     
-echo.                                                                       
-echo. ▄▄▄   ▄▄▄   ▄▄▄▄   ▄▄▄▄▄▄    ▄▄▄▄▄▄▄ ▄▄▄▄▄  ▄▄▄▄▄▄▄ ▄▄▄      ▄▄▄▄▄▄   
-echo. ███   ███ ▄██▀▀██▄ ███▀▀██▄ ███▀▀▀▀▀  ███  ███▀▀▀▀▀ ███      ███▀▀██▄ 
-echo. █████████ ███  ███ ███  ███ ███▄▄     ███  ███▄▄    ███      ███  ███ 
-echo. ███▀▀▀███ ███▀▀███ ███  ███ ███▀▀     ███  ███      ███      ███  ███ 
-echo. ███   ███ ███  ███ ██████▀  ███      ▄███▄ ▀███████ ████████ ██████▀                                                                                                                                                                                                                
+echo.
+echo.
+echo. ###   ###   ####   ######    ####### #####  ####### ###      ######  
+echo. ###   ### ######## ######## ########  ###  ######## ###      ######## 
+echo. ######### ###  ### ###  ### #####     ###  #####    ###      ###  ### 
+echo. ######### ######## ###  ### #####     ###  ###      ###      ###  ### 
+echo. ###   ### ###  ### #######  ###      ##### ######## ######## ####### 
 echo.
 echo                             C A S I N O
 echo                               ♦ ♣ ♥ ♠
 
 :: ============================================================
-:: Fake loading animation
+:: Fake loading animation (now cycles through the 4 suits)
 :: Usage: call :loading "Message" number_of_steps
 :: ============================================================
 
 :loading
+setlocal enabledelayedexpansion
 
 set "LOAD_MESSAGE=%~1"
 set /a LOAD_STEPS=%~2
 
+set "SUIT0=♦"
+set "SUIT1=♣"
+set "SUIT2=♥"
+set "SUIT3=♠"
+
 <nul set /p "=  %LOAD_MESSAGE% ["
 
 for /L %%i in (1,1,%LOAD_STEPS%) do (
-    <nul set /p "=#"
+    set /a "idx=%%i %% 4"
+    call set "CH=%%SUIT!idx!%%"
+    <nul set /p "=!CH!"
     ping 127.0.0.1 -n 2 >nul
 )
 
 echo ] DONE
+endlocal
 exit /b
 
 
