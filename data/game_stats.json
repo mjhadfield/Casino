@@ -2,30 +2,108 @@
   "pai_gow_poker": {
     "bets": {
       "ante": {
-        "wagered": 10.0,
-        "returned": 5.0,
-        "wins": 0,
-        "losses": 1,
-        "pushes": 1
+        "wagered": 85.0,
+        "returned": 49.75,
+        "wins": 1,
+        "losses": 6,
+        "pushes": 8
       },
       "fortune": {
-        "wagered": 10.0,
-        "returned": 0.0,
-        "wins": 0,
-        "losses": 2,
+        "wagered": 75.0,
+        "returned": 85.0,
+        "wins": 4,
+        "losses": 11,
         "pushes": 0
       },
       "jackpot": {
-        "wagered": 2.0,
+        "wagered": 15.0,
         "returned": 0.0,
         "wins": 0,
-        "losses": 2,
+        "losses": 15,
         "pushes": 0
       }
     },
     "hands": {
-      "Lose": 1,
-      "Push": 1
-    }
+      "Lose": 6,
+      "Push": 8,
+      "Win": 1
+    },
+    "biggest_win": 19.0
+  },
+  "pai_gow_poker_face_up": {
+    "bets": {
+      "ante": {
+        "wagered": 355.0,
+        "returned": 285.0,
+        "wins": 7,
+        "losses": 17,
+        "pushes": 19
+      },
+      "fortune": {
+        "wagered": 215.0,
+        "returned": 195.0,
+        "wins": 9,
+        "losses": 34,
+        "pushes": 0
+      },
+      "jackpot": {
+        "wagered": 43.0,
+        "returned": 12.0,
+        "wins": 2,
+        "losses": 41,
+        "pushes": 0
+      }
+    },
+    "hands": {
+      "Lose": 17,
+      "Push": 19,
+      "Win": 7
+    },
+    "biggest_win": 40
+  },
+  "blackjack": {
+    "bets": {
+      "blackjack": {
+        "wagered": 45.0,
+        "returned": 40.0,
+        "wins": 4,
+        "losses": 4,
+        "pushes": 0
+      },
+      "super_pairs": {
+        "wagered": 40.0,
+        "returned": 30.0,
+        "wins": 1,
+        "losses": 7,
+        "pushes": 0
+      },
+      "twenty_one_plus_three": {
+        "wagered": 40.0,
+        "returned": 50.0,
+        "wins": 1,
+        "losses": 7,
+        "pushes": 0
+      },
+      "top_three": {
+        "wagered": 40.0,
+        "returned": 905.0,
+        "wins": 1,
+        "losses": 7,
+        "pushes": 0
+      },
+      "jackpot": {
+        "wagered": 8.0,
+        "returned": 125.0,
+        "wins": 1,
+        "losses": 7,
+        "pushes": 0
+      }
+    },
+    "hands": {
+      "Win": 4,
+      "Bust": 2,
+      "Lose": 2
+    },
+    "biggest_win": 1033.0
   }
 }

@@ -665,6 +665,13 @@ class PaiGowPokerGame:
         self.deck = Deck(include_joker=True)
         self.result: Optional[RoundResult] = None
 
+    def _make_result(self) -> RoundResult:
+        """Factory for a fresh RoundResult -- overridden by variants (e.g.
+        games/pai_gow_poker_face_up/logic.py) that need their own
+        RoundResult subclass with extra fields, so deal() below doesn't
+        need to be duplicated just to swap this one line."""
+        return RoundResult()
+
     def deal(self, ante_bet, fortune_bet=0.0, jackpot_bet=0.0, jackpot_amount=0.0) -> RoundResult:
         """Deals a new round: 7 cards each to player and dealer from a fresh
         53-card deck. Resolves Fortune/Jackpot immediately (they depend only
@@ -677,7 +684,7 @@ class PaiGowPokerGame:
             raise ValueError(f"The jackpot side bet must be exactly £{JACKPOT_BET_AMOUNT:.0f} if played.")
 
         self.deck.reset()  # a fresh, reshuffled 53-card deck every round
-        result = RoundResult()
+        result = self._make_result()
         result.ante_bet = ante_bet
         result.fortune_bet = fortune_bet
         result.jackpot_bet = jackpot_bet

@@ -280,7 +280,7 @@ PLAY_RESULT_LBL_PADY = (0, 3)
 BETTING_ACTION_FRAME_PADY = (8, 0)
 CHIP_FRAME_PADY = (6, 20)
 
-_TIER_LABELS = {
+TIER_LABELS = {
     SEVEN_CARD_STRAIGHT_FLUSH: "7-Card Straight Flush",
     ROYAL_FLUSH_ROYAL_MATCH: "Royal Flush + Match",
     SEVEN_CARD_STRAIGHT_FLUSH_JOKER: "7-Card SF (w/ Joker)",
@@ -294,7 +294,7 @@ _TIER_LABELS = {
     STRAIGHT_TIER: "Straight",
 }
 
-FORTUNE_PAYTABLE_ROWS = [(_TIER_LABELS[k], f"{v}:1") for k, v in FORTUNE_MULTIPLIERS.items()]
+FORTUNE_PAYTABLE_ROWS = [(TIER_LABELS[k], f"{v}:1") for k, v in FORTUNE_MULTIPLIERS.items()]
 
 
 def _jackpot_tier_text(fixed, fraction):
@@ -303,7 +303,7 @@ def _jackpot_tier_text(fixed, fraction):
     return f"£{fixed:.0f}"
 
 
-JACKPOT_PAYTABLE_ROWS = [(_TIER_LABELS[k], _jackpot_tier_text(*v)) for k, v in JACKPOT_TIERS.items()]
+JACKPOT_PAYTABLE_ROWS = [(TIER_LABELS[k], _jackpot_tier_text(*v)) for k, v in JACKPOT_TIERS.items()]
 JACKPOT_PAYTABLE_HIGHLIGHT_ROW = 0
 
 def _ease_out_cubic(t):
@@ -358,13 +358,27 @@ def _back_display_key(card, counts):
 
 
 class PaiGowPokerFrame(tk.Frame):
+    # Overridable per-variant identity (see games/pai_gow_poker_face_up/ui.py,
+    # whose PaiGowFaceUpFrame subclasses this and swaps every one of these):
+    # what state-save file to use, which game engine/GAME_KEY to record
+    # stats under (used via self.GAME_KEY rather than the bare module
+    # global -- a subclass overriding it as a class attribute is enough to
+    # redirect every stats call below without touching their bodies), the
+    # top bar's title/breadcrumb, and the paytable panel's own Ante
+    # commission note.
+    STATE_FILENAME = STATE_FILENAME
+    GAME_KEY = GAME_KEY
+    GAME_TITLE = "Pai Gow Poker"
+    BREADCRUMB = "pai_gow_poker"
+    ANTE_COMMISSION_NOTE = "(5% commission on a win)"
+
     def __init__(self, parent, app):
         super().__init__(parent, bg=theme.BG)
         self.app = app
-        self.game = PaiGowPokerGame()
+        self.game = self._make_game()
         self.state = "betting"  # betting -> dealt -> setting -> revealing -> resolved
 
-        self.save_path = os.path.join(app.data_dir, STATE_FILENAME)
+        self.save_path = os.path.join(app.data_dir, self.STATE_FILENAME)
         saved = load_json(self.save_path, DEFAULT_STATE)
         saved_bets = saved.get("bets", DEFAULT_STATE["bets"])
         self.bets = {k: int(saved_bets.get(k, 0)) for k in BET_KEYS}
@@ -385,6 +399,14 @@ class PaiGowPokerFrame(tk.Frame):
         self._dealer_dealt_count = 0      # how many of the Dealer's 7 have actually landed (face down) -- ditto
         self._dealer_revealed = 0         # how many of the Dealer's cards are face *up* -- only set once Confirmed
         self._dealer_separated = False
+        # True for the duration of a card-placement animation (Sort, House
+        # Way, or the SET shortcut) -- see _lock_setting_buttons. Checked at
+        # the top of each of those three handlers, not just relied on via
+        # the buttons' own disabled state: a disabled Tk button blocks a
+        # real click, but a re-entrant *call* to the handler (a fast
+        # double-click racing the very first dispatch, or any other path)
+        # isn't stopped by that alone.
+        self._setting_locked = False
 
         self._build_ui()
         self.app.jackpot.add_listener(self._on_jackpot_changed)
@@ -392,6 +414,27 @@ class PaiGowPokerFrame(tk.Frame):
         self._pulse_jackpot()
         self._sanitize_bets(persist=False)
         self._show_betting_controls()
+
+    def _make_game(self):
+        """Factory for the game engine instance -- see the class-level
+        docstring above; games/pai_gow_poker_face_up/ui.py overrides this
+        to return a PaiGowFaceUpGame instead."""
+        return PaiGowPokerGame()
+
+    def _make_middle_btn(self):
+        """Factory for the action_frame's middle button (between Sort and
+        Confirm) -- "HOUSE WAY" here, gold/WARN-styled. Overridden by Face
+        Up Pai Gow to be a red "FOLD" button instead: seeing the Dealer's
+        hand before you set your own makes House Way much less useful
+        there (you already know whether it's beatable), so Fold -- forfeit
+        the Ante immediately rather than bothering to set a hand you know
+        can't win -- takes its place in the same slot."""
+        return tk.Button(
+            self.action_frame, text="HOUSE WAY", bg=theme.WARN_DIM_BG, fg=theme.FG,
+            font=theme.font(12, weight="bold"), relief="flat", padx=18, pady=9, cursor="hand2",
+            highlightthickness=1, highlightbackground=theme.WARN,
+            command=self._on_house_way,
+        )
 
     # ------------------------------------------------------------------ build
     def _build_ui(self):
@@ -407,12 +450,12 @@ class PaiGowPokerFrame(tk.Frame):
             highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
             command=lambda: self.app.show_frame("menu"),
         ).pack(side="left", padx=(20, 10), pady=10)
-        tk.Label(top_bar, text="Pai Gow Poker", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
+        tk.Label(top_bar, text=self.GAME_TITLE, bg=theme.BG_ELEVATED, fg=theme.ACCENT,
                  font=theme.font(16, weight="bold")).pack(side="left", padx=10)
         self.balance_lbl = tk.Label(top_bar, text="£0.00", bg=theme.BG_ELEVATED, fg=theme.WIN_COLOR,
                                      font=theme.font(12, weight="bold"))
         self.balance_lbl.pack(side="right", padx=20)
-        theme.breadcrumb(top_bar, "pai_gow_poker", bg=theme.BG_ELEVATED).pack(side="right", padx=(6, 6))
+        theme.breadcrumb(top_bar, self.BREADCRUMB, bg=theme.BG_ELEVATED).pack(side="right", padx=(6, 6))
 
         body = tk.Frame(self, bg=felt_theme["felt"])
         body.pack(fill="both", expand=True)
@@ -458,12 +501,11 @@ class PaiGowPokerFrame(tk.Frame):
             highlightthickness=1, highlightbackground=theme.GREY_BTN_BORDER,
             command=self._on_sort,
         )
-        self.house_way_btn = tk.Button(
-            self.action_frame, text="HOUSE WAY", bg=theme.WARN_DIM_BG, fg=theme.FG,
-            font=theme.font(12, weight="bold"), relief="flat", padx=18, pady=9, cursor="hand2",
-            highlightthickness=1, highlightbackground=theme.WARN,
-            command=self._on_house_way,
-        )
+        # The slot between Sort and Confirm -- "HOUSE WAY" here, overridden
+        # by Face Up Pai Gow to be a red "FOLD" button instead (see
+        # _make_middle_btn's own docstring and
+        # games/pai_gow_poker_face_up/ui.py).
+        self.middle_btn = self._make_middle_btn()
         # Doubles as "SET" (while the hand's still being placed -- see
         # _refresh_confirm_state) and "CONFIRM" (once it is) rather than two
         # separate buttons. A fixed character width keeps its on-screen size
@@ -590,7 +632,7 @@ class PaiGowPokerFrame(tk.Frame):
         canvas.create_text(w - 20, y, text="1:1", fill=theme.WIN_COLOR,
                             font=theme.font(9, weight="bold"), anchor="e")
         y += 15
-        canvas.create_text(20, y, text="(5% commission on a win)", fill=theme.FG_DIM,
+        canvas.create_text(20, y, text=self.ANTE_COMMISSION_NOTE, fill=theme.FG_DIM,
                             font=theme.font(7), anchor="w")
         y += 15
         canvas.create_line(20, y, w - 20, y, fill=theme.BORDER)
@@ -786,7 +828,7 @@ class PaiGowPokerFrame(tk.Frame):
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
         self.sort_btn.pack(side="left", padx=6)
-        self.house_way_btn.pack(side="left", padx=6)
+        self.middle_btn.pack(side="left", padx=6)
         self.confirm_btn.pack(side="left", padx=6)
         self.action_frame.pack(pady=(8, 0), before=self.chip_zone)
         self._refresh_confirm_state()
@@ -999,11 +1041,16 @@ class PaiGowPokerFrame(tk.Frame):
     def _draw_dealer_cards(self):
         assert self.result is not None
         if self._dealer_separated:
-            # Owned by _animate_dealer_separation / its "dealer_settled" tag
-            # from this point on -- defensive: nothing currently calls
-            # _redraw_felt() again once separated, but if that ever changed,
-            # redrawing here at the old pre-split cluster position would
-            # silently undo the split.
+            # Once separated, the settled Front/Back groups (not the
+            # pre-split cluster below) are the correct thing to draw here --
+            # see _draw_dealer_settled. Standard Pai Gow Poker never calls
+            # _redraw_felt() again once separated (separation only ever
+            # happens after Confirm, by which point play has moved on to the
+            # reveal/payout sequence), but Face Up Pai Gow does -- its own
+            # dealer reveal happens *before* the player sets their hand, so
+            # every card placement's own _redraw_felt() during that setting
+            # phase runs with _dealer_separated already true.
+            self._draw_dealer_settled()
             return
         for i, card in enumerate(self.result.dealer_cards):
             tag = f"dealer_card_{i}"
@@ -1253,6 +1300,32 @@ class PaiGowPokerFrame(tk.Frame):
             if self.state == "setting":
                 self.result_lbl.configure(text="Set your hand: 2 cards Front, 5 Back.", fg=theme.FG)
 
+    def _lock_setting_buttons(self):
+        """Disables Sort/middle/Confirm, and sets _setting_locked, for the
+        duration of a card-placement animation (Sort, House Way, or the
+        SET shortcut) -- without this, a second click mid-animation
+        re-enters the same handler while it's still mutating front_order/
+        back_order/card_zone, starting a second overlapping place_next
+        chain on top of the first's and corrupting that shared state (the
+        exact bug a repeated SET click used to hit -- Confirm would end up
+        permanently stuck). The disabled buttons alone stop a real second
+        click; _setting_locked (checked at each handler's own top) stops a
+        re-entrant *call* even if something else dispatches one."""
+        self._setting_locked = True
+        self.sort_btn.configure(state="disabled")
+        self.middle_btn.configure(state="disabled")
+        self.confirm_btn.configure(state="disabled")
+
+    def _unlock_setting_buttons(self):
+        """Restores Sort/middle to normal (and clears _setting_locked) once
+        a placement animation finishes. Confirm's own state/text is
+        deliberately left alone here -- _refresh_confirm_state(), always
+        called right after this, fully re-derives it from the actual
+        front/back completeness anyway."""
+        self._setting_locked = False
+        self.sort_btn.configure(state="normal")
+        self.middle_btn.configure(state="normal")
+
     def _on_set_shortcut(self):
         """SET's shortcut: once Front has its 2 cards, places every card
         still on the felt into Back one at a time -- the same beat House
@@ -1260,7 +1333,7 @@ class PaiGowPokerFrame(tk.Frame):
         the (up to 5) remaining cards individually. Placed in hand-display
         order (see _back_display_key), not raw felt order, so e.g. a pair
         lands together up front and a straight lands in sequence."""
-        if self.state != "setting" or len(self.front_order) != 2:
+        if self.state != "setting" or len(self.front_order) != 2 or self._setting_locked:
             return
         assert self.result is not None
         cards = self.result.player_cards
@@ -1270,11 +1343,13 @@ class PaiGowPokerFrame(tk.Frame):
             r = _back_display_rank(cards[i])
             counts[r] = counts.get(r, 0) + 1
         remaining.sort(key=lambda i: _back_display_key(cards[i], counts), reverse=True)
+        self._lock_setting_buttons()
 
         def place_next(rem):
             if not rem:
                 self._activate_needed_zone()
                 self._redraw_felt()
+                self._unlock_setting_buttons()
                 self._refresh_confirm_state()
                 return
             idx = rem[0]
@@ -1288,7 +1363,7 @@ class PaiGowPokerFrame(tk.Frame):
 
     # ------------------------------------------------------------------ Sort / House Way
     def _on_sort(self):
-        if self.state != "setting":
+        if self.state != "setting" or self._setting_locked:
             return
         felt_indices = [i for i in range(7) if self.card_zone.get(i) == "felt"]
         if len(felt_indices) < 2:
@@ -1301,6 +1376,7 @@ class PaiGowPokerFrame(tk.Frame):
         for slot, idx in zip(occupied_slots, sorted_indices):
             new_order[slot] = idx
         old_order = list(self.felt_slot_order)
+        self._lock_setting_buttons()
 
         def frame(t):
             self.canvas.delete("sortmove")
@@ -1317,11 +1393,13 @@ class PaiGowPokerFrame(tk.Frame):
         def done():
             self.felt_slot_order = new_order
             self._redraw_felt()
+            self._unlock_setting_buttons()
+            self._refresh_confirm_state()
 
         self._animate(SORT_MOVE_MS, frame, on_done=done)
 
     def _on_house_way(self):
-        if self.state != "setting":
+        if self.state != "setting" or self._setting_locked:
             return
         assert self.result is not None
         cards = self.result.player_cards
@@ -1334,11 +1412,13 @@ class PaiGowPokerFrame(tk.Frame):
         self.card_zone = {i: "felt" for i in range(7)}
         self.felt_slot_order = list(range(7))
         self._redraw_felt()
+        self._lock_setting_buttons()
 
         def place_next(remaining):
             if not remaining:
                 self._activate_needed_zone()
                 self._redraw_felt()
+                self._unlock_setting_buttons()
                 self._refresh_confirm_state()
                 return
             zone, idx = remaining[0]
@@ -1457,6 +1537,18 @@ class PaiGowPokerFrame(tk.Frame):
             targets[id(card)] = back_x_start + i * back_gap
         return targets
 
+    def _draw_dealer_settled(self):
+        """The Dealer's already-separated Front/Back groups, at rest -- the
+        steady-state counterpart to _animate_dealer_separation's own final
+        frame, used by _draw_dealer_cards so a later full-canvas
+        _redraw_felt() (see its own comment) redraws this instead of
+        silently leaving the Dealer's cards blank."""
+        assert self.result is not None
+        target_x = self._dealer_target_x()
+        for card in self.result.dealer_cards:
+            draw_card(self.canvas, target_x[id(card)], DEALER_Y, card, tags=("dealer_settled",))
+        self._draw_dealer_group_labels()
+
     def _animate_dealer_separation(self):
         assert self.result is not None
         self.canvas.delete("dealer_card_0", "dealer_card_1", "dealer_card_2", "dealer_card_3",
@@ -1473,9 +1565,18 @@ class PaiGowPokerFrame(tk.Frame):
 
         def done():
             self._draw_dealer_group_labels()
-            self._after_delay(400, self._start_payout_sequence)
+            self._on_dealer_separated()
 
         self._animate(SEPARATE_MOVE_MS, frame, on_done=done)
+
+    def _on_dealer_separated(self):
+        """Called once the Dealer's settled Front/Back groups have finished
+        sliding apart -- standard Pai Gow Poker always reaches this via
+        Confirm -> settle() -> reveal -> separate, so the round's already
+        fully resolved and there's nothing left to do but pause briefly and
+        pay out. Overridden by games/pai_gow_poker_face_up/ui.py, whose own
+        reveal happens *before* the player has set a hand at all."""
+        self._after_delay(400, self._start_payout_sequence)
 
     def _draw_dealer_group_labels(self):
         """"FRONT"/"BACK" above the Dealer's own settled groups -- same
@@ -1579,12 +1680,12 @@ class PaiGowPokerFrame(tk.Frame):
     # ------------------------------------------------------------------ settle
     def _record_stats(self, summary):
         gs = self.app.game_stats
-        gs.record_bet(GAME_KEY, "ante", summary.ante_bet, summary.ante_return)
-        gs.record_hand(GAME_KEY, hand_outcome_label(summary))
+        gs.record_bet(self.GAME_KEY, "ante", summary.ante_bet, summary.ante_return)
+        gs.record_hand(self.GAME_KEY, hand_outcome_label(summary))
         if summary.fortune_bet > 0:
-            gs.record_bet(GAME_KEY, "fortune", summary.fortune_bet, summary.fortune_return)
+            gs.record_bet(self.GAME_KEY, "fortune", summary.fortune_bet, summary.fortune_return)
         if summary.jackpot_bet > 0:
-            gs.record_bet(GAME_KEY, "jackpot", summary.jackpot_bet, summary.jackpot_return)
+            gs.record_bet(self.GAME_KEY, "jackpot", summary.jackpot_bet, summary.jackpot_return)
 
     def _on_round_settled(self):
         assert self.result is not None
@@ -1592,7 +1693,7 @@ class PaiGowPokerFrame(tk.Frame):
         self._record_stats(summary)
         self.app.finance.add_return(summary.total_returned)
         self.app.finance.record_round_played(summary.net_result)
-        self.app.game_stats.record_round_net(GAME_KEY, summary.net_result)
+        self.app.game_stats.record_round_net(self.GAME_KEY, summary.net_result)
         if summary.jackpot_pool_won:
             self.app.jackpot.win()
         elif summary.jackpot_pool_partial_fraction is not None:
@@ -1619,7 +1720,7 @@ class PaiGowPokerFrame(tk.Frame):
                           and compare_hands(summary.player_front_eval, summary.dealer_front_eval) > 0)
         back_win = bool(summary.player_back_eval and summary.dealer_back_eval
                          and compare_hands(summary.player_back_eval, summary.dealer_back_eval) > 0)
-        fortune_hand_name = _TIER_LABELS.get(summary.fortune_tier, "No qualifying hand") \
+        fortune_hand_name = TIER_LABELS.get(summary.fortune_tier, "No qualifying hand") \
             if summary.fortune_tier else "No qualifying hand"
         hand_rows = [
             (f"Your Front: {front_name}", "WIN" if front_win else "LOSE", theme.WIN_COLOR if front_win else theme.LOSE_COLOR),

@@ -3,11 +3,12 @@ import tkinter as tk
 from ui import game_icons, theme
 
 # One row per game tile: (icon, name, subtitle, game_key, frame_name).
-# `icon` is either a single glyph string, rendered as text (the way Three
-# Card Poker's is -- its icon is kept exactly as it was), or one of
-# game_icons.draw_*, rendered as a small vector icon on a fixed-size canvas
-# so every tile's icon reads as the same size regardless of what emoji font
-# support happens to be installed (see game_icons.py). `game_key` is looked
+# `icon` is either a single glyph string, rendered as text (supported, but
+# no current row actually uses one -- every game now has its own themed
+# game_icons.draw_* vector icon instead), or one of game_icons.draw_*,
+# rendered as a small vector icon on a fixed-size canvas so every tile's
+# icon reads as the same size regardless of what emoji font support
+# happens to be installed (see game_icons.py). `game_key` is looked
 # up in app.unlocks (core/unlocks.py) to decide whether this tile is drawn
 # in its normal colours or recoloured red as still-locked (see
 # _make_game_tile) -- either way its real icon/name/subtitle are shown.
@@ -20,14 +21,14 @@ from ui import game_icons, theme
 # game_icons.py and a real frame_name) -- the grid below lays itself out
 # automatically, no layout code to touch.
 GAMES = [
-    ("\U0001F0A1", "Three Card Poker", "Ante, Play, Pair Plus & Prime side bets",
+    (game_icons.draw_three_card_poker_icon, "Three Card Poker", "Ante, Play, Pair Plus & Prime side bets",
      "three_card_poker", "three_card_poker"),
     (game_icons.draw_blackjack_icon, "Blackjack", "Super Pairs, 21+3, Top 3 & Jackpot side bets",
      "blackjack", "blackjack"),
     (game_icons.draw_pai_gow_icon, "Pai Gow Poker", "'Fortune' variant, with face down dealer hand.",
      "pai_gow_poker", "pai_gow_poker"),
     (game_icons.draw_pai_gow_face_up_icon, "Pai Gow Poker\n(Face Up!)",
-     "Dealer plays face up, with no commission.", "pai_gow_poker_face_up", None),
+     "Dealer plays face up, with no commission.", "pai_gow_poker_face_up", "pai_gow_poker_face_up"),
     (game_icons.draw_mississippi_stud_icon, "Mississippi Stud", "3 Card Bonus side bet",
      "mississippi_stud", None),
     (game_icons.draw_baccarat_icon, "Baccarat", "Perfect Pair & Dragon Bonus side bets",
@@ -75,7 +76,7 @@ class MainMenuFrame(tk.Frame):
 
         self._make_spade(top_bar).pack(side="left", padx=(20, 8), pady=14)
         tk.Label(
-            top_bar, text="HADFIELD CASINO v1.0.2", bg=theme.MENU_BG, fg=theme.SECONDARY,
+            top_bar, text="HADFIELD CASINO v1.1.0", bg=theme.MENU_BG, fg=theme.SECONDARY,
             font=theme.font(18, weight="bold"),
         ).pack(side="left")
         self._make_spade(top_bar).pack(side="left", padx=(8, 0), pady=14)

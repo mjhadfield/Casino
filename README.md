@@ -1,6 +1,6 @@
 # Hadfield Casino
 
-**Version 1.0.2**
+**Version 1.1.0**
 
 A small, extensible casino games library, built with Python's standard
 library only (`tkinter` — no extra installs needed).
@@ -34,6 +34,9 @@ sudo pacman -S tk                  # Arch/CachyOS
 - **Blackjack** — 8-deck shoe with four side bets (see below).
 - **Pai Gow Poker** — 53-card deck (with a Joker), Fortune and
   Jackpot side bets (see below).
+- **Pai Gow Poker (Face Up!)** — the same core game, with the Dealer's hand
+  set and revealed *before* you set your own, an automatic Ante push on an
+  Ace-high Pai Gow, and no commission (see below).
 
 Balance, lifetime stats, per-game stats, jackpot progress, and settings are
 all saved to `data/*.json` and persist between sessions.
@@ -76,6 +79,9 @@ games/
   pai_gow_poker/
     logic.py                     # game engine: Joker rules, House Way, Fortune/Jackpot
     ui.py                        # table screen: betting, dealing, setting your hand, results
+  pai_gow_poker_face_up/
+    logic.py                     # PaiGowFaceUpGame -- subclasses pai_gow_poker's own engine
+    ui.py                        # PaiGowPokerFaceUpFrame -- subclasses pai_gow_poker's own table screen
 data/                            # created at runtime -- finances.json, settings.json, ...
 ```
 
@@ -195,11 +201,29 @@ Hand ranking here is standard 5-card poker (unlike the 3-card ranking used
 above): `Straight Flush > Four of a Kind > Full House > Flush > Straight >
 Three of a Kind > Two Pair > One Pair > High Card`.
 
+## Pai Gow Poker (Face Up!) rules implemented
+
+The same core game as Pai Gow Poker above (deck, Joker rules, hand
+evaluation, House Way chart, Fortune and Jackpot side bets — all identical
+and unchanged), with three differences:
+
+- **The Dealer plays first, face up.** The Dealer's hand is always set by
+  House Way immediately after dealing — Face Up reveals it right away,
+  before you arrange your own 7 cards, rather than keeping it hidden until
+  Confirm.
+- **Ace-high Pai Gow pushes automatically.** If the Dealer's revealed hand
+  has no pair, straight, or flush anywhere across all 7 cards — the lowest
+  possible hand, with an Ace as the single highest card — the round ends
+  immediately: the Ante pushes (stake returned), Fortune/Jackpot still pay
+  exactly as normal, and you don't set a hand at all that round.
+- **No commission.** A win pays a flat **1:1** on the Ante — none of the
+  standard game's 5% vig.
+
 ## Roadmap ideas (not yet built)
 
-- More tables: Mississippi Stud, Baccarat, Let It Ride (already placeholder
-  tiles on the main menu), plus whatever's behind the three still-
-  `<REDACTED>` ones
+- More tables: Mississippi Stud, Baccarat, Let It Ride, Ultimate Texas
+  Hold'em, High Card Flush — already placeholder tiles on the main menu,
+  each starting locked (see core/unlocks.py) until built
 - AI/CPU players at the table for a more social feel
 - Milestone-based unlocks (new tables, higher bet limits, cosmetic themes)
 - Bonus/free-bet promotions

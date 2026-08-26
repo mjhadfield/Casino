@@ -21,14 +21,25 @@ from ui import theme
 
 
 def draw_three_card_poker_icon(canvas, cx, cy, size, color):
-    """Two fanned playing cards -- a plain card motif for the one game
-    that isn't a themed vector icon elsewhere (kept for completeness/tiles
-    that want a generic "cards" icon; the main menu itself keeps Three Card
-    Poker's original glyph icon rather than using this)."""
-    w, h = size * 0.55, size * 0.85
-    for angle, dx in ((-1, -size * 0.12), (1, size * 0.12)):
-        canvas.create_rectangle(cx + dx - w / 2, cy - h / 2, cx + dx + w / 2, cy + h / 2,
-                                 outline=color, width=2)
+    """Ace, King, Queen of Spades side by side, not overlapping -- the
+    game's own namesake three-card hand, and its highest-ranking straight
+    flush (previously the Unicode Ace-of-Spades playing-card glyph used
+    directly as text; drawn as line art here instead, for the same
+    cross-platform consistency every other tile icon here already has)."""
+    card_w, card_h = size * 0.30, size * 0.82
+    gap = size * 0.06
+    total_w = card_w * 3 + gap * 2
+    start_x = cx - total_w / 2
+    y1, y2 = cy - card_h / 2, cy + card_h / 2
+    for i, rank in enumerate(("A", "K", "Q")):
+        x1 = start_x + i * (card_w + gap)
+        x2 = x1 + card_w
+        card_cx = (x1 + x2) / 2
+        canvas.create_rectangle(x1, y1, x2, y2, outline=color, width=2)
+        canvas.create_text(card_cx, cy - card_h * 0.18, text=rank, fill=color,
+                            font=("Helvetica", round(size * 0.20), "bold"))
+        canvas.create_text(card_cx, cy + card_h * 0.24, text="♠", fill=color,
+                            font=("Helvetica", round(size * 0.18), "bold"))
 
 
 def draw_blackjack_icon(canvas, cx, cy, size, color):

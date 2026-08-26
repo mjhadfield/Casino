@@ -3,6 +3,8 @@ from tkinter import messagebox
 
 from core.settings import TABLE_THEMES
 from games.three_card_poker import logic as tcp_logic
+from games.pai_gow_poker import logic as pgp_logic
+from games.pai_gow_poker_face_up import logic as pgpfu_logic
 from ui import dialogs, main_menu, theme
 from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
@@ -121,12 +123,19 @@ class SettingsFrame(tk.Frame):
             lambda: self.app.game_stats.reset_game("blackjack"),
         )
         self._make_reset_row(
-                    danger_inner, "$ rm --stats --game pai_gow_poker",
-                    "This permanently deletes Pai Gow Poker's statistics breakdown. Pai Gow Poker isn't "
-                    "implemented yet, so this currently has nothing to remove.",
-                    "Pai Gow Poker's statistics have been reset.",
-                    lambda: self.app.game_stats.reset_game("pai_gow_poker"),
-                )
+            danger_inner, "$ rm --stats --game pai_gow_poker",
+            "This permanently deletes Pai Gow Poker's bet, hand and payout breakdown "
+            "on the Stats screen.",
+            "Pai Gow Poker's statistics have been reset.",
+            lambda: self.app.game_stats.reset_game(pgp_logic.GAME_KEY),
+        )
+        self._make_reset_row(
+            danger_inner, "$ rm --stats --game pai_gow_poker_face_up",
+            "This permanently deletes Pai Gow Poker (Face Up!)'s bet, hand and payout "
+            "breakdown on the Stats screen.",
+            "Pai Gow Poker (Face Up!)'s statistics have been reset.",
+            lambda: self.app.game_stats.reset_game(pgpfu_logic.GAME_KEY),
+        )
 
         action_row = tk.Frame(body, bg=theme.BG)
         action_row.pack(pady=(28, 0))

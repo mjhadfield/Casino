@@ -3,6 +3,7 @@ import tkinter as tk
 from games.three_card_poker import logic as tcp_logic
 from games.blackjack import logic as bj_logic
 from games.pai_gow_poker import logic as pgp_logic
+from games.pai_gow_poker_face_up import logic as pgpfu_logic
 from ui import theme
 from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
@@ -29,6 +30,8 @@ GAME_SECTIONS = [
      "bet_types": bj_logic.BET_TYPES, "hand_labels": bj_logic.HAND_OUTCOME_LABELS},
     {"key": pgp_logic.GAME_KEY, "label": pgp_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
      "bet_types": pgp_logic.BET_TYPES, "hand_labels": pgp_logic.HAND_OUTCOME_LABELS},
+    {"key": pgpfu_logic.GAME_KEY, "label": pgpfu_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
+     "bet_types": pgpfu_logic.BET_TYPES, "hand_labels": pgpfu_logic.HAND_OUTCOME_LABELS},
 ]
 
 LIFETIME_STAT_ROWS = [

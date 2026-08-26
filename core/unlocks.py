@@ -17,7 +17,7 @@ hidden.
 from core.persistence import load_json, save_json
 
 # Every game that can appear on the main menu, in the same order the tile
-# grid lists them (ui/main_menu.py's GAMES) -- the three already-shipped
+# grid lists them (ui/main_menu.py's GAMES) -- the four already-shipped
 # games start (and, until achievements actually exist, always stay)
 # unlocked; every not-yet-built one starts locked, so its tile shows in the
 # dark-red "locked" palette until an admin (soon, an achievement) unlocks it.
@@ -25,10 +25,10 @@ DEFAULT_UNLOCKS = {
     "three_card_poker": True,
     "blackjack": True,
     "pai_gow_poker": True,
+    "pai_gow_poker_face_up": True,
     "mississippi_stud": False,
     "baccarat": False,
     "let_it_ride": False,
-    "pai_gow_poker_face_up": False,
     "ultimate_texas_holdem": False,
     "high_card_flush": False,
 }
