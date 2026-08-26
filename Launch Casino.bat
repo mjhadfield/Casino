@@ -17,7 +17,7 @@ call :banner
 
 echo.
 echo  Checking system...
-call :loading "Checking for Python" 3
+echo  Checking for Python
 
 :: ============================================================
 :: Check for a working Python installation
@@ -101,8 +101,6 @@ echo.
 echo        %PYTHON_INSTALLER_URL%
 echo.
 
-call :loading "Connecting to python.org" 3
-
 echo.
 echo  [2/3] Downloading Python...
 echo.
@@ -134,7 +132,8 @@ if not exist "%PYTHON_EXE%" (
 
 echo  Installation complete.
 echo.
-call :loading "Checking Python installation" 3
+echo  Checking Python installation
+echo.
 
 "%PYTHON_EXE%" -c "import tkinter" >nul 2>&1
 if errorlevel 1 (
@@ -166,7 +165,8 @@ echo.
 echo  Python found.
 echo  Tkinter is available.
 echo.
-call :loading "Preparing Hadfield Casino" 3
+echo  Preparing Hadfield Casino
+echo.
 
 goto :launch_game
 
@@ -185,7 +185,8 @@ echo  Dealer is at the table.
 echo  Cards are being shuffled...
 echo.
 
-call :loading "Starting casino" 4
+echo  Starting casino
+echo.
 
 echo.
 echo  Good luck.
@@ -307,34 +308,10 @@ echo. ######### ######## ###  ### #####     ###  ###      ###      ###  ###
 echo. ###   ### ###  ### #######  ###      ##### ######## ######## ####### 
 echo.
 echo                             C A S I N O
-echo                               ♦ ♣ ♥ ♠
-
-:: ============================================================
-:: Fake loading animation (now cycles through the 4 suits)
-:: Usage: call :loading "Message" number_of_steps
-:: ============================================================
 
 :loading
-setlocal enabledelayedexpansion
 
-set "LOAD_MESSAGE=%~1"
-set /a LOAD_STEPS=%~2
-
-set "SUIT0=♦"
-set "SUIT1=♣"
-set "SUIT2=♥"
-set "SUIT3=♠"
-
-<nul set /p "=  %LOAD_MESSAGE% ["
-
-for /L %%i in (1,1,%LOAD_STEPS%) do (
-    set /a "idx=%%i %% 4"
-    call set "CH=%%SUIT!idx!%%"
-    <nul set /p "=!CH!"
-    ping 127.0.0.1 -n 2 >nul
-)
-
-echo ] DONE
+echo DONE
 endlocal
 exit /b
 
