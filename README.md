@@ -7,10 +7,7 @@ library only (`tkinter` — no extra installs needed).
 
 ## Running it
 
-**Windows:** double-click `Launch Casino.bat`. If that reports Python is
-missing, run `Install prerequisites.bat` once first (no admin rights
-needed — it installs Python + tkinter for your user account only), then
-try `Launch Casino.bat` again.
+**Windows:** double-click `Launch Casino.bat`. If Python is not installed it will prompt a local (user) installation, no admin credentials are required.
 
 **Everyone else:**
 
