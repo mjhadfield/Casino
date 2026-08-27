@@ -7,6 +7,7 @@ from games.pai_gow_poker import logic as pgp_logic
 from games.pai_gow_poker_face_up import logic as pgpfu_logic
 from games.mississippi_stud import logic as ms_logic
 from games.ultimate_texas_holdem import logic as uth_logic
+from games.let_it_ride import logic as lir_logic
 from ui import dialogs, main_menu, theme
 from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
@@ -151,6 +152,13 @@ class SettingsFrame(tk.Frame):
             "breakdown on the Stats screen.",
             "Ultimate Texas Hold'em's statistics have been reset.",
             lambda: self.app.game_stats.reset_game(uth_logic.GAME_KEY),
+        )
+        self._make_reset_row(
+            danger_inner, "$ rm --stats --game let_it_ride",
+            "This permanently deletes Let It Ride's bet, hand and payout breakdown on the "
+            "Stats screen.",
+            "Let It Ride's statistics have been reset.",
+            lambda: self.app.game_stats.reset_game(lir_logic.GAME_KEY),
         )
 
         tk.Frame(danger_inner, bg=theme.LOSE_COLOR, height=1).pack(fill="x", pady=(4, 12))

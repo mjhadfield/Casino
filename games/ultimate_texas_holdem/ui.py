@@ -469,11 +469,16 @@ class UltimateTexasHoldemFrame(tk.Frame):
         )
         self.clear_btn.pack(pady=(6, 0))
 
-        self.chip_frame.pack()
+        # Packed with its real CHIP_FRAME_PADY here (not a bare .pack())
+        # before measuring -- chip_zone's fixed size below has to account
+        # for that padding too, or the last child (Clear Bets) ends up
+        # squeezed into whatever sliver of height is left over once
+        # _show_betting_controls() re-packs chip_frame with this same pady.
+        self.chip_frame.pack(pady=CHIP_FRAME_PADY)
         self.chip_frame.update_idletasks()
         self.chip_zone.configure(
-            width=self.chip_frame.winfo_reqwidth(),
-            height=self.chip_frame.winfo_reqheight(),
+            width=self.chip_zone.winfo_reqwidth(),
+            height=self.chip_zone.winfo_reqheight(),
         )
         self.chip_zone.pack_propagate(False)
 

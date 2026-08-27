@@ -6,6 +6,7 @@ from games.pai_gow_poker import logic as pgp_logic
 from games.pai_gow_poker_face_up import logic as pgpfu_logic
 from games.mississippi_stud import logic as ms_logic
 from games.ultimate_texas_holdem import logic as uth_logic
+from games.let_it_ride import logic as lir_logic
 from ui import theme
 from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
@@ -46,6 +47,11 @@ GAME_SECTIONS = [
     # but no optimal-strategy checker was built for it either.
     {"key": uth_logic.GAME_KEY, "label": uth_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
      "bet_types": uth_logic.BET_TYPES, "hand_labels": uth_logic.HAND_OUTCOME_LABELS},
+    # Same tracks_folding=False reasoning as above -- Let It Ride genuinely
+    # has two Pull Back/Let It Ride decisions, but no optimal-strategy
+    # checker was built for them either.
+    {"key": lir_logic.GAME_KEY, "label": lir_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
+     "bet_types": lir_logic.BET_TYPES, "hand_labels": lir_logic.HAND_OUTCOME_LABELS},
 ]
 
 LIFETIME_STAT_ROWS = [

@@ -1,12 +1,12 @@
 {
-  "balance": 200.0,
-  "lifetime_deposited": 0.0,
+  "balance": 328.0,
+  "lifetime_deposited": 194.0,
   "lifetime_withdrawn": 0.0,
-  "lifetime_wagered": 0.0,
-  "lifetime_returned": 0.0,
-  "deposits_made": 0,
+  "lifetime_wagered": 1350.0,
+  "lifetime_returned": 1284.0,
+  "deposits_made": 1,
   "withdrawals_made": 0,
-  "hands_played": 0,
-  "biggest_win": 0.0,
+  "hands_played": 54,
+  "biggest_win": 208,
   "account_created": "2026-08-22T22:15:49.943861+00:00"
 }

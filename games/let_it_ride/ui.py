@@ -4,130 +4,109 @@ import tkinter as tk
 from typing import Optional
 
 from core.persistence import load_json, save_json
-from games.mississippi_stud.logic import (
-    BONUS_PAYTABLE,
-    BONUS_PAYTABLE_MINI_ROYAL,
-    BONUS_PAYTABLE_STRAIGHT_FLUSH,
-    FIVE_CARD_FLUSH,
-    FIVE_CARD_STRAIGHT,
-    FIVE_CARD_THREE_OF_A_KIND,
-    FLUSH,
-    FOUR_OF_A_KIND,
-    FULL_HOUSE,
-    GAME_KEY,
-    hand_outcome_label,
-    JACKPOT_BET_AMOUNT,
-    JACKPOT_FLUSH_PAYOUT,
-    JACKPOT_FOUR_OF_A_KIND_PAYOUT,
-    JACKPOT_FULL_HOUSE_PAYOUT,
-    JACKPOT_STRAIGHT_PAYOUT,
-    JACKPOT_THREE_OF_A_KIND_PAYOUT,
-    MAIN_PAYTABLE,
-    MAIN_PAYTABLE_PAIR_JACKS_OR_BETTER,
-    MAIN_PAYTABLE_ROYAL_FLUSH,
-    MAIN_PAYTABLE_STRAIGHT_FLUSH,
-    MississippiStudGame,
-    PAIR,
-    RoundResult,
-    STRAIGHT,
-    THREE_OF_A_KIND,
-    TWO_PAIR,
-)
+from games.let_it_ride.logic import GAME_KEY, hand_outcome_label, LetItRideGame, RoundResult
+from games.let_it_ride import logic as lir_logic
 from ui import dialogs, theme
 from ui.card_widgets import draw_card, draw_card_back, CARD_HEIGHT, CARD_WIDTH
-from ui.chips import (
-    CHIP_COLORS_BY_VALUE,
-    CHIP_DENOMINATIONS,
-    CHIP_LAYER_MAX_R,
-    CHIP_SIZE,
-    draw_chip_face,
-    draw_chip_stack,
-)
+from ui.chips import CHIP_DENOMINATIONS, CHIP_LAYER_MAX_R, CHIP_SIZE, draw_chip_face, draw_chip_stack
 from ui.jackpot_display import JackpotDisplay
 
-STATE_FILENAME = "mississippi_stud_state.json"
-DEFAULT_STATE = {"bets": {"ante": 0, "bonus": 0, "jackpot": 0}, "selected_chip": 5}
+STATE_FILENAME = "let_it_ride_state.json"
+DEFAULT_STATE = {"bets": {"base": 0, "bonus": 0, "three_card": 0, "jackpot": 0}, "selected_chip": 5}
 
 # --- Layout constants ------------------------------------------------------
 # Same "fixed pixel block, centred in the window" convention as every other
-# game -- see three_card_poker/ui.py's own module-level comment for why.
-# This game's own canvas is deliberately isolated from that one (and every
-# other game's) rather than importing shared constants from it, per the
-# "isolated from the other games" instruction this game was commissioned
-# under -- some numbers below are chosen to *read* similarly, but nothing is
-# actually shared.
+# game -- see three_card_poker/ui.py's own module-level comment. This game's
+# own canvas is deliberately isolated from every sibling game's.
 CANVAS_WIDTH = 760
-# The play screen stacks four rows (dealer/community row, Jackpot+Bonus row,
-# 3rd/4th/5th Street row, Ante) instead of the other games' own two -- kept
-# to roughly the same overall canvas height as them anyway (rather than
-# genuinely taller) by tightening the gap between each row and shrinking the
-# spot radii a little, since the window itself is a fixed, non-resizable
-# 1200x820 (see main.py) with no room to spare below a canvas this size once
-# the caption/buttons/hand/payout panel below it are all accounted for too.
 CANVAS_HEIGHT = 400
 
 PAYTABLE_WIDTH = 240
-# Tall enough for both sections in full -- 10 MAIN GAME rows (including the
-# Pair 6s-10s push) + 6 3 CARD BONUS rows + both section titles + the
-# divider between them + the panel's own title, or the last few Bonus rows
-# silently render past the canvas widget's own bottom edge and never
-# actually show up (caught by testing after the row count grew).
-PAYTABLE_HEIGHT = 416
-PAYOUT_PANEL_WIDTH = 380
-# Up to 6 rows (Ante/3rd/4th/5th/Bonus/Jackpot) plus the Round Net total --
-# trimmed to just what that worst case needs (see _draw_payout_panel's own
-# tightened row pitch) rather than leaving generous unused space below it.
-PAYOUT_PANEL_HEIGHT = 186
+# Taller than most other games' own paytable panel -- this one holds three
+# full sections (Base Game/Bonus/3 Card) rather than one or two -- but still
+# capped by the fixed 1200x820 window (see main.py), so its own row pitch is
+# tighter than every other game's own paytable panel to fit under that cap.
+PAYTABLE_HEIGHT = 415
+# Narrower than Ultimate Texas Hold'em's own 320 -- this game's fan_canvas
+# (3 cards, not 2) starts further left, so the panel needs to stay clear of
+# it -- see _show_payout_panel.
+PAYOUT_PANEL_WIDTH = 240
+# One row taller than Ultimate Texas Hold'em's own 160 -- up to 6 bet types
+# can appear here (£/Bet1/Bet2/Bonus/3 Card/Jackpot) rather than 5.
+PAYOUT_PANEL_HEIGHT = 190
 
-JACKPOT_SPOT_R = 26
-BONUS_SPOT_R = 32     # the diamond's own "radius" (centre to each point)
+JACKPOT_SPOT_R = 22
+THREE_CARD_SPOT_R = 28   # the diamond's own "radius" (centre to each point)
+BONUS_SPOT_R = 28
+
+# The one chip-stack size used for the £/2/1 row on the play screen -- shared
+# by their initial display, the Pull Back refund animation, and the payout
+# layout below, so a stake chip and its later refund/payout chip are always
+# drawn at the identical size instead of drifting between them.
+ROW_CHIP_MAX_R = 20
+# Bonus/3 Card/Jackpot's own display/payout size -- smaller, matching every
+# other game's own side-bet spot convention (e.g. Ultimate Texas Hold'em's
+# own Trips/Jackpot strip size).
+SIDE_CHIP_MAX_R = 18
 
 CONTENT_TOP_MARGIN = 35
 
-# --- Community-card row (3 slots, one per street, left to right) -----------
+# --- Dealer/community mat -- 2 cards, centred at the top of the canvas.
+# There's no separate hidden "dealer hand" mat like Ultimate Texas Hold'em's
+# own -- the dealer's 2 cards ARE the community cards here, dealt face down
+# and revealed one at a time as the player's two decisions land.
 CARD_ROW_GAP = CARD_WIDTH + 15
-CARD_ROW_WIDTH = 2 * CARD_ROW_GAP + CARD_WIDTH
-CARD_ROW_START_X = CANVAS_WIDTH / 2 - CARD_ROW_WIDTH / 2
+COMMUNITY_ROW_WIDTH = CARD_ROW_GAP + CARD_WIDTH   # 2 cards, 1 gap between them
+COMMUNITY_MAT_MARGIN = 30
+COMMUNITY_MAT_WIDTH = COMMUNITY_ROW_WIDTH + 2 * COMMUNITY_MAT_MARGIN
+COMMUNITY_MAT_X1 = (CANVAS_WIDTH - COMMUNITY_MAT_WIDTH) / 2
+COMMUNITY_MAT_X2 = COMMUNITY_MAT_X1 + COMMUNITY_MAT_WIDTH
 
 DEALER_MAT_RADIUS = 12
 DEALER_MAT_TOP = 6
 DEALER_MAT_LABEL_Y = DEALER_MAT_TOP + 8
-DEALER_Y = DEALER_MAT_TOP + 18                   # community cards' top-left y
+DEALER_Y = DEALER_MAT_TOP + 18                   # every card on this row's top-left y
 DEALER_MAT_BOTTOM = DEALER_Y + CARD_HEIGHT + 8
-DEALER_MAT_SIDE_MARGIN = 40
-DEALER_MAT_X1 = CARD_ROW_START_X - DEALER_MAT_SIDE_MARGIN
-DEALER_MAT_X2 = CARD_ROW_START_X + CARD_ROW_WIDTH + DEALER_MAT_SIDE_MARGIN
-COMMUNITY_LABELS = ["3RD", "4TH", "5TH"]
 
-# --- Jackpot + 3 Card Bonus row (carried over from the betting screen) -----
-GAP_DEALER_TO_JACKPOT_BONUS = 18
-JACKPOT_BONUS_CY = DEALER_MAT_BOTTOM + GAP_DEALER_TO_JACKPOT_BONUS + BONUS_SPOT_R
-JACKPOT_BONUS_BOTTOM = JACKPOT_BONUS_CY + BONUS_SPOT_R
-JACKPOT_STRIP_CX = CANVAS_WIDTH / 2 - 60
-BONUS_STRIP_CX = CANVAS_WIDTH / 2 + 60
+# --- £ / 2 / 1 row -- three equal, linked base spots (see the module
+# docstring: tracked internally as a single self.bets["base"] value). "£"
+# always plays; "2" is the second decision; "1" is the first decision --
+# real-table convention, matching the order the player actually decides them
+# in (bet "1" right after seeing their own 3 cards, bet "2" after the first
+# community card).
+BASE_R = 32
+_ROW_BOTTOM_MARGIN = 16
+BASE_CY = CANVAS_HEIGHT - _ROW_BOTTOM_MARGIN - BASE_R
+BASE_GAP = 26
+_BASE_SPACING = 2 * BASE_R + BASE_GAP
+BASE_LEFT_CX = CANVAS_WIDTH / 2 - _BASE_SPACING     # "£"
+BASE_CENTRE_CX = CANVAS_WIDTH / 2                    # "2"
+BASE_RIGHT_CX = CANVAS_WIDTH / 2 + _BASE_SPACING     # "1"
 
-# --- Player bet area: 3rd/4th/5th Street spots ------------------------------
-GAP_TO_STREET_ROW = 26
-STREET_ROW_R = 26
-STREET_ROW_CY = JACKPOT_BONUS_BOTTOM + GAP_TO_STREET_ROW + STREET_ROW_R
-STREET_ROW_BOTTOM = STREET_ROW_CY + STREET_ROW_R
-STREET_LABELS = {3: "3RD STREET", 4: "4TH STREET", 5: "5TH STREET"}
-STREET_ROW_CX = {3: CANVAS_WIDTH / 2 - 95, 4: CANVAS_WIDTH / 2, 5: CANVAS_WIDTH / 2 + 95}
+# --- 3 CARD (diamond, above "2") + BONUS (circle, above "1") row.
+_MID_R = max(THREE_CARD_SPOT_R, BONUS_SPOT_R)
+ROW_GAP = 34
+MID_CY = BASE_CY - BASE_R - ROW_GAP - _MID_R
+THREE_CARD_CX = BASE_CENTRE_CX
+BONUS_CX = BASE_RIGHT_CX
 
-# --- Ante spot ---------------------------------------------------------
-GAP_TO_ANTE = 24
-ANTE_R = 34
-ANTE_CX = CANVAS_WIDTH / 2
-ANTE_CY = STREET_ROW_BOTTOM + GAP_TO_ANTE + ANTE_R
+# --- JACKPOT -- one row higher again, centred between 3 CARD and BONUS.
+JACKPOT_GAP = 30
+JACKPOT_CY = MID_CY - _MID_R - JACKPOT_GAP - JACKPOT_SPOT_R
+JACKPOT_CX = (THREE_CARD_CX + BONUS_CX) / 2
 
-# Settlement/payout "centre" every losing bet's chips slide towards, and every
-# winning bet's payout slides out from -- the community-card row's own
-# centre, the closest thing this game has to "the house" (there's no
-# separate dealer hand the way the other games have one).
-SETTLE_CENTER_X = CANVAS_WIDTH / 2
+# Settlement/payout "centre" -- the community/dealer mat's own centre, the
+# closest thing this game has to "the house" (mirrors every other game's own
+# SETTLE_CENTER convention).
+SETTLE_CENTER_X = (COMMUNITY_MAT_X1 + COMMUNITY_MAT_X2) / 2
 SETTLE_CENTER_Y = DEALER_Y + CARD_HEIGHT / 2
 PAYOUT_WIN_LANDING_OFFSET_Y = -20
 PAYOUT_CHIP_MOVE_MS = 280
+
+# A Pull Back's refund heads toward the bottom edge of the canvas, toward
+# the player -- the same off-canvas target convention every other game's own
+# end-of-round chip sweep already uses, just triggered mid-round here.
+PULL_BACK_TARGET = (CANVAS_WIDTH / 2, CANVAS_HEIGHT)
 
 # --- Rules button ------------------------------------------------------
 RULES_BUTTON_WIDTH = 106
@@ -138,96 +117,41 @@ RULES_BUTTON_RADIUS = RULES_BUTTON_HEIGHT // 2
 BETTING_ACTION_FRAME_PADY = (23, 0)
 CHIP_FRAME_PADY = (16, 30)
 
-# --- Player's own hand (2 cards) -- its own small canvas below the action
-# buttons, same "separate canvas" convention as every other game's own
-# fanned hand (a literal cross-canvas slide isn't possible; see
-# _animate_cards_to_rest for the vanish-then-grow trick that fakes one).
-# Only ever holds 2 cards (unlike the other games' own 3+-card fans), so its
-# own canvas is narrower than the main play canvas -- half its width -- and
-# pack()'s default centring puts it in the middle of game_col either way.
+# --- Player's own hand (3 cards) -- same narrow (half-width) canvas as
+# every sibling game's own fan_canvas, below the action buttons.
 FAN_Y = 14
-FAN_GAP = 46
+FAN_GAP = 18
 FAN_CANVAS_WIDTH = CANVAS_WIDTH / 2
 FAN_CANVAS_HEIGHT = FAN_Y + CARD_HEIGHT + 18
-FAN_MAT_X1 = 90
-FAN_MAT_X2 = FAN_CANVAS_WIDTH - 90
+_FAN_TOTAL_W = 3 * CARD_WIDTH + 2 * FAN_GAP
+_FAN_PAD = 24
+FAN_MAT_X1 = (FAN_CANVAS_WIDTH - _FAN_TOTAL_W) / 2 - _FAN_PAD
+FAN_MAT_X2 = FAN_CANVAS_WIDTH - FAN_MAT_X1
 FAN_MAT_TOP = 4
 FAN_MAT_BOTTOM = FAN_CANVAS_HEIGHT - 4
 FAN_MAT_RADIUS = 12
 FAN_MAT_BORDER = theme.FG_DIM
 
-# Cards that come to rest tucked under the Bonus spot on a fold (see
-# _tuck_cards_under_bonus) -- reduced scale, same idea as the other games'
-# own "resting" cards.
-REST_CARD_SCALE = 0.55
-REST_CARD_WIDTH = CARD_WIDTH * REST_CARD_SCALE
-REST_CARD_HEIGHT = CARD_HEIGHT * REST_CARD_SCALE
-REST_CARD_FAN_OFFSET = 22
-
 # --- Animation pacing --------------------------------------------------
 DEAL_IN_STAGGER_MS = 110
 DEAL_IN_DROP_MS = 220
-CHIP_PLACE_MS = 180
 COMMUNITY_FLIP_MS = 220
 COMMUNITY_FLIP_STAGGER_MS = 300
-FOLD_FLIP_MS = 180
-FOLD_FLY_MS = 220
-FOLD_FLY_STAGGER_MS = 70
-FOLD_FLY_TARGET = (FAN_CANVAS_WIDTH + 90, -50)
-BONUS_TUCK_VANISH_MS = 150
-BONUS_TUCK_GROW_MS = 200
+REFUND_MOVE_MS = 320
+# "A slight pause" between a decision landing (Pull Back's refund finishing,
+# or Let It Ride simply being acknowledged) and the next community card's
+# reveal -- applies identically to both decisions and both decision points.
+DECISION_TO_REVEAL_PAUSE_MS = 450
 
 
 def _ease_out_cubic(t):
     return 1 - (1 - t) ** 3
 
 
-_lerp_color = theme.lerp_color
-
-# Paytable rows, read straight from logic.py's own constants so the panel can
-# never drift out of sync with what's actually paid out.
-MAIN_PAYTABLE_ROWS = [
-    ("Royal Flush", MAIN_PAYTABLE_ROYAL_FLUSH),
-    ("Straight Flush", MAIN_PAYTABLE_STRAIGHT_FLUSH),
-    ("Four of a Kind", MAIN_PAYTABLE[FOUR_OF_A_KIND]),
-    ("Full House", MAIN_PAYTABLE[FULL_HOUSE]),
-    ("Flush", MAIN_PAYTABLE[FIVE_CARD_FLUSH]),
-    ("Straight", MAIN_PAYTABLE[FIVE_CARD_STRAIGHT]),
-    ("Three of a Kind", MAIN_PAYTABLE[FIVE_CARD_THREE_OF_A_KIND]),
-    ("Two Pair", MAIN_PAYTABLE[TWO_PAIR]),
-    ("Pair, Jacks+", MAIN_PAYTABLE_PAIR_JACKS_OR_BETTER),
-    ("Pair, 6s-10s", "Push"),
-]
-BONUS_PAYTABLE_ROWS = [
-    ("Mini-Royal", BONUS_PAYTABLE_MINI_ROYAL),
-    ("Straight Flush", BONUS_PAYTABLE_STRAIGHT_FLUSH),
-    ("Three of a Kind", BONUS_PAYTABLE[THREE_OF_A_KIND]),
-    ("Straight", BONUS_PAYTABLE[STRAIGHT]),
-    ("Flush", BONUS_PAYTABLE[FLUSH]),
-    ("Pair", BONUS_PAYTABLE[PAIR]),
-]
-PAYTABLE_SECTIONS = [("MAIN GAME", MAIN_PAYTABLE_ROWS), ("3 CARD BONUS", BONUS_PAYTABLE_ROWS)]
-
-JACKPOT_PAYTABLE_ROWS = [
-    ("Royal Flush", "100% JACKPOT"),
-    ("Straight Flush", "10% JACKPOT"),
-    ("Four of a Kind", f"£{JACKPOT_FOUR_OF_A_KIND_PAYOUT:.0f}"),
-    ("Full House", f"£{JACKPOT_FULL_HOUSE_PAYOUT:.0f}"),
-    ("Flush", f"£{JACKPOT_FLUSH_PAYOUT:.0f}"),
-    ("Straight", f"£{JACKPOT_STRAIGHT_PAYOUT:.0f}"),
-    ("Three of a Kind", f"£{JACKPOT_THREE_OF_A_KIND_PAYOUT:.0f}"),
-]
-JACKPOT_PAYTABLE_HIGHLIGHT_ROW = 0  # Royal Flush -- now the first row, not the last
-
-
-def _max_deal_cost(bets):
-    """Worst-case total the player is committing to by dealing: the Ante
-    could be bet again at up to 3x on every one of the 3 streets, so
-    ante*3 plus whatever's on Bonus/Jackpot is what a real casino would
-    check balance against before letting the round start -- this is also
-    exactly the "balance must be at least 3x the Ante" rule (when Bonus/
-    Jackpot are both £0)."""
-    return bets["ante"] * 3 + bets["bonus"] + bets["jackpot"]
+def _format_payout(payout):
+    if isinstance(payout, str):
+        return payout
+    return f"{payout:.0f}:1"
 
 
 def _format_signed(amount):
@@ -248,21 +172,87 @@ def _net_color(amount):
     return theme.PUSH_COLOR
 
 
-class MississippiStudFrame(tk.Frame):
+# Paytable rows, read straight from logic.py's own constants so the panel
+# can never drift out of sync with what's actually paid out.
+BASE_PAYTABLE_ROWS = [
+    ("Royal Flush", lir_logic.BASIC_GAME_PAYOUT["royal_flush"]),
+    ("Straight Flush", lir_logic.BASIC_GAME_PAYOUT["straight_flush"]),
+    ("Four of a Kind", lir_logic.BASIC_GAME_PAYOUT["four_of_a_kind"]),
+    ("Full House", lir_logic.BASIC_GAME_PAYOUT["full_house"]),
+    ("Flush", lir_logic.BASIC_GAME_PAYOUT["flush"]),
+    ("Straight", lir_logic.BASIC_GAME_PAYOUT["straight"]),
+    ("Three of a Kind", lir_logic.BASIC_GAME_PAYOUT["three_of_a_kind"]),
+    ("Two Pair", lir_logic.BASIC_GAME_PAYOUT["two_pair"]),
+    ("Pair of 10s+", lir_logic.BASIC_GAME_PAYOUT["pair_tens_or_better"]),
+]
+BONUS_PAYTABLE_ROWS = [
+    ("Royal Flush", lir_logic.BONUS_PAYOUT["royal_flush"]),
+    ("Straight Flush", lir_logic.BONUS_PAYOUT["straight_flush"]),
+    ("Four of a Kind", lir_logic.BONUS_PAYOUT["four_of_a_kind"]),
+    ("Full House", lir_logic.BONUS_PAYOUT["full_house"]),
+    ("Flush", lir_logic.BONUS_PAYOUT["flush"]),
+    ("Straight", lir_logic.BONUS_PAYOUT["straight"]),
+    ("Three of a Kind", lir_logic.BONUS_PAYOUT["three_of_a_kind"]),
+]
+THREE_CARD_PAYTABLE_ROWS = [
+    ("Straight Flush", lir_logic.THREE_CARD_BONUS_PAYOUT["straight_flush"]),
+    ("Three of a Kind", lir_logic.THREE_CARD_BONUS_PAYOUT["three_of_a_kind"]),
+    ("Straight", lir_logic.THREE_CARD_BONUS_PAYOUT["straight"]),
+    ("Flush", lir_logic.THREE_CARD_BONUS_PAYOUT["flush"]),
+    ("Pair", lir_logic.THREE_CARD_BONUS_PAYOUT["pair"]),
+]
+PAYTABLE_SECTIONS = [
+    ("BASE GAME (Pair of 10s+)", BASE_PAYTABLE_ROWS),
+    ("BONUS (3 of a Kind+)", BONUS_PAYTABLE_ROWS),
+    ("3 CARD (Pair+)", THREE_CARD_PAYTABLE_ROWS),
+]
+
+JACKPOT_PAYTABLE_ROWS = [
+    ("Royal Flush", "100% JACKPOT"),
+    ("Straight Flush", "10% JACKPOT"),
+    ("Four of a Kind", f"£{lir_logic.JACKPOT_FOUR_OF_A_KIND_PAYOUT:.0f}"),
+    ("Full House", f"£{lir_logic.JACKPOT_FULL_HOUSE_PAYOUT:.0f}"),
+    ("Flush", f"£{lir_logic.JACKPOT_FLUSH_PAYOUT:.0f}"),
+    ("Straight", f"£{lir_logic.JACKPOT_STRAIGHT_PAYOUT:.0f}"),
+    ("Three of a Kind", f"£{lir_logic.JACKPOT_THREE_OF_A_KIND_PAYOUT:.0f}"),
+]
+JACKPOT_PAYTABLE_HIGHLIGHT_ROW = 0  # Royal Flush
+
+# Human-readable names for a RoundResult's own tier-key vocabulary -- kept
+# here (not imported from logic.py's own private _TIER_TO_OUTCOME_LABEL)
+# since the UI's own wording is free to diverge from the Stats screen's.
+_TIER_DISPLAY_NAMES = {
+    "royal_flush": "Royal Flush", "straight_flush": "Straight Flush",
+    "four_of_a_kind": "Four of a Kind", "full_house": "Full House", "flush": "Flush",
+    "straight": "Straight", "three_of_a_kind": "Three of a Kind", "two_pair": "Two Pair",
+    "pair_tens_or_better": "Pair of Tens or Better", "low_pair": "Low Pair", "high_card": "High Card",
+}
+_THREE_CARD_DISPLAY_NAMES = {
+    "straight_flush": "Straight Flush", "three_of_a_kind": "Three of a Kind",
+    "straight": "Straight", "flush": "Flush", "pair": "Pair", "high_card": "High Card",
+}
+
+
+def _max_deal_cost(bets):
+    return lir_logic.total_upfront_cost(bets["base"], bets["bonus"], bets["three_card"], bets["jackpot"])
+
+
+class LetItRideFrame(tk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent, bg=theme.BG)
         self.app = app
-        self.game = MississippiStudGame()
+        self.game = LetItRideGame()
         self.result: Optional[RoundResult] = None
-        self.state = "betting"  # betting -> playing -> resolved
-        self.street = 3         # 3, 4, or 5 while state == "playing"
+        self.state = "betting"      # betting -> playing -> resolved
+        self.stage = "decision1"    # decision1 -> decision2, while state == "playing"
 
         self.save_path = os.path.join(app.data_dir, STATE_FILENAME)
         saved = load_json(self.save_path, DEFAULT_STATE)
         saved_bets = saved.get("bets", DEFAULT_STATE["bets"])
         self.bets = {
-            "ante": int(saved_bets.get("ante", 0)),
+            "base": int(saved_bets.get("base", 0)),
             "bonus": int(saved_bets.get("bonus", 0)),
+            "three_card": int(saved_bets.get("three_card", 0)),
             "jackpot": int(saved_bets.get("jackpot", 0)),
         }
         self.selected_chip = int(saved.get("selected_chip", DEFAULT_STATE["selected_chip"]))
@@ -290,12 +280,12 @@ class MississippiStudFrame(tk.Frame):
             highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
             command=lambda: self.app.show_frame("menu"),
         ).pack(side="left", padx=(20, 10), pady=10)
-        tk.Label(top_bar, text="Mississippi Stud", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
+        tk.Label(top_bar, text="Let It Ride", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
                  font=theme.font(16, weight="bold")).pack(side="left", padx=10)
         self.balance_lbl = tk.Label(top_bar, text="£0.00", bg=theme.BG_ELEVATED, fg=theme.WIN_COLOR,
                                      font=theme.font(12, weight="bold"))
         self.balance_lbl.pack(side="right", padx=20)
-        theme.breadcrumb(top_bar, "mississippi_stud", bg=theme.BG_ELEVATED).pack(side="right", padx=(6, 6))
+        theme.breadcrumb(top_bar, "let_it_ride", bg=theme.BG_ELEVATED).pack(side="right", padx=(6, 6))
 
         body = tk.Frame(self, bg=felt_theme["felt"])
         body.pack(fill="both", expand=True)
@@ -304,13 +294,9 @@ class MississippiStudFrame(tk.Frame):
         content.place(relx=0.5, y=CONTENT_TOP_MARGIN, anchor="n")
 
         game_col = tk.Frame(content, bg=felt_theme["felt"])
-        # anchor="n": without it, pack's default vertical centring shifts
-        # game_col (and everything in it -- the canvas, Ante box and all)
-        # up/down between states as its own natural height changes (Deal
-        # button vs. Bet/Fold row vs. New Deal/Change Bets, fan_canvas
-        # shown/hidden, ...) relative to paytable_col's fixed height --
-        # pinning it to the top keeps the canvas, and everything drawn on
-        # it, at one constant position regardless of round state.
+        # anchor="n": pins game_col to the top of its cavity regardless of
+        # its own natural height changing between states -- the established
+        # fix for the vertical "jump" bug (see Mississippi Stud's own).
         game_col.pack(side="left", anchor="n")
 
         paytable_col = tk.Frame(content, bg=felt_theme["felt"])
@@ -343,23 +329,17 @@ class MississippiStudFrame(tk.Frame):
             highlightthickness=1, highlightbackground=theme.ACCENT,
             command=self._on_deal,
         )
-        self.bet1_btn = tk.Button(
-            self.action_frame, text="BET 1x", font=theme.font(12, weight="bold"), relief="flat",
-            padx=18, pady=10, cursor="hand2", highlightthickness=1, command=lambda: self._on_bet(1),
+        self.pull_back_btn = tk.Button(
+            self.action_frame, text="PULL BACK", bg=theme.GREY_BTN_BG, fg=theme.FG,
+            font=theme.font(12, weight="bold"), relief="flat", padx=18, pady=10, cursor="hand2",
+            highlightthickness=1, highlightbackground=theme.GREY_BTN_BORDER,
+            command=self._on_pull_back,
         )
-        self.bet2_btn = tk.Button(
-            self.action_frame, text="BET 2x", font=theme.font(12, weight="bold"), relief="flat",
-            padx=18, pady=10, cursor="hand2", highlightthickness=1, command=lambda: self._on_bet(2),
-        )
-        self.bet3_btn = tk.Button(
-            self.action_frame, text="BET 3x", font=theme.font(12, weight="bold"), relief="flat",
-            padx=18, pady=10, cursor="hand2", highlightthickness=1, command=lambda: self._on_bet(3),
-        )
-        self.fold_btn = tk.Button(
-            self.action_frame, text="FOLD", bg=theme.LOSE_DIM_BG, fg=theme.FG,
-            font=theme.font(13, weight="bold"), relief="flat", padx=24, pady=10, cursor="hand2",
-            highlightthickness=1, highlightbackground=theme.LOSE_COLOR,
-            command=self._on_fold,
+        self.let_it_ride_btn = tk.Button(
+            self.action_frame, text="LET IT RIDE", bg=theme.ACCENT_DIM_BG, fg=theme.FG,
+            font=theme.font(12, weight="bold"), relief="flat", padx=18, pady=10, cursor="hand2",
+            highlightthickness=1, highlightbackground=theme.ACCENT,
+            command=self._on_let_it_ride,
         )
         self.new_deal_btn = tk.Button(
             self.action_frame, text="New Deal", bg=theme.ACCENT_DIM_BG, fg=theme.FG,
@@ -380,9 +360,18 @@ class MississippiStudFrame(tk.Frame):
         self.chip_zone = tk.Frame(game_col, bg=felt_theme["felt"])
         self.chip_zone.pack(pady=(10, 0))
 
+        # The round-result panel floats in the bottom-left corner of the
+        # whole screen (see _show_result/_show_payout_panel), same as every
+        # other recent game -- parented to `self` so its place() coordinates
+        # are relative to the whole game screen, not chip_zone's pack stack.
+        self.payout_canvas = tk.Canvas(
+            self, width=PAYOUT_PANEL_WIDTH, height=PAYOUT_PANEL_HEIGHT,
+            bg=felt_theme["felt"], highlightthickness=0,
+        )
+
         self.chip_frame = tk.Frame(self.chip_zone, bg=felt_theme["felt"])
         tk.Label(
-            self.chip_frame, text="Tap a chip, then tap Ante / 3 Card Bonus / Jackpot to place it",
+            self.chip_frame, text="Tap a chip, then tap £ / 2 / 1 / 3 Card / Bonus / Jackpot to place it",
             bg=felt_theme["felt"], fg=theme.FG_DIM, font=theme.font(9),
         ).pack(pady=(0, 6))
         self.chip_row = tk.Frame(self.chip_frame, bg=felt_theme["felt"])
@@ -404,11 +393,6 @@ class MississippiStudFrame(tk.Frame):
         )
         self.clear_btn.pack(pady=(6, 0))
 
-        self.payout_canvas = tk.Canvas(
-            self.chip_zone, width=PAYOUT_PANEL_WIDTH, height=PAYOUT_PANEL_HEIGHT,
-            bg=felt_theme["felt"], highlightthickness=0,
-        )
-
         # Packed with its real CHIP_FRAME_PADY here (not a bare .pack())
         # before measuring -- chip_zone's fixed size below has to account
         # for that padding too, or the last child (Clear Bets) ends up
@@ -417,8 +401,8 @@ class MississippiStudFrame(tk.Frame):
         self.chip_frame.pack(pady=CHIP_FRAME_PADY)
         self.chip_frame.update_idletasks()
         self.chip_zone.configure(
-            width=max(self.chip_zone.winfo_reqwidth(), PAYOUT_PANEL_WIDTH),
-            height=max(self.chip_zone.winfo_reqheight(), PAYOUT_PANEL_HEIGHT),
+            width=self.chip_zone.winfo_reqwidth(),
+            height=self.chip_zone.winfo_reqheight(),
         )
         self.chip_zone.pack_propagate(False)
 
@@ -462,50 +446,69 @@ class MississippiStudFrame(tk.Frame):
         canvas.delete("all")
         w, h = PAYTABLE_WIDTH, PAYTABLE_HEIGHT
         felt_theme = self.app.settings.theme()
-        theme.recessed_panel(canvas, 0, 0, w, h, title="PAYTABLE", title_font_size=14,
+        theme.recessed_panel(canvas, 0, 0, w, h, title="PAYTABLE", title_font_size=13,
                               fill=felt_theme["felt_dark"], outline=felt_theme["accent"])
-        y = 46
+        y = 38
         for i, (title, rows) in enumerate(PAYTABLE_SECTIONS):
             if i:
                 canvas.create_line(20, y, w - 20, y, fill=theme.BORDER)
-                y += 12
+                y += 8
             y = self._draw_paytable_section(canvas, y, title, rows, felt_theme["accent"])
 
     def _draw_paytable_section(self, canvas, y, title, rows, accent):
+        # Tighter row pitch than every other game's own paytable panel --
+        # this one holds three full sections (21 rows total) rather than one
+        # or two, and still has to fit under the fixed window height.
         w = PAYTABLE_WIDTH
         canvas.create_text(20, y, text=title, fill=accent,
-                            font=theme.font(10, weight="bold"), anchor="w")
-        y += 20
+                            font=theme.font(8, weight="bold"), anchor="w")
+        y += 15
         for label, payout in rows:
-            text = payout if isinstance(payout, str) else f"{payout}:1"
-            canvas.create_text(20, y, text=label, fill=theme.FG, font=theme.font(9), anchor="w")
-            canvas.create_text(w - 20, y, text=text, fill=accent,
-                                font=theme.font(9, weight="bold"), anchor="e")
-            y += 19
+            canvas.create_text(20, y, text=label, fill=theme.FG, font=theme.font(8), anchor="w")
+            canvas.create_text(w - 20, y, text=_format_payout(payout), fill=accent,
+                                font=theme.font(8, weight="bold"), anchor="e")
+            y += 14
         return y
 
     # ------------------------------------------------------------------ betting table
     def _draw_table(self):
+        """The betting screen's own layout -- generously spaced, computed
+        fresh here rather than reusing the play screen's own tighter module
+        constants (same convention every prior game's betting screen has
+        followed)."""
         self.canvas.delete("all")
         w, h = CANVAS_WIDTH, CANVAS_HEIGHT
         cx = w / 2
 
-        ante_r = 55
-        bonus_r = 48
-        jackpot_r = JACKPOT_SPOT_R
-        gap = 50
-        content_h = 2 * jackpot_r + gap + 2 * ante_r
-        top = (h - content_h) * 0.68
-        jp_cy = top + jackpot_r
-        ante_cy = jp_cy + jackpot_r + gap + ante_r
+        base_r = 50
+        bonus_r = 42
+        three_card_r = 42
+        jackpot_r = 30
+        base_gap = 30
+        row_gap = 40
+        jackpot_gap = 34
 
-        self._draw_spot_jackpot(cx, jp_cy, jackpot_r)
-        self._draw_spot_circle("ante", cx, ante_cy, ante_r, "ANTE")
-        bonus_cx = cx + ante_r + 85 + bonus_r
-        self._draw_spot_diamond("bonus", bonus_cx, ante_cy, bonus_r, "3 CARD BONUS")
+        spacing = 2 * base_r + base_gap
+        left_cx, centre_cx, right_cx = cx - spacing, cx, cx + spacing
 
-        ante_left = cx - ante_r
-        self._draw_rules_button(ante_left / 2, ante_cy)
+        mid_r = max(bonus_r, three_card_r)
+        content_h = jackpot_r * 2 + jackpot_gap + mid_r * 2 + row_gap + base_r * 2
+        top = (h - content_h) * 0.55
+        jackpot_cy = top + jackpot_r
+        mid_cy = jackpot_cy + jackpot_r + jackpot_gap + mid_r
+        base_cy = mid_cy + mid_r + row_gap + base_r
+
+        three_card_cx = centre_cx
+        bonus_cx = right_cx
+        jackpot_cx = (three_card_cx + bonus_cx) / 2
+
+        self._draw_spot_jackpot(jackpot_cx, jackpot_cy, jackpot_r)
+        self._draw_spot_diamond("three_card", three_card_cx, mid_cy, three_card_r, "3 CARD")
+        self._draw_spot_circle("bonus", bonus_cx, mid_cy, bonus_r, "BONUS")
+        self._draw_spot_base_triple(left_cx, centre_cx, right_cx, base_cy, base_r)
+
+        left_edge = left_cx - base_r
+        self._draw_rules_button(left_edge / 2, base_cy)
 
     def _draw_rules_button(self, cx, cy):
         tag = "rules_button"
@@ -524,26 +527,29 @@ class MississippiStudFrame(tk.Frame):
 
     def _show_rules(self):
         dialogs.document(
-            self, "♠ Mississippi Stud -- Rules",
+            self, "♠ Let It Ride -- Rules",
             [
                 ("GAMEPLAY", [
-                    "**Betting:** Place an Ante (mandatory) plus 3 Card Bonus and Jackpot side "
-                    "bets (optional). Your balance must be at least 3x your Ante to deal.",
-                    "**Dealing:** You're dealt 2 cards face up; 3 community cards are dealt face "
-                    "down in the middle.",
-                    "**3rd Street:** Fold (forfeiting the Ante) or bet 1x-3x your Ante -- the first "
-                    "community card is then revealed.",
-                    "**4th Street:** Fold (forfeiting the Ante and 3rd Street bet) or bet 1x-3x your "
-                    "Ante -- the second community card is revealed.",
-                    "**5th Street:** Fold or bet 1x-3x your Ante -- the final community card is "
-                    "revealed and the hand is settled.",
-                    "**Resolution:** Your final hand is your 2 cards plus all 3 community cards. "
-                    "Every bet still in play (Ante + whichever streets you played) pays the SAME "
-                    "odds, looked up from that hand -- see the paytable. A Pair of 6s-10s pushes; "
-                    "anything below that loses.",
-                    "**3 Card Bonus:** Settled on the 3 community cards alone, independent of your "
-                    "own hand or fold -- it stays in action until all 3 are exposed, even if you "
-                    "fold before then.",
+                    "**Betting:** Place three EQUAL bets -- £ (always plays), 2 (second "
+                    "decision), and 1 (first decision) -- plus optional Bonus (£1), 3 Card "
+                    "(variable) and Jackpot (£1) side bets.",
+                    "**Dealing:** You're dealt 3 cards; the dealer's own 2 cards are dealt face "
+                    "down and act as shared community cards.",
+                    "**First decision:** Right after seeing your own 3 cards, Pull Back bet \"1\" "
+                    "(get it back) or Let It Ride -- the first community card is then revealed.",
+                    "**Second decision:** After that reveal, Pull Back bet \"2\" or Let It Ride -- "
+                    "the second community card is then revealed and your final 5-card hand "
+                    "(3 own cards + 2 community cards) is complete.",
+                    "**Resolution:** A Pair of Tens or better is needed to win -- every base bet "
+                    "still in play (£, plus 1/2 if not pulled back) pays independently at the "
+                    "paytable, or loses if the hand doesn't qualify.",
+                    "**Bonus:** Same final 5-card hand, needs Three of a Kind or better -- always "
+                    "resolves, regardless of what happened to bets 1/2.",
+                    "**3 Card:** Your own 3 cards only, needs a Pair or better -- always resolves "
+                    "independently.",
+                    "**Jackpot:** Same final 5-card hand, needs Three of a Kind or better to win "
+                    "anything -- shares the same progressive pool as every other game's own "
+                    "Jackpot side bet.",
                 ]),
                 ("HAND RANKINGS", [
                     ("High Card", [("Q", "h"), ("6", "s"), ("4", "d"), ("9", "c"), ("2", "s")]),
@@ -557,25 +563,45 @@ class MississippiStudFrame(tk.Frame):
                     ("Straight Flush", [("5", "d"), ("6", "d"), ("7", "d"), ("8", "d"), ("9", "d")]),
                 ]),
                 ("STRATEGY",
-                 "You always know 2 of your 5 cards up front, and see more of the board with each "
-                 "street -- fold as soon as a hand looks unlikely to reach a paying Pair of Jacks "
-                 "or better, since every bet you've already placed is forfeited the moment you do."),
+                 "Let it ride with a hand that's already a winner, or that has strong straight/"
+                 "flush/pair-improving potential once the community cards land -- pull back "
+                 "whenever the extra card(s) are unlikely to turn a currently-losing hand into a "
+                 "qualifying one, since a pulled-back bet is refunded in full rather than lost."),
             ],
         )
+
+    def _draw_spot_base_triple(self, left_cx, centre_cx, right_cx, cy, r):
+        amount = self.bets["base"]
+        felt_theme = self.app.settings.theme()
+        for tag, spot_cx, label in (
+            ("spot_base_left", left_cx, "£"),
+            ("spot_base_centre", centre_cx, "2"),
+            ("spot_base_right", right_cx, "1"),
+        ):
+            self.canvas.create_oval(spot_cx - r, cy - r, spot_cx + r, cy + r,
+                                     fill=felt_theme["felt_dark"], outline=felt_theme["accent"], width=2, tags=(tag,))
+            self.canvas.create_text(spot_cx, cy - r - 12, text=label, fill=theme.FG,
+                                     font=theme.font(11, weight="bold"), tags=(tag,))
+            if amount:
+                draw_chip_stack(self.canvas, tag, spot_cx, cy, amount, max_r=CHIP_LAYER_MAX_R * 0.7)
+            else:
+                self.canvas.create_text(spot_cx, cy, text="tap to\nbet", fill=theme.FG_DIM,
+                                         font=theme.font(9, weight="bold"), justify="center", tags=(tag,))
+            self._bind_spot(tag, "base")
 
     def _draw_spot_circle(self, key, cx, cy, r, label):
         tag = f"spot_{key}"
         amount = self.bets[key]
         felt_theme = self.app.settings.theme()
-        self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r,
-                                 fill=felt_theme["felt_dark"], outline=felt_theme["accent"], width=2, tags=(tag,))
+        self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=felt_theme["felt_dark"],
+                                 outline=felt_theme["accent"], width=2, tags=(tag,))
         self.canvas.create_text(cx, cy - r - 12, text=label, fill=theme.FG,
                                  font=theme.font(9, weight="bold"), tags=(tag,))
         if amount:
-            draw_chip_stack(self.canvas, tag, cx, cy, amount, max_r=CHIP_LAYER_MAX_R)
+            draw_chip_stack(self.canvas, tag, cx, cy, amount, max_r=CHIP_LAYER_MAX_R * 0.65)
         else:
-            self.canvas.create_text(cx, cy, text="tap to bet", fill=theme.FG_DIM,
-                                     font=theme.font(9, weight="bold"), tags=(tag,))
+            self.canvas.create_text(cx, cy, text="tap to\nbet", fill=theme.FG_DIM,
+                                     font=theme.font(8, weight="bold"), justify="center", tags=(tag,))
         self._bind_spot(tag, key)
 
     def _draw_spot_diamond(self, key, cx, cy, r, label):
@@ -584,27 +610,28 @@ class MississippiStudFrame(tk.Frame):
         felt_theme = self.app.settings.theme()
         theme.diamond(self.canvas, cx, cy, r, fill=felt_theme["felt_dark"],
                        outline=felt_theme["accent"], width=2, tags=(tag,))
-        self.canvas.create_text(cx + r + 10, cy, text=label, fill=theme.FG, anchor="w",
+        # Label above, not to the side -- this diamond sits close beside the
+        # Bonus circle (unlike Ultimate Texas Hold'em's own Trips diamond,
+        # which had open space to its right), so a side label would collide.
+        self.canvas.create_text(cx, cy - r - 12, text=label, fill=theme.FG,
                                  font=theme.font(9, weight="bold"), tags=(tag,))
         if amount:
-            draw_chip_stack(self.canvas, tag, cx, cy, amount, max_r=CHIP_LAYER_MAX_R * 0.75)
+            draw_chip_stack(self.canvas, tag, cx, cy, amount, max_r=CHIP_LAYER_MAX_R * 0.65)
         else:
             self.canvas.create_text(cx, cy, text="tap to\nbet", fill=theme.FG_DIM,
-                                     font=theme.font(9, weight="bold"), justify="center", tags=(tag,))
+                                     font=theme.font(8, weight="bold"), justify="center", tags=(tag,))
         self._bind_spot(tag, key)
 
     def _draw_spot_jackpot(self, cx, cy, r):
         """The £1 jackpot side bet -- an on/off spot, same breathing-glow
-        treatment every other game's own Jackpot spot uses (see e.g.
-        games/three_card_poker/ui.py's own _draw_spot_jackpot, which this
-        mirrors -- built independently for this game's own isolation, not
-        shared code)."""
+        treatment every other game's own Jackpot spot uses -- built
+        independently for this game's own isolation, not shared code."""
         tag = "spot_jackpot"
         felt_theme = self.app.settings.theme()
         placed = bool(self.bets["jackpot"])
         if placed:
             t = 0.5 + 0.5 * math.sin(self._jackpot_pulse_t)
-            outline_color = _lerp_color(felt_theme["felt_dark"], felt_theme["accent"], t)
+            outline_color = theme.lerp_color(felt_theme["felt_dark"], felt_theme["accent"], t)
         else:
             outline_color = felt_theme["accent"]
         self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=felt_theme["felt_dark"],
@@ -612,17 +639,10 @@ class MississippiStudFrame(tk.Frame):
         self.canvas.create_text(cx, cy - r - 12, text="JACKPOT", fill=theme.FG,
                                  font=theme.font(9, weight="bold"), tags=(tag,))
         if placed:
-            face, rim = CHIP_COLORS_BY_VALUE[1]
-            token_r = r - 10
-            self.canvas.create_oval(cx - token_r, cy - token_r, cx + token_r, cy + token_r,
-                                     fill=face, outline=rim, width=2, tags=(tag,))
-            self.canvas.create_oval(cx - token_r + 7, cy - token_r + 7, cx + token_r - 7, cy + token_r - 7,
-                                     outline="#ffffff", width=1, tags=(tag,))
-            self.canvas.create_text(cx, cy, text="£1", fill="#ffffff",
-                                     font=theme.font(11, weight="bold"), tags=(tag,))
+            draw_chip_stack(self.canvas, tag, cx, cy, self.bets["jackpot"], max_r=CHIP_LAYER_MAX_R * 0.6)
         else:
             self.canvas.create_text(cx, cy, text="tap to\nbet £1", fill=theme.FG_DIM,
-                                     font=theme.font(8, weight="bold"), justify="center", tags=(tag,))
+                                     font=theme.font(7, weight="bold"), justify="center", tags=(tag,))
         self._bind_spot(tag, "jackpot")
 
     def _bind_spot(self, tag, key):
@@ -641,36 +661,35 @@ class MississippiStudFrame(tk.Frame):
         self.after(33, self._pulse_jackpot)
 
     # ------------------------------------------------------------------ state transitions
+    def _show_payout_panel(self):
+        # Tucked closer into the true bottom-left corner than Ultimate Texas
+        # Hold'em's own panel (x=20/y=-20) -- this game's fan_canvas (3
+        # cards) starts further left than that game's own (2 cards), so a
+        # wider gap here still clipped into it.
+        self.payout_canvas.place(x=12, rely=1.0, y=-12, anchor="sw")
+
+    def _hide_payout_panel(self):
+        self.payout_canvas.place_forget()
+
     def _show_betting_controls(self):
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
         self.deal_btn.pack()
         self.action_frame.pack(pady=BETTING_ACTION_FRAME_PADY)
-        self.payout_canvas.pack_forget()
+        self._hide_payout_panel()
+        self.fan_canvas.pack_forget()
         self.chip_frame.pack(pady=CHIP_FRAME_PADY)
         self._draw_table()
         self._update_total()
 
-    def _show_street_decision_controls(self):
+    def _show_stage_controls(self):
         self.chip_frame.pack_forget()
-        self.payout_canvas.pack_forget()
+        self._hide_payout_panel()
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
         self.action_frame.pack(pady=(8, 0))
-        self.bet1_btn.pack(side="left", padx=6)
-        self.bet2_btn.pack(side="left", padx=6)
-        self.bet3_btn.pack(side="left", padx=6)
-        self.fold_btn.pack(side="left", padx=(18, 0))
-        for mult, btn in ((1, self.bet1_btn), (2, self.bet2_btn), (3, self.bet3_btn)):
-            self._set_bet_button_enabled(btn, self._street_bet_enabled(mult))
-
-    def _set_bet_button_enabled(self, btn, enabled):
-        if enabled:
-            btn.configure(state="normal", bg=theme.ACCENT_DIM_BG, fg=theme.FG,
-                          highlightbackground=theme.ACCENT)
-        else:
-            btn.configure(state="disabled", bg=theme.GREY_BTN_BG, fg=theme.GREY_BTN_TEXT,
-                          highlightbackground=theme.GREY_BTN_BORDER)
+        self.pull_back_btn.pack(side="left", padx=6)
+        self.let_it_ride_btn.pack(side="left", padx=(18, 0))
 
     def _show_round_over_controls(self):
         self.chip_frame.pack_forget()
@@ -682,7 +701,7 @@ class MississippiStudFrame(tk.Frame):
 
     def _show_no_controls(self):
         self.chip_frame.pack_forget()
-        self.payout_canvas.pack_forget()
+        self._hide_payout_panel()
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
         self.action_frame.pack(pady=(8, 0))
@@ -691,18 +710,20 @@ class MississippiStudFrame(tk.Frame):
     def _on_place_chip(self, key):
         if self.state != "betting":
             return
-        if key == "jackpot":
-            self._toggle_jackpot_bet()
+        if key in ("bonus", "jackpot"):
+            self._toggle_flat_bet(key)
         else:
             self._adjust_bet(key, self.selected_chip)
 
-    def _toggle_jackpot_bet(self):
+    def _toggle_flat_bet(self, key):
+        amount = lir_logic.BONUS_BET_AMOUNT if key == "bonus" else lir_logic.JACKPOT_BET_AMOUNT
         trial_bets = dict(self.bets)
-        trial_bets["jackpot"] = 0 if self.bets["jackpot"] else int(JACKPOT_BET_AMOUNT)
-        if trial_bets["jackpot"] and _max_deal_cost(trial_bets) > self.app.finance.balance + 1e-9:
+        trial_bets[key] = 0 if self.bets[key] else int(amount)
+        if trial_bets[key] and _max_deal_cost(trial_bets) > self.app.finance.balance + 1e-9:
+            label = "Bonus" if key == "bonus" else "Jackpot"
             dialogs.info(
-                self, "$ jackpot --check-funds",
-                "You don't have enough balance to place the £1 Jackpot bet.",
+                self, f"$ {key} --check-funds",
+                f"You don't have enough balance to place the £{amount:.0f} {label} bet.",
                 accent=theme.WARN,
             )
             return
@@ -716,10 +737,10 @@ class MississippiStudFrame(tk.Frame):
         trial_bets[key] += delta
         balance = self.app.finance.balance
         if _max_deal_cost(trial_bets) > balance + 1e-9:
-            if key == "ante":
+            if key == "base":
                 message = (
-                    "Your balance must be at least 3x your Ante to deal (so you're able to see "
-                    "every street through). Reduce your Ante or add funds."
+                    "Your balance must cover 3 equal bets (£ / 2 / 1) to deal. Reduce your bet "
+                    "or add funds."
                 )
             else:
                 message = "You don't have enough balance to place that chip."
@@ -740,29 +761,34 @@ class MississippiStudFrame(tk.Frame):
         self._persist_state()
 
     def _update_total(self):
-        self.total_lbl.configure(text=f"Total bet: £{sum(self.bets.values())}")
+        # "base" counts 3x -- the £/2/1 spots are always equal and all three
+        # are placed at deal time (see the module docstring), even though
+        # self.bets only stores one number for all three.
+        total = 3 * self.bets["base"] + self.bets["bonus"] + self.bets["three_card"] + self.bets["jackpot"]
+        self.total_lbl.configure(text=f"Total bet: £{total}")
 
     def _persist_state(self):
         save_json(self.save_path, {"bets": self.bets, "selected_chip": self.selected_chip})
 
     def _sanitize_bets(self, persist=True):
         if _max_deal_cost(self.bets) > self.app.finance.balance:
-            self.bets = {"ante": 0, "bonus": 0, "jackpot": 0}
+            self.bets = {"base": 0, "bonus": 0, "three_card": 0, "jackpot": 0}
             if persist:
                 self._persist_state()
 
     # ------------------------------------------------------------------ round flow
     def _on_deal(self):
-        ante, bonus, jackpot = self.bets["ante"], self.bets["bonus"], self.bets["jackpot"]
-        if ante <= 0:
-            dialogs.info(self, "$ deal --require-ante", "You must place an Ante bet to deal.", accent=theme.WARN)
+        base, bonus, three_card, jackpot = (
+            self.bets["base"], self.bets["bonus"], self.bets["three_card"], self.bets["jackpot"]
+        )
+        if base <= 0:
+            dialogs.info(self, "$ deal --require-bet", "You must place a bet to deal.", accent=theme.WARN)
             return
 
         if not self.app.finance.can_afford(_max_deal_cost(self.bets)):
             choice = dialogs.choice(
                 self, "$ deal --check-funds",
-                "You don't have enough balance to cover these bets plus the streets ahead "
-                "(your balance must be at least 3x your Ante to begin a hand).",
+                "You don't have enough balance to cover these bets.",
                 [("Go Home", "home"), ("Cashier", "cashier")],
             )
             if choice == "home":
@@ -771,13 +797,13 @@ class MississippiStudFrame(tk.Frame):
                 self.app.show_frame("finances")
             return
 
-        total_upfront = ante + bonus + jackpot
+        total_upfront = lir_logic.total_upfront_cost(base, bonus, three_card, jackpot)
         self.app.finance.place_wager(total_upfront)
         self._refresh_balance()
 
-        self.result = self.game.deal(ante, bonus_bet=bonus, jackpot_bet=jackpot)
+        self.result = self.game.deal(base, bonus_bet=bonus, three_card_bet=three_card, jackpot_bet=jackpot)
         self.state = "playing"
-        self.street = 3
+        self.stage = "decision1"
 
         self.result_lbl.configure(text="Dealing...", fg=theme.FG)
         self._show_no_controls()
@@ -789,86 +815,44 @@ class MississippiStudFrame(tk.Frame):
         self._draw_play_zones()
         self._deal_player_cards()
 
-    def _street_bet_enabled(self, multiplier):
-        assert self.result is not None
-        ante = self.result.ante_bet
-        bet_amount = ante * multiplier
-        balance = self.app.finance.balance
-        if balance + 1e-9 < bet_amount:
-            return False
-        if self.street != 5 and multiplier > 1 and balance - bet_amount + 1e-9 < ante:
-            return False
-        return True
-
-    def _on_bet(self, multiplier):
+    def _on_pull_back(self):
         if self.state != "playing":
             return
-        if not self._street_bet_enabled(multiplier):
-            return
         assert self.result is not None
-        street = self.street
-        ante = self.result.ante_bet
-        bet_amount = ante * multiplier
-        if not self.app.finance.can_afford(bet_amount):
-            dialogs.info(self, "$ bet --check-funds", "You don't have enough balance to place that bet.",
-                          accent=theme.WARN)
-            return
-
-        self.app.finance.place_wager(bet_amount)
+        self._show_no_controls()
+        key = "bet1" if self.stage == "decision1" else "bet2"
+        decide = self.game.decide_bet1 if key == "bet1" else self.game.decide_bet2
+        refund = decide(False)
+        self.app.finance.add_return(refund)
         self._refresh_balance()
-        self.game.bet_street(street, multiplier)
-        self._show_no_controls()
+        cx, cy, spot_tag, max_r = self._base_layout()[key]
+        self._animate_chip_refund(spot_tag, refund, cx, cy, max_r, on_done=self._advance_after_decision)
 
-        cx, cy, r = self._street_spot_layout(street)
-
-        def chips_placed():
-            self._reveal_community_cards([street - 3], on_done=self._after_street_bet)
-
-        # Tag matches _payout_chip_items' own spot_tag + "_chips" convention
-        # (spot_tag="street_spot_{street}") so the payout animation's
-        # _chip_move_away/_chip_move_in can find and clear these chips --
-        # see _draw_street_spot for the matching static circle+label tag.
-        self._animate_chip_place(f"street_spot_{street}_chips", cx, cy, bet_amount, r * 0.85, on_done=chips_placed)
-
-    def _after_street_bet(self):
-        if self.street < 5:
-            self.street += 1
-            self._show_street_decision_controls()
-        else:
-            self._settle_round()
-
-    def _on_fold(self):
+    def _on_let_it_ride(self):
         if self.state != "playing":
             return
         assert self.result is not None
-        street = self.street
-        self.game.fold(street)
         self._show_no_controls()
-        if self.result.bonus_bet > 0:
-            self._fold_with_bonus()
+        if self.stage == "decision1":
+            self.game.decide_bet1(True)
         else:
-            self._fold_without_bonus()
+            self.game.decide_bet2(True)
+        self._advance_after_decision()
 
-    def _fold_with_bonus(self):
-        """Cards tuck under the Bonus spot FIRST -- immediately on folding,
-        before any still-hidden community card is exposed -- and only then
-        does the board get force-revealed to settle the Bonus. Matches the
-        real feel of folding: your own hand clears away right away, the
-        board is what plays out afterwards."""
-        assert self.result is not None
-        remaining = list(range(self.result.revealed_count, 3))
-        self.game.reveal_remaining_for_bonus()
+    def _advance_after_decision(self):
+        self._after_delay(DECISION_TO_REVEAL_PAUSE_MS, self._reveal_after_decision)
 
-        def after_tuck():
-            if remaining:
-                self._reveal_community_cards(remaining, on_done=self._settle_round)
-            else:
-                self._settle_round()
+    def _reveal_after_decision(self):
+        if self.stage == "decision1":
+            self.game.reveal_first_card()
+            self._animate_community_reveal([0], self._enter_decision2)
+        else:
+            self.game.reveal_second_card()
+            self._animate_community_reveal([1], self._settle_round)
 
-        self._flip_fan_face_down(lambda: self._tuck_cards_under_bonus(after_tuck))
-
-    def _fold_without_bonus(self):
-        self._flip_fan_face_down(lambda: self._fly_cards_away(self._settle_round))
+    def _enter_decision2(self):
+        self.stage = "decision2"
+        self._show_stage_controls()
 
     def _new_deal(self):
         assert self.result is not None, "_new_deal called before a round was ever dealt"
@@ -886,47 +870,59 @@ class MississippiStudFrame(tk.Frame):
 
     # ------------------------------------------------------------------ card-view rendering
     def _community_slot_x(self, i):
-        return CARD_ROW_START_X + i * CARD_ROW_GAP
+        return COMMUNITY_MAT_X1 + COMMUNITY_MAT_MARGIN + i * CARD_ROW_GAP
 
-    def _street_spot_layout(self, street):
-        return STREET_ROW_CX[street], STREET_ROW_CY, STREET_ROW_R
+    def _base_layout(self):
+        return {
+            "ante": (BASE_LEFT_CX, BASE_CY, "spot_base_left", ROW_CHIP_MAX_R),
+            "bet2": (BASE_CENTRE_CX, BASE_CY, "spot_base_centre", ROW_CHIP_MAX_R),
+            "bet1": (BASE_RIGHT_CX, BASE_CY, "spot_base_right", ROW_CHIP_MAX_R),
+        }
+
+    def _draw_zone_backgrounds(self):
+        """Just the community/dealer mat + its label (tag "zone_bg") --
+        split out so a live theme switch mid-round (see _apply_theme) can
+        refresh its colours without touching any already-dealt/already-
+        revealed card, which a full canvas.delete("all") + redraw would
+        otherwise destroy."""
+        felt_theme = self.app.settings.theme()
+        theme.rounded_rect(
+            self.canvas, COMMUNITY_MAT_X1, DEALER_MAT_TOP, COMMUNITY_MAT_X2, DEALER_MAT_BOTTOM,
+            radius=DEALER_MAT_RADIUS, fill=felt_theme["felt_dark"], outline=felt_theme["accent"], width=2,
+            tags=("zone_bg",),
+        )
+        self.canvas.create_text((COMMUNITY_MAT_X1 + COMMUNITY_MAT_X2) / 2, DEALER_MAT_LABEL_Y, text="DEALER",
+                                 fill=theme.ACCENT, font=theme.font(9, weight="bold"), tags=("zone_bg",))
 
     def _draw_play_zones(self):
         assert self.result is not None
         self.canvas.delete("all")
-        felt_theme = self.app.settings.theme()
-        theme.rounded_rect(
-            self.canvas, DEALER_MAT_X1, DEALER_MAT_TOP, DEALER_MAT_X2, DEALER_MAT_BOTTOM, radius=DEALER_MAT_RADIUS,
-            fill=felt_theme["felt_dark"], outline=felt_theme["accent"], width=2, tags=("zone_bg",),
-        )
-        for i in range(3):
-            x = self._community_slot_x(i) + CARD_WIDTH / 2
-            self.canvas.create_text(x, DEALER_MAT_LABEL_Y, text=COMMUNITY_LABELS[i], fill=theme.ACCENT,
-                                     font=theme.font(9, weight="bold"), tags=("zone_bg",))
-            draw_card_back(self.canvas, self._community_slot_x(i), DEALER_Y, felt_theme["felt"],
-                            felt_theme["accent"], tags=(f"community_card_{i}",))
+        self._draw_zone_backgrounds()
 
         if self.bets["jackpot"]:
-            self._draw_strip_circle("jackpot", JACKPOT_STRIP_CX, JACKPOT_BONUS_CY, JACKPOT_SPOT_R,
+            self._draw_strip_circle("jackpot", JACKPOT_CX, JACKPOT_CY, JACKPOT_SPOT_R,
                                      "JACKPOT", self.bets["jackpot"])
+        if self.bets["three_card"]:
+            self._draw_strip_diamond("three_card", THREE_CARD_CX, MID_CY, THREE_CARD_SPOT_R,
+                                      "3 CARD", self.bets["three_card"])
         if self.bets["bonus"]:
-            self._draw_strip_diamond("bonus", BONUS_STRIP_CX, JACKPOT_BONUS_CY, BONUS_SPOT_R,
-                                      "3 CARD BONUS", self.bets["bonus"])
+            self._draw_strip_circle("bonus", BONUS_CX, MID_CY, BONUS_SPOT_R, "BONUS", self.bets["bonus"])
 
-        for street in (3, 4, 5):
-            self._draw_street_spot(street)
+        self._draw_strip_base_triple(self.result.ante_bet)
 
-        self._draw_strip_circle("ante", ANTE_CX, ANTE_CY, ANTE_R, "ANTE", self.result.ante_bet)
-
-    def _draw_street_spot(self, street):
-        tag = f"street_spot_{street}"
-        self.canvas.delete(tag)
-        cx, cy, r = self._street_spot_layout(street)
+    def _draw_strip_base_triple(self, base_bet):
         felt_theme = self.app.settings.theme()
-        self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=felt_theme["felt_dark"],
-                                 outline=felt_theme["accent"], width=2, tags=(tag,))
-        self.canvas.create_text(cx, cy - r - 12, text=STREET_LABELS[street], fill=theme.FG,
-                                 font=theme.font(8, weight="bold"), tags=(tag,))
+        for tag, spot_cx, label in (
+            ("spot_base_left", BASE_LEFT_CX, "£"),
+            ("spot_base_centre", BASE_CENTRE_CX, "2"),
+            ("spot_base_right", BASE_RIGHT_CX, "1"),
+        ):
+            self.canvas.create_oval(spot_cx - BASE_R, BASE_CY - BASE_R, spot_cx + BASE_R, BASE_CY + BASE_R,
+                                     fill=felt_theme["felt_dark"], outline=felt_theme["accent"], width=2,
+                                     tags=(tag,))
+            self.canvas.create_text(spot_cx, BASE_CY - BASE_R - 10, text=label, fill=theme.FG,
+                                     font=theme.font(10, weight="bold"), tags=(tag,))
+            draw_chip_stack(self.canvas, (tag, f"{tag}_chips"), spot_cx, BASE_CY, base_bet, max_r=ROW_CHIP_MAX_R)
 
     def _draw_strip_circle(self, key, cx, cy, r, label, amount):
         tag = f"strip_{key}"
@@ -936,7 +932,7 @@ class MississippiStudFrame(tk.Frame):
                                  outline=felt_theme["accent"], width=2, tags=(tag,))
         self.canvas.create_text(cx, cy - r - 10, text=label, fill=theme.FG,
                                  font=theme.font(9, weight="bold"), tags=(tag,))
-        draw_chip_stack(self.canvas, (tag, f"{tag}_chips"), cx, cy, amount, max_r=20)
+        draw_chip_stack(self.canvas, (tag, f"{tag}_chips"), cx, cy, amount, max_r=SIDE_CHIP_MAX_R)
 
     def _draw_strip_diamond(self, key, cx, cy, r, label, amount):
         tag = f"strip_{key}"
@@ -944,9 +940,9 @@ class MississippiStudFrame(tk.Frame):
         felt_theme = self.app.settings.theme()
         theme.diamond(self.canvas, cx, cy, r, fill=felt_theme["felt_dark"],
                        outline=felt_theme["accent"], width=2, tags=(tag,))
-        self.canvas.create_text(cx + r + 8, cy, text=label, fill=theme.FG, anchor="w",
+        self.canvas.create_text(cx, cy - r - 10, text=label, fill=theme.FG,
                                  font=theme.font(9, weight="bold"), tags=(tag,))
-        draw_chip_stack(self.canvas, (tag, f"{tag}_chips"), cx, cy, amount, max_r=18)
+        draw_chip_stack(self.canvas, (tag, f"{tag}_chips"), cx, cy, amount, max_r=SIDE_CHIP_MAX_R)
 
     def _draw_player_card_at(self, i, card, x, y, face_up=True):
         tag = f"player_card_{i}"
@@ -958,9 +954,8 @@ class MississippiStudFrame(tk.Frame):
                             self.app.settings.theme()["accent"], tags=(tag,))
 
     def _fan_slots(self):
-        cx = FAN_CANVAS_WIDTH / 2
-        xs = [cx - FAN_GAP / 2 - CARD_WIDTH / 2, cx + FAN_GAP / 2 - CARD_WIDTH / 2]
-        return [(x, FAN_Y) for x in xs]
+        start_x = FAN_CANVAS_WIDTH / 2 - _FAN_TOTAL_W / 2
+        return [(start_x + i * (CARD_WIDTH + FAN_GAP), FAN_Y) for i in range(3)]
 
     def _draw_fan_mat(self):
         felt_theme = self.app.settings.theme()
@@ -1030,45 +1025,74 @@ class MississippiStudFrame(tk.Frame):
 
         self._animate(duration, frame, on_done=on_done)
 
-    def _animate_chip_place(self, tag, cx, cy, amount, max_r, on_done=None):
-        def frame(t):
-            self.canvas.delete(tag)
-            r = max_r * t
-            if r > 2:
-                draw_chip_stack(self.canvas, tag, cx, cy, amount, r)
-
-        self._animate(CHIP_PLACE_MS, frame, on_done=on_done)
-
-    # ------------------------------------------------------------------ deal-in / streets / fold
+    # ------------------------------------------------------------------ deal-in / reveal / refund
     def _deal_player_cards(self):
         assert self.result is not None
         cards = self.result.player_cards
         fan_slots = self._fan_slots()
+        n = len(fan_slots)
 
         def deal_one(i):
             tx, ty = fan_slots[i]
             sx, sy = tx, ty - 90
 
             def frame(t, i=i, sx=sx, sy=sy, tx=tx, ty=ty):
-                self._draw_player_card_at(i, cards[i], sx + (tx - sx) * t, sy + (ty - sy) * t, face_up=True)
+                self._draw_player_card_at(i, cards[i], sx + (tx - sx) * t, sy + (ty - sy) * t, face_up=False)
 
-            self._animate(DEAL_IN_DROP_MS, frame, on_done=(self._on_player_cards_dealt if i == 1 else None))
+            self._animate(DEAL_IN_DROP_MS, frame, on_done=(self._flip_player_cards_up if i == n - 1 else None))
 
         if self.app.settings.get("animations_enabled"):
-            self.after(350, lambda: self._run_staggered(2, DEAL_IN_STAGGER_MS, deal_one))
+            self.after(350, lambda: self._run_staggered(n, DEAL_IN_STAGGER_MS, deal_one))
         else:
-            self._run_staggered(2, DEAL_IN_STAGGER_MS, deal_one)
+            self._run_staggered(n, DEAL_IN_STAGGER_MS, deal_one)
 
-    def _on_player_cards_dealt(self):
-        self.result_lbl.configure(text="Your cards are dealt. Play or Fold?", fg=theme.FG)
-        self._show_street_decision_controls()
+    def _flip_player_cards_up(self):
+        """The player's own 3 cards deal in face down, then immediately
+        flip face up so they can actually see their own hand -- the
+        dealer's own 2 cards (dealt next) stay face down until each is
+        individually revealed by a decision."""
+        assert self.result is not None
+        cards = self.result.player_cards
+        slots = self._fan_slots()
+        n = len(slots)
 
-    def _reveal_community_cards(self, indices, on_done):
-        """Flips whichever of the 3 community cards are in `indices` face
-        up, in order -- either the single card a street bet just revealed,
-        or (on a Bonus-active fold) every remaining one at once."""
+        def flip_one(i):
+            sx, sy = slots[i]
+            cx_slot = sx + CARD_WIDTH / 2
+            self._animate_flip(
+                self.fan_canvas, f"player_card_{i}", cx_slot, sy, cards[i], reveal=True,
+                duration=COMMUNITY_FLIP_MS, on_done=(self._deal_dealer_cards_facedown if i == n - 1 else None),
+            )
+
+        self._run_staggered(n, 90, flip_one)
+
+    def _deal_dealer_cards_facedown(self):
+        n = 2
+
+        def deal_one(i):
+            tx = self._community_slot_x(i)
+            ty = DEALER_Y
+            sx, sy = tx, ty - 90
+
+            def frame(t, i=i, sx=sx, sy=sy, tx=tx, ty=ty):
+                self.canvas.delete(f"community_card_{i}")
+                x = sx + (tx - sx) * t
+                y = sy + (ty - sy) * t
+                felt_theme = self.app.settings.theme()
+                draw_card_back(self.canvas, x, y, felt_theme["felt"], felt_theme["accent"],
+                                tags=(f"community_card_{i}",))
+
+            self._animate(DEAL_IN_DROP_MS, frame, on_done=(self._on_deal_complete if i == n - 1 else None))
+
+        self._run_staggered(n, DEAL_IN_STAGGER_MS, deal_one)
+
+    def _on_deal_complete(self):
+        self.result_lbl.configure(text="Your cards are dealt. Let it?", fg=theme.FG)
+        self._show_stage_controls()
+
+    def _animate_community_reveal(self, indices, on_done):
+        assert self.result is not None
         result = self.result
-        assert result is not None
 
         def flip_one(pos):
             i = indices[pos]
@@ -1081,128 +1105,91 @@ class MississippiStudFrame(tk.Frame):
 
         self._run_staggered(len(indices), COMMUNITY_FLIP_STAGGER_MS, flip_one)
 
-    def _flip_fan_face_down(self, on_done):
-        assert self.result is not None
-        cards = self.result.player_cards
-        slots = self._fan_slots()
+    def _animate_chip_refund(self, spot_tag, amount, cx, cy, max_r, on_done):
+        """A Pull Back's chips shrink and slide away from their own spot
+        toward the player (PULL_BACK_TARGET, the same off-canvas-toward-the-
+        -player convention every other game's own end-of-round chip sweep
+        uses) -- there's no existing precedent for a mid-round, single-spot
+        refund elsewhere in this app, so this is built fresh from the same
+        _animate-based shrink/slide primitive those sweeps use."""
+        chips_tag = f"{spot_tag}_chips"
+        self.canvas.delete(chips_tag)
+        travel_tag = f"chip_refund_{spot_tag}"
+        target_x, target_y = PULL_BACK_TARGET
 
-        def flip_one(i):
-            sx, sy = slots[i]
-            cx_slot = sx + CARD_WIDTH / 2
-            self._animate_flip(
-                self.fan_canvas, f"player_card_{i}", cx_slot, sy, cards[i], reveal=False, duration=FOLD_FLIP_MS,
-                on_done=(on_done if i == len(slots) - 1 else None),
-            )
+        def frame(t):
+            tx = cx + (target_x - cx) * t
+            ty = cy + (target_y - cy) * t
+            self.canvas.delete(travel_tag)
+            r = max_r * (1 - t)
+            if r > 2:
+                draw_chip_stack(self.canvas, travel_tag, tx, ty, amount, r)
 
-        self._run_staggered(len(slots), 70, flip_one)
+        def arrived():
+            self.canvas.delete(travel_tag)
+            if on_done:
+                on_done()
 
-    def _fly_cards_away(self, on_done):
-        slots = self._fan_slots()
-
-        def slide_one(i):
-            sx, sy = slots[i]
-
-            def frame(t, sx=sx, sy=sy):
-                tx, ty = FOLD_FLY_TARGET
-                self._draw_player_card_at(i, None, sx + (tx - sx) * t, sy + (ty - sy) * t, face_up=False)
-
-            self._animate(FOLD_FLY_MS, frame, on_done=(on_done if i == len(slots) - 1 else None))
-
-        self._run_staggered(len(slots), FOLD_FLY_STAGGER_MS, slide_one)
-
-    def _tuck_cards_under_bonus(self, on_done):
-        """Fold, with an active Bonus bet: the (already face-down) player
-        cards slide from the fan up to rest tucked just under the Bonus
-        spot -- still visibly "in play" since the Bonus hasn't settled yet.
-        A literal cross-canvas slide isn't possible (fan_canvas and
-        self.canvas are separate widgets), so like every other game's own
-        "tuck under a spot" move, this is really two animations timed to
-        read as one: the fan shrinks away to a point, then the cards grow
-        back in at the Bonus spot."""
-        assert self.result is not None
-        cards = self.result.player_cards
-        fan_slots = self._fan_slots()
-        offsets = [-REST_CARD_FAN_OFFSET / 2, REST_CARD_FAN_OFFSET / 2]
-        vanish_cx, vanish_cy = FAN_CANVAS_WIDTH / 2, 0
-
-        def vanish_frame(t):
-            for i, (sx, sy) in enumerate(fan_slots):
-                scx, scy = sx + CARD_WIDTH / 2, sy + CARD_HEIGHT / 2
-                cx = scx + (vanish_cx - scx) * t
-                cy = scy + (vanish_cy - scy) * t
-                w = CARD_WIDTH * (1 - t)
-                h = CARD_HEIGHT * (1 - t)
-                tag = f"player_card_{i}"
-                self.fan_canvas.delete(tag)
-                if w > 3 and h > 3:
-                    draw_card_back(self.fan_canvas, cx - w / 2, cy - h / 2, self._current_felt,
-                                    self.app.settings.theme()["accent"], width=w, height=h, tags=(tag,))
-
-        def grow_frame(t):
-            for i in range(2):
-                tcx, tcy = BONUS_STRIP_CX + offsets[i], JACKPOT_BONUS_CY
-                w = REST_CARD_WIDTH * t
-                h = REST_CARD_HEIGHT * t
-                tag = f"player_card_{i}"
-                self.canvas.delete(tag)
-                if w > 3 and h > 3:
-                    draw_card_back(self.canvas, tcx - w / 2, tcy - h / 2, self._current_felt,
-                                    self.app.settings.theme()["accent"], width=w, height=h,
-                                    tags=(tag, "folded_hand"))
-                    self.canvas.tag_lower(tag, "strip_bonus")
-
-        def start_grow():
-            self._animate(BONUS_TUCK_GROW_MS, grow_frame, on_done=on_done)
-
-        self._animate(BONUS_TUCK_VANISH_MS, vanish_frame, on_done=start_grow)
+        self._animate(REFUND_MOVE_MS, frame, on_done=arrived)
 
     # ------------------------------------------------------------------ settle / payout
     def _settle_round(self):
         assert self.result is not None
         result = self.game.settle(jackpot_amount=self.app.jackpot.amount)
 
-        if result.total_returned > 0:
-            self.app.finance.add_return(result.total_returned)
-        self.app.finance.record_round_played(result.net_result)
-        self.app.game_stats.record_round_net(GAME_KEY, result.net_result)
         for key, bet, ret in self._resolved_bet_totals(result):
             self.app.game_stats.record_bet(GAME_KEY, key, bet, ret)
+        self.app.game_stats.record_round_net(GAME_KEY, result.net_result)
         self.app.game_stats.record_hand(GAME_KEY, hand_outcome_label(result))
         if result.jackpot_won:
             self.app.jackpot.win()
         elif result.jackpot_pool_partial_fraction:
             self.app.jackpot.set_amount(self.app.jackpot.amount * (1 - result.jackpot_pool_partial_fraction))
+        self.app.finance.record_round_played(result.net_result)
+
+        # bet1/bet2 pulled back mid-round were already credited back to the
+        # balance the moment that decision was made (see _on_pull_back) --
+        # only whatever's still actually sitting on the table gets credited
+        # here, or Pull Back's own refund would be double-counted.
+        payout_items = self._payout_chip_items(result)
+        remaining_credit = sum(it["ret"] for it in payout_items)
+        if remaining_credit > 0:
+            self.app.finance.add_return(remaining_credit)
 
         self._show_no_controls()
-        self._animate_payouts(result, lambda: self._on_round_settled(result))
+        self._animate_payouts(payout_items, lambda: self._on_round_settled(result))
 
     def _resolved_bet_totals(self, result):
         totals = []
         if result.ante_bet:
             totals.append(("ante", result.ante_bet, result.ante_return))
-        if result.third_street_bet:
-            totals.append(("third_street", result.third_street_bet, result.third_street_return))
-        if result.fourth_street_bet:
-            totals.append(("fourth_street", result.fourth_street_bet, result.fourth_street_return))
-        if result.fifth_street_bet:
-            totals.append(("fifth_street", result.fifth_street_bet, result.fifth_street_return))
+        if result.bet1_bet:
+            totals.append(("bet1", result.bet1_bet, result.bet1_return))
+        if result.bet2_bet:
+            totals.append(("bet2", result.bet2_bet, result.bet2_return))
         if result.bonus_bet:
             totals.append(("bonus", result.bonus_bet, result.bonus_return))
+        if result.three_card_bet:
+            totals.append(("three_card", result.three_card_bet, result.three_card_return))
         if result.jackpot_bet:
             totals.append(("jackpot", result.jackpot_bet, result.jackpot_return))
         return totals
 
     def _payout_chip_items(self, result):
-        layout = {
-            "ante": (ANTE_CX, ANTE_CY, "strip_ante", 20),
-            "third_street": (*self._street_spot_layout(3)[:2], "street_spot_3", STREET_ROW_R * 0.85),
-            "fourth_street": (*self._street_spot_layout(4)[:2], "street_spot_4", STREET_ROW_R * 0.85),
-            "fifth_street": (*self._street_spot_layout(5)[:2], "street_spot_5", STREET_ROW_R * 0.85),
-            "bonus": (BONUS_STRIP_CX, JACKPOT_BONUS_CY, "strip_bonus", 18),
-            "jackpot": (JACKPOT_STRIP_CX, JACKPOT_BONUS_CY, "strip_jackpot", 20),
-        }
+        layout = self._base_layout()
+        layout.update({
+            "bonus": (BONUS_CX, MID_CY, "strip_bonus", SIDE_CHIP_MAX_R),
+            "three_card": (THREE_CARD_CX, MID_CY, "strip_three_card", SIDE_CHIP_MAX_R),
+            "jackpot": (JACKPOT_CX, JACKPOT_CY, "strip_jackpot", SIDE_CHIP_MAX_R),
+        })
         items = []
         for key, bet, ret in self._resolved_bet_totals(result):
+            # A pulled-back bet1/bet2 has no chips left on the table to
+            # animate -- they already flew away via _animate_chip_refund.
+            if key == "bet1" and not result.bet1_active:
+                continue
+            if key == "bet2" and not result.bet2_active:
+                continue
             cx, cy, spot_tag, max_r = layout[key]
             items.append(dict(key=key, bet=bet, ret=ret, cx=cx, cy=cy, spot_tag=spot_tag, max_r=max_r))
         return items
@@ -1278,11 +1265,9 @@ class MississippiStudFrame(tk.Frame):
 
         self._animate(280, frame, on_done=finish)
 
-    def _animate_payouts(self, result, on_done):
-        items = self._payout_chip_items(result)
+    def _animate_payouts(self, items, on_done):
         losing = [it for it in items if it["ret"] == 0]
         winning = [it for it in items if it["ret"] > it["bet"]]
-
         stages = (
             [lambda cb, it=it: self._chip_move_away(it, cb) for it in losing]
             + [lambda cb, it=it: self._chip_move_in(it, cb) for it in winning]
@@ -1290,14 +1275,9 @@ class MississippiStudFrame(tk.Frame):
         self._run_sequential(stages, on_done)
 
     def _on_round_settled(self, result):
-        # fan_canvas is hidden once resolved -- same convention every other
-        # game's own fanned hand follows (and needed here too: the fixed,
-        # non-resizable 1200x820 window has no spare room to keep it packed
-        # alongside the full play-screen canvas and the payout panel at
-        # once). The final hand's own rank is still named in the result
-        # caption (see _show_result), and the 3 community cards that made it
-        # stay visible on the felt above.
-        self.fan_canvas.pack_forget()
+        # fan_canvas stays visible here even once resolved -- the round-
+        # result panel lives in its own floating corner (see
+        # _show_payout_panel) rather than taking fan_canvas's old spot.
         self._refresh_balance()
         self.app.on_balance_changed()
         self._show_result(result)
@@ -1305,46 +1285,36 @@ class MississippiStudFrame(tk.Frame):
         self.state = "resolved"
 
     def _show_result(self, result):
-        headline = {
-            "fold": "You folded.",
-            "win": "You win!",
-            "lose": "No qualifying hand.",
-            "push": "Push — stakes returned.",
-        }[result.outcome]
-        color = {
-            "fold": theme.FG_DIM,
-            "win": theme.WIN_COLOR,
-            "lose": theme.LOSE_COLOR,
-            "push": theme.PUSH_COLOR,
-        }[result.outcome]
-
-        if result.folded:
-            text = headline
+        hand_name = _TIER_DISPLAY_NAMES[result.five_card_tier]
+        if result.qualified:
+            mult = lir_logic.BASIC_GAME_PAYOUT[result.five_card_tier]
+            text = f"{hand_name} - base bet(s) pay {mult}:1."
+            color = theme.WIN_COLOR
         else:
-            text = f"{headline}  (Your hand: {result.final_eval[1]})"
+            text = f"{hand_name} - below a Pair of Tens, base bet(s) lose."
+            color = theme.LOSE_COLOR
         self.result_lbl.configure(text=text, fg=color)
 
-        self.payout_canvas.pack(expand=True)
+        self._show_payout_panel()
         self._draw_payout_panel(result)
 
     def _payout_rows(self, result):
         rows = []
         if result.ante_bet:
-            rows.append((f"Ante £{result.ante_bet:.0f}", result.ante_return - result.ante_bet))
-        if result.third_street_bet:
-            rows.append((f"3rd Street £{result.third_street_bet:.0f}",
-                          result.third_street_return - result.third_street_bet))
-        if result.fourth_street_bet:
-            rows.append((f"4th Street £{result.fourth_street_bet:.0f}",
-                          result.fourth_street_return - result.fourth_street_bet))
-        if result.fifth_street_bet:
-            rows.append((f"5th Street £{result.fifth_street_bet:.0f}",
-                          result.fifth_street_return - result.fifth_street_bet))
+            rows.append((f"£ Bet £{result.ante_bet:.0f}", result.ante_return - result.ante_bet))
+        if result.bet1_bet:
+            label = f"Bet 1 £{result.bet1_bet:.0f}" + ("" if result.bet1_active else " (back)")
+            rows.append((label, result.bet1_return - result.bet1_bet))
+        if result.bet2_bet:
+            label = f"Bet 2 £{result.bet2_bet:.0f}" + ("" if result.bet2_active else " (back)")
+            rows.append((label, result.bet2_return - result.bet2_bet))
         if result.bonus_bet:
-            label = f"3 Card Bonus £{result.bonus_bet:.0f}"
-            if result.bonus_eval is not None:
-                label = f"3 Card Bonus ({result.bonus_eval[1]})"
-            rows.append((label, result.bonus_return - result.bonus_bet))
+            rows.append((f"Bonus £{result.bonus_bet:.0f}", result.bonus_return - result.bonus_bet))
+        if result.three_card_bet:
+            label = f"3 Card £{result.three_card_bet:.0f}"
+            if result.three_card_tier is not None:
+                label = f"3 Card ({_THREE_CARD_DISPLAY_NAMES[result.three_card_tier]})"
+            rows.append((label, result.three_card_return - result.three_card_bet))
         if result.jackpot_bet:
             label = "Jackpot \U0001F3B0 WON!" if result.jackpot_won else f"Jackpot £{result.jackpot_bet:.0f}"
             rows.append((label, result.jackpot_return - result.jackpot_bet))
@@ -1360,12 +1330,12 @@ class MississippiStudFrame(tk.Frame):
                               fill=felt_theme["felt_dark"], outline=felt_theme["accent"])
 
         rows = self._payout_rows(result)
-        y = 38
+        y = 36
         for label, net in rows:
-            canvas.create_text(24, y, text=label, fill=theme.FG, font=theme.font(10), anchor="w")
+            canvas.create_text(24, y, text=label, fill=theme.FG, font=theme.font(9), anchor="w")
             canvas.create_text(w - 24, y, text=_format_signed(net), fill=_net_color(net),
-                                font=theme.font(10, weight="bold"), anchor="e")
-            y += 16
+                                font=theme.font(9, weight="bold"), anchor="e")
+            y += 15
 
         y += 4
         canvas.create_line(24, y, w - 24, y, fill=theme.BORDER)
@@ -1391,17 +1361,19 @@ class MississippiStudFrame(tk.Frame):
         old_felt = self._current_felt
         self._current_felt = new_felt
         self._retheme_widget(self, old_felt, new_felt)
-        # _retheme_widget only fixes up plain widget backgrounds -- the fan
-        # mat is a *drawn* canvas rectangle (covering nearly all of
-        # fan_canvas, drawn once per deal by _draw_fan_mat), so it keeps its
-        # stale felt_dark fill after a live theme switch unless it's
-        # explicitly redrawn here too. Cheap and harmless to call even when
-        # nothing's been dealt yet -- find_withtag comes back empty and it's
-        # a no-op.
         if self.fan_canvas.find_withtag("fan_mat_bg"):
             self.fan_canvas.delete("fan_mat_bg")
             self._draw_fan_mat()
             self.fan_canvas.tag_lower("fan_mat_bg")
+        # Same surgical fix for the play screen's own mat -- refreshes just
+        # its background rect/label (tag "zone_bg"), never the cards
+        # themselves, so a live mid-round switch can't wipe out an already-
+        # dealt/already-revealed hand the way a full canvas.delete("all") +
+        # _draw_play_zones() redraw would.
+        if self.canvas.find_withtag("zone_bg"):
+            self.canvas.delete("zone_bg")
+            self._draw_zone_backgrounds()
+            self.canvas.tag_lower("zone_bg")
         self.jackpot_display.retheme(felt_theme["felt_dark"], felt_theme["accent"])
         self._draw_paytable()
         if self.state == "resolved" and self.result is not None:

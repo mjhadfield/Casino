@@ -1,6 +1,6 @@
 # Hadfield Casino
 
-**Version 1.3.0**
+**Version 1.4.0**
 
 A small, extensible casino games library, built with Python's standard
 library only (`tkinter` — no extra installs needed).
@@ -39,6 +39,9 @@ sudo pacman -S tk                  # Arch/CachyOS
 - **Ultimate Texas Hold'em** — head-to-head Hold'em against the dealer,
   linked Ante/Blind bets, a 3-stage Bet-or-Check/Fold decision, a Trips
   bonus, and a shared Jackpot side bet (see below).
+- **Let It Ride** — three equal starter bets you can partially pull back as
+  more of your hand is revealed, plus a Bonus, a 3 Card Bonus, and a shared
+  Jackpot side bet (see below).
 
 Balance, lifetime stats, per-game stats, jackpot progress, and settings are
 all saved to `data/*.json` and persist between sessions.
@@ -90,6 +93,9 @@ games/
   ultimate_texas_holdem/
     logic.py                     # game engine: shared community cards, best-5-of-7, Trips/Jackpot
     ui.py                        # table screen: betting, 3-stage bet-or-check/fold, results
+  let_it_ride/
+    logic.py                     # game engine: 3 linked starter bets, Pull Back/Let It Ride, Bonus/3 Card/Jackpot
+    ui.py                        # table screen: betting, 2-stage pull-back-or-let-it-ride, results
 data/                            # created at runtime -- finances.json, settings.json, ...
 ```
 
@@ -318,11 +324,62 @@ reset it); Four of a Kind **£300**; Full House **£50**; Flush **£40**;
 Straight **£30**; Three of a Kind **£9**. Never pays on a folded round,
 even though the flop-only hand was already fully known by then.
 
+## Let It Ride rules implemented
+
+Deck: a plain 52-card deck (no Joker), reshuffled each round. Three equal
+bets — **£** (always plays), **2** (second decision), **1** (first
+decision) — are placed together and tracked as a single linked value, the
+same way Ultimate Texas Hold'em's own Ante/Blind pair is. Bonus and Jackpot
+are both locked at a flat **£1**; the 3 Card Bonus is a variable bet.
+
+Deal & betting: you're dealt 3 cards; the dealer's own 2 cards are dealt
+face down and act as shared community cards. You face two decisions in
+turn:
+- **First decision** (your own 3 cards only): Pull Back bet "1" (get it
+  back in full) or Let It Ride — the first community card is then revealed.
+- **Second decision** (with 4 of your final 5 cards now known): Pull Back
+  bet "2" or Let It Ride — the second community card is then revealed and
+  your final 5-card hand is complete.
+
+Main game: a **Pair of Tens or better** is needed to win — any hand ranked
+above a single pair always qualifies (Two Pair included), while a pair
+below Tens, or worse, simply loses with no push. Every base bet still in
+play (£, plus 1/2 if not pulled back) pays independently at the table
+below.
+
+| Hand | Base Game | Bonus* | 3 Card** |
+|---|---|---|---|
+| Royal Flush | 500:1 | 10000:1 | 40:1 |
+| Straight Flush | 100:1 | 2000:1 | 40:1 |
+| Four of a Kind | 25:1 | 400:1 | — |
+| Full House | 15:1 | 200:1 | — |
+| Flush | 10:1 | 50:1 | 4:1 |
+| Straight | 5:1 | 25:1 | 6:1 |
+| Three of a Kind | 3:1 | 5:1 | 30:1 |
+| Two Pair | 2:1 | — | — |
+| Pair of Tens+ | 1:1 | — | — |
+| Pair (any) | — | — | 1:1 |
+
+*Bonus (flat £1) is judged on the same final 5-card hand, needs Three of a
+Kind or better — Two Pair, which wins the Base Game, still loses the Bonus.
+**3 Card is judged on your own 3 cards only (no community cards), needs a
+Pair or better; A-K-Q suited pays the same as any other Straight Flush.
+
+Bonus and 3 Card are both fully independent of the Base Game's own outcome
+and of your Pull Back/Let It Ride decisions — they always resolve on the
+full hand regardless.
+
+Jackpot side bet (flat £1, shared progressive pool — same as the other
+tables): the same final 5-card hand as the Base Game and Bonus, judged at
+final settlement (nothing here is frozen early). Royal Flush **100% of the
+pool**; Straight Flush **10% of the pool** (a partial drawdown, doesn't
+reset it); Four of a Kind **£300**; Full House **£50**; Flush **£40**;
+Straight **£30**; Three of a Kind **£9**.
+
 ## Roadmap ideas (not yet built)
 
-- More tables: Baccarat, Let It Ride, High Card Flush — already placeholder
-  tiles on the main menu, each starting locked (see core/unlocks.py) until
-  built
+- More tables: Baccarat, High Card Flush — already placeholder tiles on the
+  main menu, each starting locked (see core/unlocks.py) until built
 - AI/CPU players at the table for a more social feel
 - Milestone-based unlocks (new tables, higher bet limits, cosmetic themes)
 - Bonus/free-bet promotions

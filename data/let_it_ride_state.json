@@ -1,0 +1,9 @@
+{
+  "bets": {
+    "base": 5,
+    "bonus": 1,
+    "three_card": 5,
+    "jackpot": 1
+  },
+  "selected_chip": 5
+}
