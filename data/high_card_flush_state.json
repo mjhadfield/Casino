@@ -1,9 +1,9 @@
 {
   "bets": {
-    "ante": 5,
-    "flush": 5,
-    "straight_flush": 5,
-    "jackpot": 1
+    "ante": 0,
+    "flush": 0,
+    "straight_flush": 0,
+    "jackpot": 0
   },
   "selected_chip": 5
 }

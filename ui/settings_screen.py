@@ -9,6 +9,7 @@ from games.mississippi_stud import logic as ms_logic
 from games.ultimate_texas_holdem import logic as uth_logic
 from games.let_it_ride import logic as lir_logic
 from games.high_card_flush import logic as hcf_logic
+from games.baccarat import logic as bacc_logic
 from ui import dialogs, main_menu, theme
 from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
@@ -167,6 +168,13 @@ class SettingsFrame(tk.Frame):
             "Stats screen.",
             "High Card Flush's statistics have been reset.",
             lambda: self.app.game_stats.reset_game(hcf_logic.GAME_KEY),
+        )
+        self._make_reset_row(
+            danger_inner, "$ rm --stats --game baccarat",
+            "This permanently deletes Baccarat's bet, hand and payout breakdown on the "
+            "Stats screen.",
+            "Baccarat's statistics have been reset.",
+            lambda: self.app.game_stats.reset_game(bacc_logic.GAME_KEY),
         )
 
         tk.Frame(danger_inner, bg=theme.LOSE_COLOR, height=1).pack(fill="x", pady=(4, 12))
@@ -341,10 +349,33 @@ class SettingsFrame(tk.Frame):
     def _reset_all_stats(self):
         """Everything the individual reset rows above do, combined -- the
         lifetime finance totals plus every game's own bet/hand/payout
-        breakdown in one shot. Balance is untouched, same as every other
-        reset row here."""
+        breakdown in one shot -- plus every game's own currently-placed
+        (not yet dealt) bets, reset back to zero. Balance itself is
+        untouched, same as every other reset row here."""
         self._reset_lifetime()
         self.app.game_stats.reset()
+        self._reset_all_game_bets()
+
+    def _reset_all_game_bets(self):
+        """Every game frame (all of them are built once at startup and
+        live for the app's whole session -- see main.py -- whether or not
+        they're the one currently on screen) follows the same duck-typed
+        convention: a `bets` dict plus a `_persist_state()` that writes it
+        to that game's own `<name>_state.json`. Zeroing it here and
+        re-persisting is all that's needed -- the actual on-screen chip
+        stacks refresh themselves the next time that game is opened,
+        since every game's own on_show() already redraws them from
+        `self.bets` whenever state == "betting" (a mid-round game is left
+        alone entirely; its pending stake is real money already wagered,
+        not a bet still waiting to be placed)."""
+        for frame in self.app.frames.values():
+            bets = getattr(frame, "bets", None)
+            persist = getattr(frame, "_persist_state", None)
+            if not isinstance(bets, dict) or persist is None or getattr(frame, "state", None) != "betting":
+                continue
+            for key in bets:
+                bets[key] = 0
+            persist()
 
     # ------------------------------------------------------------------ save / cancel
     def _snapshot(self):

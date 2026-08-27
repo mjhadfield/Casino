@@ -1,6 +1,6 @@
 # Hadfield Casino
 
-**Version 1.5.0**
+**Version 1.7.0**
 
 A small, extensible casino games library, built with Python's standard
 library only (`tkinter` — no extra installs needed).
@@ -45,6 +45,9 @@ sudo pacman -S tk                  # Arch/CachyOS
 - **High Card Flush** — not poker at all: your rank is purely how many of
   your 7 cards share one suit. An Ante/Raise main game plus independent
   Flush, Straight Flush, and Jackpot side bets (see below).
+- **Baccarat** — an 8-deck shoe, zero player decisions after the bet:
+  Player/Banker/Tie plus the Dragon Bonus and 5 Treasures side bets (see
+  below). No progressive jackpot.
 
 Balance, lifetime stats, per-game stats, jackpot progress, and settings are
 all saved to `data/*.json` and persist between sessions.
@@ -102,6 +105,9 @@ games/
   high_card_flush/
     logic.py                     # game engine: same-suit-count ranking, Ante/Raise, Flush/Straight Flush/Jackpot
     ui.py                        # table screen: betting, 7-card arrange/fold/raise, results
+  baccarat/
+    logic.py                     # game engine: natural/draw rules, Player/Banker/Tie, Dragon Bonus/5 Treasures
+    ui.py                        # one fixed table screen (no betting/play split): betting, deal, results
 data/                            # created at runtime -- finances.json, settings.json, ...
 ```
 
@@ -421,10 +427,59 @@ flush **100% of the pool**; 6-card **50% of the pool** (a partial
 drawdown, doesn't reset it); 5-card **£250**; 4-card **£50**; 3-card
 **£5**.
 
+## Baccarat rules implemented
+
+Dealt from an **8-deck shoe**, reshuffled fresh each round (no persistent
+cut-card across rounds, same per-round convention every other game here
+uses). Card points: Ace=1, 2-9=face value, 10/J/Q/K=0 — a hand's total is
+the sum of its cards, only the last digit counted.
+
+**Natural**: a two-card total of 8 or 9 for either hand ends the round
+immediately — no more cards to anyone. Otherwise **Player** draws a third
+card on a two-card total of 0-5, stands on 6-7. **Banker** draws on 0-5 if
+the Player stood; if the Player drew, Banker's own total decides,
+cross-referenced against the Player's third card:
+
+| Banker total | Draws when Player's 3rd card is |
+|---|---|
+| 0, 1, 2 | always draws |
+| 3 | anything except 8 |
+| 4 | 2-7 |
+| 5 | 4-7 |
+| 6 | 6-7 |
+| 7 | never (always stands) |
+
+**Main bets**: Player pays **1:1**; Banker pays **1:1 minus a 5%
+commission** (deducted immediately per winning bet — £10 staked returns
+£19.50); both push on a tie. Tie pays **8:1** on an actual tie, otherwise
+**loses outright** (does not push).
+
+**Dragon Bonus** (Player Dragon / Banker Dragon, independent spots, judged
+on whichever side you bet): your side losing always loses; a natural tie
+pushes, any other tie loses; a natural win pays flat even money regardless
+of margin; otherwise paid by margin of victory — margins 1-3 lose, 4
+through 9 pay 1:1 up to 30:1.
+
+**5 Treasures** (five independent spots, judged purely on qualifying
+events in the round, regardless of the main outcome and of whether that
+spot itself was staked):
+
+| Bet | Qualifying event | Payout |
+|---|---|---|
+| Fortune 7 | Banker 3-card total 7 | 40:1 |
+| Golden 8 | Player 3-card total 8 | 25:1 |
+| Heavenly 9 | both sides 3-card total 9 | 75:1 |
+| Heavenly 9 | either side alone, 3-card total 9 | 10:1 |
+| Blazing 7's | both sides 3-card total 7 | 200:1 |
+| Blazing 7's | both sides 2-card total 7 (neither drew) | 50:1 |
+| Cover All | any of the above four events fired | 6:1 |
+
+Cover All is the one bet here with a cross-dependency — it pays purely off
+another event having occurred, independent of whether *that* event's own
+spot was staked.
+
 ## Roadmap ideas (not yet built)
 
-- More tables: Baccarat — already a placeholder tile on the main menu,
-  starting locked (see core/unlocks.py) until built
 - AI/CPU players at the table for a more social feel
 - Milestone-based unlocks (new tables, higher bet limits, cosmetic themes)
 - Bonus/free-bet promotions

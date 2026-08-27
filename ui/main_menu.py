@@ -33,8 +33,8 @@ GAMES = [
      "mississippi_stud", "mississippi_stud"),
     (game_icons.draw_ultimate_texas_holdem_icon, "Ultimate Texas Hold'em",
      "Trips bonus, Progressive Jackpot", "ultimate_texas_holdem", "ultimate_texas_holdem"),
-    (game_icons.draw_baccarat_icon, "Baccarat", "Perfect Pair & Dragon Bonus side bets",
-     "baccarat", None),
+    (game_icons.draw_baccarat_icon, "Baccarat", "Dragon Bonus & 5 Treasures side bets",
+     "baccarat", "baccarat"),
     (game_icons.draw_let_it_ride_icon, "Let It Ride", "3 starter bets -- pull back or let it ride",
      "let_it_ride", "let_it_ride"),
     (game_icons.draw_high_card_flush_icon, "High Card Flush",
@@ -76,7 +76,7 @@ class MainMenuFrame(tk.Frame):
 
         self._make_spade(top_bar).pack(side="left", padx=(20, 8), pady=14)
         tk.Label(
-            top_bar, text="HADFIELD CASINO v1.5.0", bg=theme.MENU_BG, fg=theme.SECONDARY,
+            top_bar, text="HADFIELD CASINO v1.6.0", bg=theme.MENU_BG, fg=theme.SECONDARY,
             font=theme.font(18, weight="bold"),
         ).pack(side="left")
         self._make_spade(top_bar).pack(side="left", padx=(8, 0), pady=14)

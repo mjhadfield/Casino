@@ -32,6 +32,7 @@ from games.mississippi_stud.ui import MississippiStudFrame
 from games.ultimate_texas_holdem.ui import UltimateTexasHoldemFrame
 from games.let_it_ride.ui import LetItRideFrame
 from games.high_card_flush.ui import HighCardFlushFrame
+from games.baccarat.ui import BaccaratFrame
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(APP_DIR, "data")
@@ -93,6 +94,7 @@ class CasinoApp(tk.Tk):
             (UltimateTexasHoldemFrame, "ultimate_texas_holdem"),
             (LetItRideFrame, "let_it_ride"),
             (HighCardFlushFrame, "high_card_flush"),
+            (BaccaratFrame, "baccarat"),
         ):
             frame = frame_class(parent=container, app=self)
             self.frames[name] = frame

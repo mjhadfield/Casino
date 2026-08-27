@@ -8,6 +8,7 @@ from games.mississippi_stud import logic as ms_logic
 from games.ultimate_texas_holdem import logic as uth_logic
 from games.let_it_ride import logic as lir_logic
 from games.high_card_flush import logic as hcf_logic
+from games.baccarat import logic as bacc_logic
 from ui import theme
 from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
@@ -58,6 +59,11 @@ GAME_SECTIONS = [
     # built for it either.
     {"key": hcf_logic.GAME_KEY, "label": hcf_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
      "bet_types": hcf_logic.BET_TYPES, "hand_labels": hcf_logic.HAND_OUTCOME_LABELS},
+    # tracks_folding=False here is actually correct, not just "no checker
+    # built yet" -- Baccarat is the first game in this app with genuinely
+    # zero player decisions after the bet at all.
+    {"key": bacc_logic.GAME_KEY, "label": bacc_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
+     "bet_types": bacc_logic.BET_TYPES, "hand_labels": bacc_logic.HAND_OUTCOME_LABELS},
 ]
 
 LIFETIME_STAT_ROWS = [
