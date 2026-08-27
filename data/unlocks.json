@@ -4,8 +4,8 @@
   "pai_gow_poker": true,
   "pai_gow_poker_face_up": true,
   "mississippi_stud": true,
-  "baccarat": true,
+  "baccarat": false,
   "let_it_ride": false,
-  "ultimate_texas_holdem": false,
+  "ultimate_texas_holdem": true,
   "high_card_flush": false
 }

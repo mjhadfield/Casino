@@ -1,8 +1,8 @@
 {
   "bets": {
-    "ante": 0,
-    "pair_plus": 0,
-    "prime": 0,
+    "ante": 5,
+    "pair_plus": 5,
+    "prime": 5,
     "jackpot": 0
   },
   "selected_chip": 5

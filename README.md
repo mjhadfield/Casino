@@ -1,6 +1,6 @@
 # Hadfield Casino
 
-**Version 1.2.0**
+**Version 1.3.0**
 
 A small, extensible casino games library, built with Python's standard
 library only (`tkinter` — no extra installs needed).
@@ -39,6 +39,9 @@ sudo pacman -S tk                  # Arch/CachyOS
   Ace-high Pai Gow, and no commission (see below).
 - **Mississippi Stud** — a 5-card Ante/3rd-4th-5th-Street game, plus a
   3 Card Bonus and a shared Jackpot side bet (see below).
+- **Ultimate Texas Hold'em** — head-to-head Hold'em against the dealer,
+  linked Ante/Blind bets, a 3-stage Bet-or-Check/Fold decision, a Trips
+  bonus, and a shared Jackpot side bet (see below).
 
 Balance, lifetime stats, per-game stats, jackpot progress, and settings are
 all saved to `data/*.json` and persist between sessions.
@@ -87,6 +90,9 @@ games/
   mississippi_stud/
     logic.py                     # game engine: Ante/3rd-4th-5th Street, 3 Card Bonus, Jackpot
     ui.py                        # table screen: betting, per-street bet-or-fold, results
+  ultimate_texas_holdem/
+    logic.py                     # game engine: shared community cards, best-5-of-7, Trips/Jackpot
+    ui.py                        # table screen: betting, 3-stage bet-or-check/fold, results
 data/                            # created at runtime -- finances.json, settings.json, ...
 ```
 
@@ -261,11 +267,65 @@ Straight Flush **10% of the pool** (a partial drawdown, doesn't reset it);
 Four of a Kind **£300**; Full House **£50**; Flush **£40**; Straight
 **£30**; Three of a Kind **£9**.
 
+## Ultimate Texas Hold'em rules implemented
+
+Deck: a plain 52-card deck (no Joker), reshuffled each round. Ante and
+Blind are always equal, linked bets — there's no way to place them unequal.
+Trips and the Jackpot side bet are both optional. Your balance must be at
+least **3x your Ante** to deal.
+
+Deal & betting: you and the dealer are each dealt 2 private cards; 5
+community cards are dealt face down and shared by both hands (true
+Hold'em rules, unlike this app's other multi-street games). You face up to
+3 decisions in turn:
+- **Pre-flop** (hole cards only): bet **4x** or **3x** your Ante into Play,
+  or Check — the flop (first 3 community cards) is then revealed.
+- **Post-flop** (if you haven't bet yet): bet **2x** or Check — the turn is
+  then revealed.
+- **Post-turn** (if you still haven't bet): bet **1x** or **Fold**
+  (forfeiting Ante, Blind and Trips) — the river is then revealed.
+
+Whichever point you actually bet, every remaining community card is
+revealed immediately, then the dealer's own 2 cards, and the hand settles.
+
+Main game: your hand and the dealer's are each the best 5 of your own 2
+cards plus all 5 community cards. The dealer needs a **Pair or better** to
+qualify — if they don't, the **Ante pushes** regardless of the comparison,
+but Play and Blind still settle by it either way (qualification only ever
+gates the Ante). A win pays Ante and Play **1:1**. The Blind only pays out
+(see table) if you win with a **Straight or better** — winning with
+anything weaker just pushes the Blind instead of losing it.
+
+| Hand | Trips | Blind* |
+|---|---|---|
+| Royal Flush | 50:1 | 500:1 |
+| Straight Flush | 40:1 | 50:1 |
+| Four of a Kind | 20:1 | 10:1 |
+| Full House | 7:1 | 3:1 |
+| Flush | 6:1 | 3:2 |
+| Straight | 5:1 | 1:1 |
+| Three of a Kind | 3:1 | — |
+
+*Blind only ever pays on a hand this good, and only if it beats the dealer.
+
+Trips side bet (own spot, resolved on your own best 7-card hand alone,
+independent of beating the dealer — forfeited outright on a Fold, since a
+fold can only happen before the river).
+
+Jackpot side bet (flat £1, shared progressive pool — same as the other
+tables): a genuinely different 5-card hand from every other bet here — your
+2 hole cards **plus the 3-card flop only**, fixed the moment the flop is
+revealed and never affected by the turn/river. Royal Flush **100% of the
+pool**; Straight Flush **10% of the pool** (a partial drawdown, doesn't
+reset it); Four of a Kind **£300**; Full House **£50**; Flush **£40**;
+Straight **£30**; Three of a Kind **£9**. Never pays on a folded round,
+even though the flop-only hand was already fully known by then.
+
 ## Roadmap ideas (not yet built)
 
-- More tables: Baccarat, Let It Ride, Ultimate Texas Hold'em, High Card
-  Flush — already placeholder tiles on the main menu, each starting locked
-  (see core/unlocks.py) until built
+- More tables: Baccarat, Let It Ride, High Card Flush — already placeholder
+  tiles on the main menu, each starting locked (see core/unlocks.py) until
+  built
 - AI/CPU players at the table for a more social feel
 - Milestone-based unlocks (new tables, higher bet limits, cosmetic themes)
 - Bonus/free-bet promotions
