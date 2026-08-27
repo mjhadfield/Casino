@@ -1,8 +1,8 @@
 {
   "bets": {
-    "base": 10,
-    "bonus": 1,
-    "three_card": 5,
+    "ante": 5,
+    "flush": 5,
+    "straight_flush": 5,
     "jackpot": 1
   },
   "selected_chip": 5

@@ -7,6 +7,7 @@ from games.pai_gow_poker_face_up import logic as pgpfu_logic
 from games.mississippi_stud import logic as ms_logic
 from games.ultimate_texas_holdem import logic as uth_logic
 from games.let_it_ride import logic as lir_logic
+from games.high_card_flush import logic as hcf_logic
 from ui import theme
 from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
@@ -52,6 +53,11 @@ GAME_SECTIONS = [
     # checker was built for them either.
     {"key": lir_logic.GAME_KEY, "label": lir_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
      "bet_types": lir_logic.BET_TYPES, "hand_labels": lir_logic.HAND_OUTCOME_LABELS},
+    # Same tracks_folding=False reasoning as above -- High Card Flush
+    # genuinely has a Fold decision, but no optimal-strategy checker was
+    # built for it either.
+    {"key": hcf_logic.GAME_KEY, "label": hcf_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
+     "bet_types": hcf_logic.BET_TYPES, "hand_labels": hcf_logic.HAND_OUTCOME_LABELS},
 ]
 
 LIFETIME_STAT_ROWS = [

@@ -31,6 +31,7 @@ from games.pai_gow_poker_face_up.ui import PaiGowPokerFaceUpFrame
 from games.mississippi_stud.ui import MississippiStudFrame
 from games.ultimate_texas_holdem.ui import UltimateTexasHoldemFrame
 from games.let_it_ride.ui import LetItRideFrame
+from games.high_card_flush.ui import HighCardFlushFrame
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(APP_DIR, "data")
@@ -46,6 +47,17 @@ APP_TITLE = "Hadfield Casino"
 class CasinoApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        # Every game frame gets built and grid-mapped into the same shared
+        # container below, one after another, well before the menu is ever
+        # raised -- and several of them call update_idletasks() while doing
+        # so (to measure a chip tray's real size once its padding is
+        # applied). update_idletasks() forces Tk to actually paint whatever
+        # frame is currently topmost in that stacking order, which is why
+        # the window used to visibly flash through several game screens on
+        # startup. Keeping the window withdrawn until construction is done
+        # and the menu has been raised (see the end of __init__) means none
+        # of that intermediate painting is ever shown on screen.
+        self.withdraw()
         self.title(APP_TITLE)
         self.geometry("1200x820")
         self.resizable(False, False)
@@ -80,12 +92,14 @@ class CasinoApp(tk.Tk):
             (MississippiStudFrame, "mississippi_stud"),
             (UltimateTexasHoldemFrame, "ultimate_texas_holdem"),
             (LetItRideFrame, "let_it_ride"),
+            (HighCardFlushFrame, "high_card_flush"),
         ):
             frame = frame_class(parent=container, app=self)
             self.frames[name] = frame
             frame.grid(row=0, column=0, sticky="nsew")
 
         self.show_frame("menu")
+        self.deiconify()
 
     def show_frame(self, name):
         frame = self.frames[name]

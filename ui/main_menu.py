@@ -38,7 +38,7 @@ GAMES = [
     (game_icons.draw_let_it_ride_icon, "Let It Ride", "3 starter bets -- pull back or let it ride",
      "let_it_ride", "let_it_ride"),
     (game_icons.draw_high_card_flush_icon, "High Card Flush",
-     "Flush bonus, Straight bonus", "high_card_flush", None),
+     "Flush bonus, Straight bonus", "high_card_flush", "high_card_flush"),
 ]
 GAMES_PER_ROW = 3
 
@@ -76,7 +76,7 @@ class MainMenuFrame(tk.Frame):
 
         self._make_spade(top_bar).pack(side="left", padx=(20, 8), pady=14)
         tk.Label(
-            top_bar, text="HADFIELD CASINO v1.4.0", bg=theme.MENU_BG, fg=theme.SECONDARY,
+            top_bar, text="HADFIELD CASINO v1.5.0", bg=theme.MENU_BG, fg=theme.SECONDARY,
             font=theme.font(18, weight="bold"),
         ).pack(side="left")
         self._make_spade(top_bar).pack(side="left", padx=(8, 0), pady=14)

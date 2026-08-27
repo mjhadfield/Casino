@@ -3,7 +3,7 @@
     "ante": 5,
     "pair_plus": 5,
     "prime": 5,
-    "jackpot": 0
+    "jackpot": 1
   },
   "selected_chip": 5
 }

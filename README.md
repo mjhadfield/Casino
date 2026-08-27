@@ -1,6 +1,6 @@
 # Hadfield Casino
 
-**Version 1.4.0**
+**Version 1.5.0**
 
 A small, extensible casino games library, built with Python's standard
 library only (`tkinter` — no extra installs needed).
@@ -42,6 +42,9 @@ sudo pacman -S tk                  # Arch/CachyOS
 - **Let It Ride** — three equal starter bets you can partially pull back as
   more of your hand is revealed, plus a Bonus, a 3 Card Bonus, and a shared
   Jackpot side bet (see below).
+- **High Card Flush** — not poker at all: your rank is purely how many of
+  your 7 cards share one suit. An Ante/Raise main game plus independent
+  Flush, Straight Flush, and Jackpot side bets (see below).
 
 Balance, lifetime stats, per-game stats, jackpot progress, and settings are
 all saved to `data/*.json` and persist between sessions.
@@ -96,6 +99,9 @@ games/
   let_it_ride/
     logic.py                     # game engine: 3 linked starter bets, Pull Back/Let It Ride, Bonus/3 Card/Jackpot
     ui.py                        # table screen: betting, 2-stage pull-back-or-let-it-ride, results
+  high_card_flush/
+    logic.py                     # game engine: same-suit-count ranking, Ante/Raise, Flush/Straight Flush/Jackpot
+    ui.py                        # table screen: betting, 7-card arrange/fold/raise, results
 data/                            # created at runtime -- finances.json, settings.json, ...
 ```
 
@@ -376,10 +382,49 @@ pool**; Straight Flush **10% of the pool** (a partial drawdown, doesn't
 reset it); Four of a Kind **£300**; Full House **£50**; Flush **£40**;
 Straight **£30**; Three of a Kind **£9**.
 
+## High Card Flush rules implemented
+
+Deck: a plain 52-card deck, reshuffled each round. Player and dealer are
+each dealt **7 cards**, face down. A hand's rank is purely how many cards
+of one suit it holds — longer always beats shorter regardless of rank;
+equal length is broken by comparing ranks descending. A "straight flush"
+(consecutive ranks) has no bearing on this comparison — only the separate
+Straight Flush bonus cares about that.
+
+Betting: an Ante, plus optional Flush / Straight Flush / Jackpot side bets
+(all independent of the Ante/Raise outcome and of folding). After seeing
+your own 7 cards, **Fold** (forfeit the Ante) or **Raise** — normally fixed
+at 1x the Ante, but up to **2x** with a 5-flush, up to **3x** with a 6- or
+7-flush. The on-screen "YOUR FLUSH" placement is purely visual — your real
+payout always uses your true best flush, whatever you actually place there.
+
+Dealer qualifies with a **3-card, 9-high flush or better** (any 4+ card
+flush always qualifies too). Doesn't qualify: Ante pays **1:1**, Raise
+**pushes**. Qualifies: win pays both **1:1**; lose loses both; tie pushes
+both.
+
+| Flush length | Flush Bonus | Straight Flush Bonus |
+|---|---|---|
+| 7-card | 250:1 | 500:1 |
+| 6-card | 100:1 | 200:1 |
+| 5-card | 10:1 | 100:1 |
+| 4-card | 1:1 | 60:1 |
+| 3-card | — | 8:1 |
+
+Both bonuses are judged on the player's own true hand alone, independent of
+the Ante/Raise outcome and of a fold.
+
+Jackpot side bet (flat £1, shared progressive pool — same as the other
+tables, independent of a fold): judged on the player's own Straight Flush
+length, not the plain Flush every other bet here uses — 7-card straight
+flush **100% of the pool**; 6-card **50% of the pool** (a partial
+drawdown, doesn't reset it); 5-card **£250**; 4-card **£50**; 3-card
+**£5**.
+
 ## Roadmap ideas (not yet built)
 
-- More tables: Baccarat, High Card Flush — already placeholder tiles on the
-  main menu, each starting locked (see core/unlocks.py) until built
+- More tables: Baccarat — already a placeholder tile on the main menu,
+  starting locked (see core/unlocks.py) until built
 - AI/CPU players at the table for a more social feel
 - Milestone-based unlocks (new tables, higher bet limits, cosmetic themes)
 - Bonus/free-bet promotions
