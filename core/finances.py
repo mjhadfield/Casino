@@ -11,25 +11,27 @@ from datetime import datetime, timezone
 
 from core.persistence import load_json, save_json
 
-MAX_TRANSACTION = 200.0  # per-transaction cap on deposits only; unlimited number of transactions
-
-# Anti-cheat rail: a withdrawal is only allowed strictly above this line, and
-# a deposit is not just blocked above it but actively capped AT it --
-# deposit() silently reduces the amount actually credited so a deposit can
-# never land the balance past this line, no matter how large a deposit is
-# requested. Without that cap, only the *starting* balance of a deposit was
-# ever checked, not where it would land -- so a small withdrawal down to just
-# below the line, followed by a full-size deposit back past it, could park
-# the balance at roughly double this line indefinitely (withdraw £2, deposit
-# £200, withdraw £200, deposit £200, ...) purely by shuffling money, no play
-# required. Capping the deposit itself closes that off: the balance can only
-# ever get above this line by actually winning at the tables. Withdrawals
-# have no per-transaction cap of their own (MAX_TRANSACTION doesn't apply to
-# them) -- taking money back out was never the exploitable direction.
+# Anti-cheat rail: deposits blocked entirely at/above this line -- only
+# ever managed on the deposit side, withdrawals are never restricted.
 TRANSACTION_BALANCE_THRESHOLD = 200.0
 
+# Deposit cap tiers by balance beforehand: under £100 -> up to £200;
+# £100-£200 -> up to £100; £200+ -> blocked (deposit_limit returns 0).
+DEPOSIT_TIERS = (
+    (100.0, 200.0),
+    (TRANSACTION_BALANCE_THRESHOLD, 100.0),
+)
+
+
+def deposit_limit(balance):
+    """Max deposit for `balance` beforehand -- 0 once blocked entirely."""
+    for ceiling, limit in DEPOSIT_TIERS:
+        if balance < ceiling:
+            return limit
+    return 0.0
+
 DEFAULT_FINANCE_DATA = {
-    "balance": 0.0,
+    "balance": 200.0,
     "lifetime_deposited": 0.0,
     "lifetime_withdrawn": 0.0,
     "lifetime_wagered": 0.0,
@@ -55,50 +57,28 @@ class FinanceManager:
         return round(self.data["balance"], 2)
 
     def set_balance(self, amount):
-        """Manual override straight to `amount` -- no MAX_TRANSACTION/
-        TRANSACTION_BALANCE_THRESHOLD checks, no lifetime-deposited/withdrawn
-        bookkeeping, since it isn't a real transaction. Admin-only debug
-        control (Cashier's "$ override --modify" section), same shape as
-        JackpotManager.set_amount's debug override."""
         self.data["balance"] = round(float(amount), 2)
         self._save()
 
     def deposit(self, amount) -> float:
-        """Credits up to `amount` -- silently less, if `amount` would carry
-        the balance past TRANSACTION_BALANCE_THRESHOLD, see its own comment
-        above for why. Check actual_deposit_amount() first (e.g. to tell the
-        player up front how much of their requested amount will actually
-        land) if that matters to the caller; this doesn't repeat it as a
-        return value, to keep deposit()'s own return consistent with every
-        other balance-changing method here (the new balance, not the delta)."""
         try:
             amount = round(float(amount), 2)
         except (TypeError, ValueError):
             raise ValueError("Enter a valid amount.")
         if amount <= 0:
             raise ValueError("Deposit amount must be greater than £0.")
-        if amount > MAX_TRANSACTION:
-            raise ValueError(f"Deposits are capped at £{MAX_TRANSACTION:.0f} per transaction.")
-        actual = self.actual_deposit_amount(amount)
-        if actual <= 0:
-            raise ValueError(
-                f"Your balance is already at the £{TRANSACTION_BALANCE_THRESHOLD:.0f} deposit cap."
-            )
-        self.data["balance"] += actual
-        self.data["lifetime_deposited"] += actual
+        limit = deposit_limit(self.balance)
+        if amount > limit:
+            if limit <= 0:
+                raise ValueError(
+                    f"You can't deposit once your balance is £{TRANSACTION_BALANCE_THRESHOLD:.0f} or more."
+                )
+            raise ValueError(f"With your current balance, deposits are capped at £{limit:.0f} per transaction.")
+        self.data["balance"] += amount
+        self.data["lifetime_deposited"] += amount
         self.data["deposits_made"] += 1
         self._save()
         return self.balance
-
-    def actual_deposit_amount(self, amount) -> float:
-        """How much of a deposit of `amount` would actually be credited --
-        less than `amount` if it would otherwise carry the balance past
-        TRANSACTION_BALANCE_THRESHOLD, 0 if the balance's already there or
-        beyond. Doesn't validate `amount` itself (see deposit()) -- exposed
-        separately so the UI can show the player the real figure (e.g.
-        "capped at £150") before/without actually making the deposit."""
-        room = round(TRANSACTION_BALANCE_THRESHOLD - self.balance, 2)
-        return max(0.0, min(amount, room))
 
     def withdraw(self, amount) -> float:
         try:
@@ -107,8 +87,6 @@ class FinanceManager:
             raise ValueError("Enter a valid amount.")
         if amount <= 0:
             raise ValueError("Withdrawal amount must be greater than £0.")
-        if self.balance <= TRANSACTION_BALANCE_THRESHOLD:
-            raise ValueError(f"You can only withdraw while your balance is over £{TRANSACTION_BALANCE_THRESHOLD:.0f}.")
         if not self.can_afford(amount):
             raise ValueError("Your balance is too low to withdraw that much.")
         self.data["balance"] -= amount

@@ -1,13 +1,15 @@
 # Hadfield Casino
 
-**Version 1.7.0**
+**Version 1.7.1**
 
 A small, extensible casino games library, built with Python's standard
 library only (`tkinter` — no extra installs needed).
 
 ## Running it
 
-**Windows:** double-click `Launch Casino.bat`. If Python is not installed it will prompt a local (user) installation, no admin credentials are required.
+**Windows:** double-click `Launch Casino (windows).bat`. If Python is not installed it will prompt a local (user) installation, no admin credentials are required.
+
+**Linux:** run `./Launch Casino (linux).sh`. If Python 3 or Tkinter is missing it prints the install command for your distro (apt/pacman/dnf/zypper/apk) rather than installing anything itself -- a system Python package needs root on Linux, unlike Windows' per-user installer.
 
 **Everyone else:**
 
@@ -57,8 +59,8 @@ all saved to `data/*.json` and persist between sessions.
 
 ```
 main.py                          # app window, frame stack, wiring
-Launch Casino.bat                # Windows: double-click to run
-Install prerequisites.bat        # Windows: one-time Python + tkinter setup
+Launch Casino (windows).bat      # Windows: double-click to run (installs Python if needed)
+Launch Casino (linux).sh         # Linux: run to launch (prints an install command if needed)
 core/
   cards.py                       # Card, Deck (multi-deck shoes, optional Joker) -- shared by every game
   hand_evaluator.py              # 3-card and standard 5-card hand ranking/comparison logic

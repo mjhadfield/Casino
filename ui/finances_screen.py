@@ -1,6 +1,6 @@
 import tkinter as tk
 
-from core.finances import MAX_TRANSACTION, TRANSACTION_BALANCE_THRESHOLD
+from core.finances import TRANSACTION_BALANCE_THRESHOLD, deposit_limit
 from ui import dialogs, theme
 from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
@@ -43,12 +43,14 @@ class FinancesFrame(tk.Frame):
         deposit_frame = self._make_panel(body, "$ deposit --new")
         deposit_frame.pack(fill="x", pady=(25, 12))
 
-        tk.Label(
-            deposit_frame,
-            text=f"Maximum £{MAX_TRANSACTION:.0f} per deposit • only while your balance is "
-                 f"£{TRANSACTION_BALANCE_THRESHOLD:.0f} or below",
-            bg=theme.BG_ELEVATED, fg=theme.FG_DIM, font=theme.font(9),
-        ).pack(pady=(4, 4))
+        # Text set by refresh() -- the actual per-transaction limit is
+        # tiered by the current balance (see core/finances.py's
+        # deposit_limit), so this can't be a fixed string the way it used
+        # to be when there was just one flat cap.
+        self.deposit_limit_lbl = tk.Label(
+            deposit_frame, text="", bg=theme.BG_ELEVATED, fg=theme.FG_DIM, font=theme.font(9),
+        )
+        self.deposit_limit_lbl.pack(pady=(4, 4))
 
         quick_row = tk.Frame(deposit_frame, bg=theme.BG_ELEVATED)
         quick_row.pack(pady=6)
@@ -85,9 +87,7 @@ class FinancesFrame(tk.Frame):
         withdraw_frame.pack(fill="x", pady=12)
 
         tk.Label(
-            withdraw_frame,
-            text=f"No maximum per withdrawal • only while your balance is over "
-                 f"£{TRANSACTION_BALANCE_THRESHOLD:.0f}",
+            withdraw_frame, text="No maximum per withdrawal",
             bg=theme.BG_ELEVATED, fg=theme.FG_DIM, font=theme.font(9),
         ).pack(pady=(4, 4))
 
@@ -167,23 +167,16 @@ class FinancesFrame(tk.Frame):
         except ValueError:
             self.deposit_msg.configure(text="Enter a valid amount.", fg=theme.LOSE_COLOR)
             return
-        balance_before = self.app.finance.balance
         try:
             self.app.finance.deposit(amount)
         except ValueError as e:
             self.deposit_msg.configure(text=str(e), fg=theme.LOSE_COLOR)
             return
 
-        # deposit() itself only returns the new balance, not how much of the
-        # request actually got credited (see its own docstring) -- worked
-        # out here instead, so a deposit reduced by the £200 balance cap
-        # says so rather than claiming the full requested amount landed.
-        credited = round(self.app.finance.balance - balance_before, 2)
-        if credited < amount - 1e-9:
-            text = f"Deposited £{credited:.2f} -- capped at the £{TRANSACTION_BALANCE_THRESHOLD:.0f} balance ceiling."
-        else:
-            text = f"Deposited £{credited:.2f} successfully."
-        self.deposit_msg.configure(text=text, fg=theme.WIN_COLOR)
+        # deposit() is all-or-nothing now (see its own docstring) -- it
+        # either credits exactly `amount` or raises beforehand, so there's
+        # no partial-credit figure to work out here any more.
+        self.deposit_msg.configure(text=f"Deposited £{amount:.2f} successfully.", fg=theme.WIN_COLOR)
         self.deposit_var.set("")
         self.refresh()
         self.app.on_balance_changed()
@@ -233,10 +226,12 @@ class FinancesFrame(tk.Frame):
         balance = self.app.finance.balance
         self.balance_lbl.configure(text=f"£{balance:,.2f}")
         self.override_balance_var.set(f"{balance:.2f}")
-        # Greyed out (rather than left clickable and only failing after the
-        # fact) whenever the current balance is on the wrong side of
-        # TRANSACTION_BALANCE_THRESHOLD for that action -- see deposit()/
-        # withdraw()'s own matching checks in core/finances.py, which still
-        # apply too, since this is just a UI-level convenience on top.
-        self.deposit_btn.configure(state="normal" if balance < TRANSACTION_BALANCE_THRESHOLD else "disabled")
-        self.withdraw_btn.configure(state="normal" if balance > TRANSACTION_BALANCE_THRESHOLD else "disabled")
+        limit = deposit_limit(balance)
+        if limit > 0:
+            limit_text = f"You may deposit up to £{limit:.0f} per transaction"
+        else:
+            limit_text = f"Deposits are blocked once your balance reaches £{TRANSACTION_BALANCE_THRESHOLD:.0f}"
+        self.deposit_limit_lbl.configure(text=limit_text)
+        self.deposit_btn.configure(state="normal" if limit > 0 else "disabled")
+
+        self.withdraw_btn.configure(state="normal" if balance > 0 else "disabled")

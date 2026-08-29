@@ -279,7 +279,17 @@ JACKPOT_PAYTABLE_HIGHLIGHT_ROW = 0
 
 
 def _max_deal_cost(bets):
-    return bets["ante"] + bets["flush"] + bets["straight_flush"] + bets["jackpot"]
+    """Worst-case total the player is committing to by dealing: Raise is
+    mandatory once Confirm is clicked -- no Fold after that point (see
+    _on_confirm) -- at a minimum of 1x the Ante regardless of hand
+    strength, so that guaranteed second Ante-sized wager has to be
+    reserved for up front, the same way Mississippi Stud's own
+    _max_deal_cost reserves for its guaranteed future street bets. The
+    optional 2x/3x Raise a strong flush can unlock is the player's own
+    choice, not a forced cost -- already safely gated on its own at
+    raise time (see _raise_bet_enabled/_style_raise_btn disabling an
+    unaffordable option), so it doesn't belong in this worst-case floor."""
+    return bets["ante"] * 2 + bets["flush"] + bets["straight_flush"] + bets["jackpot"]
 
 
 class HighCardFlushFrame(tk.Frame):
@@ -1310,16 +1320,24 @@ class HighCardFlushFrame(tk.Frame):
             allowed = max_raise_multiplier(self.result.player_flush_count)
             if allowed == 1:
                 if not self._raise_bet_enabled(1):
-                    choice = dialogs.choice(
+                    # _max_deal_cost reserves for this guaranteed minimum
+                    # Raise up front, so dealing a hand you can't actually
+                    # see through to a Raise shouldn't be reachable in
+                    # normal play any more -- but if it ever is, folding
+                    # here (forfeiting the Ante, same as an ordinary Fold)
+                    # is the only safe way out: cards are already dealt,
+                    # arranged, confirmed, and discarded down to the flush
+                    # by this point, so offering "Go Home"/"Cashier" here
+                    # used to abandon the round with no controls shown and
+                    # no way back into it -- a genuine soft-lock.
+                    dialogs.info(
                         self, "$ raise --check-funds",
                         "You don't have enough balance to cover the Raise needed to continue "
-                        "this hand.",
-                        [("Go Home", "home"), ("Cashier", "cashier")],
+                        "this hand -- it's been folded.",
+                        accent=theme.WARN,
                     )
-                    if choice == "home":
-                        self.app.show_frame("menu")
-                    elif choice == "cashier":
-                        self.app.show_frame("finances")
+                    self.game.fold()
+                    self._reveal_dealer_and_settle()
                     return
                 self.game.raise_bet(1)
                 self.app.finance.place_wager(self.result.raise_bet)

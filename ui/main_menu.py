@@ -21,7 +21,7 @@ from ui import game_icons, theme
 # game_icons.py and a real frame_name) -- the grid below lays itself out
 # automatically, no layout code to touch.
 
-VERSION = "1.7.0"
+VERSION = "1.7.1"
 
 GAMES = [
     (game_icons.draw_three_card_poker_icon, "Three Card Poker", "Ante, Play, Pair Plus & Prime side bets",
