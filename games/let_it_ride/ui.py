@@ -260,6 +260,7 @@ class LetItRideFrame(tk.Frame):
 
         self.chip_canvases = {}
         self._jackpot_pulse_t = 0.0
+        self._bound_spot_tags = set()
 
         self._build_ui()
         self.app.jackpot.add_listener(self._on_jackpot_changed)
@@ -647,6 +648,9 @@ class LetItRideFrame(tk.Frame):
         self._bind_spot(tag, "jackpot")
 
     def _bind_spot(self, tag, key):
+        if tag in self._bound_spot_tags:
+            return
+        self._bound_spot_tags.add(tag)
         self.canvas.tag_bind(tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
         self.canvas.tag_bind(tag, "<Enter>", lambda e: self.canvas.configure(cursor="hand2"))
         self.canvas.tag_bind(tag, "<Leave>", lambda e: self.canvas.configure(cursor=""))

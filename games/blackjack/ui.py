@@ -280,6 +280,7 @@ class BlackjackFrame(tk.Frame):
 
         self.chip_canvases = {}
         self._jackpot_pulse_t = 0.0
+        self._bound_spot_tags = set()
 
         # Per-round play state -- reset fresh by _on_deal each round, read
         # by the play-screen drawing/animation methods below.
@@ -752,6 +753,9 @@ class BlackjackFrame(tk.Frame):
             self._bind_spot(tag, "top_three")
 
     def _bind_spot(self, tag, key):
+        if tag in self._bound_spot_tags:
+            return
+        self._bound_spot_tags.add(tag)
         self.canvas.tag_bind(tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
         self.canvas.tag_bind(tag, "<Enter>", lambda e: self.canvas.configure(cursor="hand2"))
         self.canvas.tag_bind(tag, "<Leave>", lambda e: self.canvas.configure(cursor=""))

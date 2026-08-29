@@ -12,6 +12,7 @@ import tkinter.font as tkfont
 from typing import Any, Callable, cast
 
 from ui import theme
+from ui.scrollable import ScrollableFrame
 
 # Gates any "admin" section anywhere in the app (Settings' Jackpot Config /
 # Danger Zone, Cashier's override panel, ...) -- a placeholder password
@@ -402,7 +403,19 @@ def _draw_hand_notation(parent, cards, bg):
     return canvas
 
 
-def document(parent, title, sections, width=460):
+# The Rules popup's own scrollable content area (title-to-Close-button) is
+# capped at this height and scrolls past it -- without a cap, a game with a
+# long GAMEPLAY list + all 9 HAND RANKINGS rows + a STRATEGY paragraph
+# (worst case today: Let It Ride) can produce a popup taller than the main
+# window's own fixed 820px height (main.py's own geometry("1200x820")),
+# pushing its bottom off-window -- _center_over_parent only clamps the
+# popup's top-left corner, never its size. 480px leaves room under the
+# title (~46px) and above the Close button (~70px) that this is never the
+# binding constraint for any rules screen that already fits today.
+_DOCUMENT_MAX_CONTENT_HEIGHT = 480
+
+
+def document(parent, title, sections, width=460, max_content_height=_DOCUMENT_MAX_CONTENT_HEIGHT):
     """A larger read-only popup for a block of reference text (e.g. Three
     Card Poker's Rules button) -- too much content for confirm()/info()'s
     one-line message, so this isn't built on _TerminalDialog. `sections` is
@@ -424,8 +437,10 @@ def document(parent, title, sections, width=460):
         font=theme.font(14, weight="bold"), anchor="w",
     ).pack(fill="x", padx=24, pady=(20, 4))
 
-    content = tk.Frame(body, bg=theme.BG_ELEVATED)
-    content.pack(fill="both", padx=24)
+    scroll = ScrollableFrame(body, bg=theme.BG_ELEVATED)
+    scroll.canvas.configure(width=width)
+    scroll.pack(fill="both", padx=24)
+    content = scroll.inner  # already the right bg -- no extra nesting needed
 
     for heading, section_body in sections:
         tk.Label(
@@ -450,6 +465,12 @@ def document(parent, title, sections, width=460):
                     _render_rich_text(content, line, width - 20, prefix="• ", fg=theme.FG, pady=1)
         else:
             _render_rich_text(content, section_body, width)
+
+    # Only knowable once every section actually exists; must happen before
+    # _center_over_parent (which needs the final, possibly-capped size).
+    win.update_idletasks()
+    natural_height = content.winfo_reqheight()
+    scroll.canvas.configure(height=min(natural_height, max_content_height))
 
     tk.Button(
         body, text="Close", bg=theme.ACCENT_DIM_BG_ELEVATED, fg=theme.ACCENT, relief="flat",

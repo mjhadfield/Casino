@@ -235,6 +235,7 @@ class BaccaratFrame(tk.Frame):
         # Session-only recent-outcomes strip -- see ROAD_STRIP's own note
         # above; never persisted, resets on every app restart.
         self.history = []
+        self._bound_spot_tags = set()
 
         self._build_ui()
 
@@ -520,9 +521,11 @@ class BaccaratFrame(tk.Frame):
         hit_tag = f"spot_hit_{key}"
         self.canvas.delete(hit_tag)
         self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill="", outline="", tags=(hit_tag,))
-        self.canvas.tag_bind(hit_tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
-        self.canvas.tag_bind(hit_tag, "<Enter>", lambda e: self.canvas.configure(cursor="hand2"))
-        self.canvas.tag_bind(hit_tag, "<Leave>", lambda e: self.canvas.configure(cursor=""))
+        if hit_tag not in self._bound_spot_tags:
+            self._bound_spot_tags.add(hit_tag)
+            self.canvas.tag_bind(hit_tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
+            self.canvas.tag_bind(hit_tag, "<Enter>", lambda e: self.canvas.configure(cursor="hand2"))
+            self.canvas.tag_bind(hit_tag, "<Leave>", lambda e: self.canvas.configure(cursor=""))
 
     def _redraw_spot_chips(self, key):
         cx, cy, r, _, max_r = SPOT_LAYOUT[key]

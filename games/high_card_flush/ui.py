@@ -318,6 +318,15 @@ class HighCardFlushFrame(tk.Frame):
 
         self.chip_canvases = {}
         self._jackpot_pulse_t = 0.0
+        # Tags already tag_bind'd (see _bind_spot) -- a canvas tag binding
+        # applies to any current or future item carrying that tag, so it
+        # only ever needs doing once per tag, not on every redraw. Without
+        # this guard, _pulse_jackpot's ~30fps redraw loop re-registers a
+        # brand new Tcl callback for every spot on every frame forever,
+        # leaking memory without bound (a real player crash: MemoryError
+        # from tkinter's own _register, days into a session with a jackpot
+        # bet sitting on the betting screen).
+        self._bound_spot_tags = set()
 
         # Per-round card-placement state -- see the module docstring's own
         # "play area is cosmetic" note: none of this is ever read by
@@ -667,6 +676,9 @@ class HighCardFlushFrame(tk.Frame):
         self._bind_spot(tag, "jackpot")
 
     def _bind_spot(self, tag, key):
+        if tag in self._bound_spot_tags:
+            return
+        self._bound_spot_tags.add(tag)
         self.canvas.tag_bind(tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
         self.canvas.tag_bind(tag, "<Enter>", lambda e: self.canvas.configure(cursor="hand2"))
         self.canvas.tag_bind(tag, "<Leave>", lambda e: self.canvas.configure(cursor=""))

@@ -343,6 +343,7 @@ class ThreeCardPokerFrame(tk.Frame):
 
         self.chip_canvases = {}  # value -> (canvas, face colour, rim colour)
         self._jackpot_pulse_t = 0.0  # phase for the jackpot spot's breathing glow, once a bet's placed
+        self._bound_spot_tags = set()
 
         self._build_ui()
         self.app.jackpot.add_listener(self._on_jackpot_changed)
@@ -766,6 +767,9 @@ class ThreeCardPokerFrame(tk.Frame):
         draw_chip_stack(self.canvas, tag, cx, cy, amount, max_r)
 
     def _bind_spot(self, tag, key):
+        if tag in self._bound_spot_tags:
+            return
+        self._bound_spot_tags.add(tag)
         self.canvas.tag_bind(tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
         self.canvas.tag_bind(tag, "<Enter>", lambda e: self.canvas.configure(cursor="hand2"))
         self.canvas.tag_bind(tag, "<Leave>", lambda e: self.canvas.configure(cursor=""))
