@@ -1,6 +1,6 @@
 # Hadfield Casino
 
-**Version 1.7.1**
+**Version 1.7.2**
 
 A small, extensible casino games library, built with Python's standard
 library only (`tkinter` — no extra installs needed).
@@ -10,10 +10,6 @@ library only (`tkinter` — no extra installs needed).
 **Windows:** double-click `Launch Casino (windows).bat`. If Python is not installed it will prompt a local (user) installation, no admin credentials are required.
 
 **Linux:** run `./Launch Casino (linux).sh`. If Python 3 or Tkinter is missing it prints the install command for your distro (apt/pacman/dnf/zypper/apk) rather than installing anything itself -- a system Python package needs root on Linux, unlike Windows' per-user installer.
-
-## Upgrading from an earlier version
-
-All player information and statistics are held in the "data" folder which is generated on game launch and no longer included in the repo. If you are moving from a version earlier than 1.6, copy your data folder into the new folder. 
 
 ```
 python3 main.py
@@ -28,6 +24,10 @@ with Python by default — if you get `ModuleNotFoundError: No module named
 sudo apt install python3-tk        # Debian/Ubuntu
 sudo pacman -S tk                  # Arch/CachyOS
 ```
+
+## Upgrading from an earlier version
+
+All player information and statistics are held in the "data" folder which is generated on game launch and no longer included in the repo. If you are moving from a version earlier than 1.6, copy your data folder into the new folder. 
 
 ## Games Implemented
 

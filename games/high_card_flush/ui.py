@@ -44,8 +44,11 @@ ROW_CHIP_MAX_R = 18
 # both zones, plus the betting cluster and the play area below them, inside
 # the app's fixed, non-resizable 1200x820 window.
 DEALER_CARD_SCALE = 0.6
-DEALER_CARD_W = CARD_WIDTH * DEALER_CARD_SCALE
-DEALER_CARD_H = CARD_HEIGHT * DEALER_CARD_SCALE
+# round()'d to an int -- draw_card/draw_card_back/_animate_flip all take
+# width/height as plain ints, and 70/100 * 0.6 lands on a whole pixel anyway
+# (42, 60), so this is a type-cleanup, not a size change.
+DEALER_CARD_W = round(CARD_WIDTH * DEALER_CARD_SCALE)
+DEALER_CARD_H = round(CARD_HEIGHT * DEALER_CARD_SCALE)
 DEALER_CARD_OVERLAP = DEALER_CARD_W * 0.55
 
 DEALT_MAT_RADIUS = 10
@@ -1086,6 +1089,7 @@ class HighCardFlushFrame(tk.Frame):
         protect), while the dealer's stay face down until their own later
         reveal."""
         assert self.result is not None
+        result = self.result
         order = []
         for i in range(7):
             order.append(("player", i))
@@ -1100,7 +1104,7 @@ class HighCardFlushFrame(tk.Frame):
                 sx, sy = tx, ty - 90
 
                 def frame(t, i=i, sx=sx, sy=sy, tx=tx, ty=ty):
-                    self._draw_player_card_at(i, self.result.player_cards[i],
+                    self._draw_player_card_at(i, result.player_cards[i],
                                                sx + (tx - sx) * t, sy + (ty - sy) * t, face_up=True)
 
                 self._animate(DEAL_IN_DROP_MS, frame, on_done=on_done)

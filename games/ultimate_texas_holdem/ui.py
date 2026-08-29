@@ -1264,7 +1264,7 @@ class UltimateTexasHoldemFrame(tk.Frame):
         self._run_staggered(2, 90, flip_one)
 
     def _on_player_cards_dealt(self):
-        self.result_lbl.configure(text="Your cards are dealt. Check or Bet?", fg=theme.FG)
+        self.result_lbl.configure(text="Your cards are dealt. Bet or fold?", fg=theme.FG)
         self._show_stage_controls()
 
     def _animate_community_reveal(self, indices, on_done):

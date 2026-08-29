@@ -29,54 +29,37 @@ from games.pai_gow_poker.logic import (
 )
 from ui import dialogs, theme
 from ui.card_widgets import CARD_HEIGHT, CARD_WIDTH, draw_card, draw_card_back
-from ui.chips import CHIP_DENOMINATIONS, CHIP_LAYER_MAX_R, CHIP_SIZE, chip_breakdown, draw_chip_face, draw_chip_stack
+from ui.chips import CHIP_DENOMINATIONS, CHIP_LAYER_MAX_R, CHIP_SIZE, draw_chip_face, draw_chip_stack
 from ui.jackpot_display import JackpotDisplay
 
 STATE_FILENAME = "pai_gow_poker_state.json"
 BET_KEYS = ("ante", "fortune", "jackpot")
 DEFAULT_STATE = {"bets": {k: 0 for k in BET_KEYS}, "selected_chip": 5}
-
-# --- Layout constants --------------------------------------------------------
-# Wider than the other two tables' (760) -- 7 cards across needs the room,
-# plus a dedicated left-hand margin for the visible DECK spot (see
-# DEALER_MAT_X1 below), the same "DECK sits to the mat's own left" language
-# Blackjack's table uses. Widened further still (850 -> 920) to fit the
-# slightly wider Front zone and the side-stakes triangle beside Back --
-# see FRONT_ZONE_W and SIDE_STAKES_CX below.
 CANVAS_WIDTH = 920
 
 # --- Betting-screen spot geometry -------------------------------------------
-# Fortune and Jackpot sit as two circles above the Ante spot -- the reverse
-# of Three Card Poker's own vertical Ante-below-side-bets stack, per the
-# brief. Ante keeps a playing card's own width:height ratio at heart, but
-# its height is trimmed to the bare minimum a worst-case bet needs -- a
-# stack spanning all 5 chip denominations (the most chip_breakdown can ever
-# return) still fits without clipping the "ANTE" label above it, and not a
-# px more. (166 measured directly against real Tk-rendered label/chip
-# bounding boxes, not estimated from font metrics by hand.)
+# Each spot's felt size and its own chip-stack radius are independent knobs
+# -- a _R constant sizes the felt only; a _CHIP_R constant sizes the chips
+# drawn on top of it. Nothing forces them to match, so a felt can be made
+# larger or smaller than its own chips without moving the other.
 ANTE_BAR_W = CARD_WIDTH * 2
-ANTE_BAR_H = 166
-# Smaller than the standard CHIP_LAYER_MAX_R specifically so a worst-case
-# 5-denomination stack (the most chip_breakdown can ever return -- one per
-# denomination) still fits inside ANTE_BAR_H with room to spare.
-ANTE_CHIP_R = 24
-FORTUNE_R = 40
-JACKPOT_R = 30
+ANTE_BAR_H = 80
+ANTE_CHIP_R = 30
+FORTUNE_R = 35
+FORTUNE_CHIP_R = 30
+JACKPOT_R = 35
+JACKPOT_CHIP_R = 30
 SIDE_SPOT_GAP = 95  # half-distance between the Fortune/Jackpot centres
 
 STACK_CX = CANVAS_WIDTH / 2
-# Ante's own bottom edge is the fixed anchor for the whole spot cluster --
-# as ANTE_BAR_H shrinks, its top moves down to follow (rather than leaving
-# the bottom of the whole cluster to drift, or the gap above it to grow),
-# and Fortune/Jackpot (see TOP_SPOT_CY below) move down by that same
-# amount to keep pace with it.
-ANTE_BAR_BOTTOM = 400
+
+ANTE_BAR_BOTTOM = 300
 ANTE_BAR_TOP = ANTE_BAR_BOTTOM - ANTE_BAR_H
 ANTE_BAR_CY = ANTE_BAR_TOP + ANTE_BAR_H / 2
 
 # A clear, deliberate gap (not just barely clearing) above Ante's own top --
 # measured off Fortune's own (larger) radius so it's the true worst-case
-# clearance -- with a clear reserved strip above *that* for an eventual logo.
+# clearance.
 TOP_SPOT_CY = ANTE_BAR_TOP - FORTUNE_R - 30
 FORTUNE_CX = STACK_CX - SIDE_SPOT_GAP
 JACKPOT_CX = STACK_CX + SIDE_SPOT_GAP
@@ -235,21 +218,31 @@ def _dealer_cluster_x(pos, n=7):
 
 CANVAS_HEIGHT = int(FELT_MAT_BOTTOM + 20)
 
+#Animation time and speed.
 DEAL_FLIGHT_MS = 220
-DEAL_CARD_STAGGER_MS = 260   # 14 cards total (7 + 7) -- a full 1s beat per
-                              # card, like the other tables, would make the
-                              # deal-in alone take 14s; kept brisk instead.
+DEAL_CARD_STAGGER_MS = 260
 SORT_MOVE_MS = 260
 HOUSE_WAY_FLIGHT_MS = 260
 REVEAL_FLIP_MS = 200
 REVEAL_STAGGER_MS = 260
 SEPARATE_MOVE_MS = 260
 
-PAYOUT_WIN_LANDING_OFFSET_Y = -18
+# Payout animation speed and landing position. 
 PAYOUT_CHIP_MOVE_MS = 420
-PAYOUT_OVERLAY_PEEK_RATIO = 0.10
+PAYOUT_WIN_LANDING_OFFSET_X = 10
+PAYOUT_WIN_LANDING_OFFSET_Y = 10
 
 CHIP_R = 20
+# The felt circle drawn under each side-stake token (see _draw_side_stakes)
+# -- just a few px of felt showing past the chip stack's own edge, same
+# "clear the chip, not much more" sizing the betting screen's own spots use.
+SIDE_STAKE_FELT_R = CHIP_R + 6
+
+# How long a bet's own chips take to fly onto their felt spot once DEAL/New
+# Deal is pressed (see _place_stakes_then) -- a touch snappier than a
+# payout's own PAYOUT_CHIP_MOVE_MS since this one has to finish, in full,
+# before the per-card deal-in sequence is allowed to start.
+STAKE_PLACE_MS = 320
 
 # The "ROUND RESULT" panel -- a bordered recessed_panel (same look Three
 # Card Poker's own round-result panel uses): title, up to 3 bet rows
@@ -328,10 +321,6 @@ def _net_color(amount):
     return theme.PUSH_COLOR
 
 
-def _payout_overlay_offset(radius):
-    return -(radius * 2 * PAYOUT_OVERLAY_PEEK_RATIO)
-
-
 def _sort_key(card):
     # The second element must stay the same type (str) whether or not the
     # card's a Joker -- Suit.value is a string ("Hearts", "Spades", ...),
@@ -390,6 +379,13 @@ class PaiGowPokerFrame(tk.Frame):
         # Per-round play state.
         self.round_bets = {}
         self.result: Optional[RoundResult] = None
+        # True for the brief window between a deal starting and this
+        # round's stake chips finishing their fly-in (see
+        # _place_stakes_then) -- _redraw_felt skips drawing the stake
+        # chips (though not their felt/label shells) while this holds, so
+        # the deal-in's own repeated _redraw_felt calls don't stomp the
+        # in-flight animation with the finished, full-size stack.
+        self._side_stakes_animating = False
         self.card_zone = {}       # card index (0-6, dealt order) -> "felt" | "front" | "back"
         self.front_order = []     # card indices, in the order placed
         self.back_order = []
@@ -662,8 +658,8 @@ class PaiGowPokerFrame(tk.Frame):
         self.canvas.delete("all")
         self._draw_spot_rect("ante", STACK_CX, ANTE_BAR_CY, ANTE_BAR_W, ANTE_BAR_H, "ANTE",
                               textured=True, chip_r=ANTE_CHIP_R)
-        self._draw_spot_circle("fortune", FORTUNE_CX, TOP_SPOT_CY, FORTUNE_R, "FORTUNE")
-        self._draw_spot_jackpot(JACKPOT_CX, TOP_SPOT_CY, JACKPOT_R)
+        self._draw_spot_circle("fortune", FORTUNE_CX, TOP_SPOT_CY, FORTUNE_R, "FORTUNE", chip_r=FORTUNE_CHIP_R)
+        self._draw_spot_jackpot(JACKPOT_CX, TOP_SPOT_CY, JACKPOT_R, chip_r=JACKPOT_CHIP_R)
         self._draw_rules_button(RULES_BUTTON_CX, RULES_BUTTON_CY)
 
     def _draw_rules_button(self, cx, cy):
@@ -711,16 +707,16 @@ class PaiGowPokerFrame(tk.Frame):
             ],
         )
 
-    def _draw_spot_circle(self, key, cx, cy, r, label):
+    def _draw_spot_circle(self, key, cx, cy, r, label, chip_r=CHIP_LAYER_MAX_R):
         tag = f"spot_{key}"
         amount = self.bets[key]
         felt_theme = self.app.settings.theme()
         self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r,
                                  fill=felt_theme["felt_dark"], outline=felt_theme["accent"], width=2, tags=(tag,))
-        self.canvas.create_text(cx, cy - r - 12, text=label, fill=theme.FG,
-                                 font=theme.font(9, weight="bold"), tags=(tag,))
+        self.canvas.create_text(cx, cy + r + 12, text=label, fill=theme.FG,
+                                 font=theme.font(11, weight="bold"), tags=(tag,))
         if amount:
-            draw_chip_stack(self.canvas, tag, cx, cy, amount, CHIP_LAYER_MAX_R)
+            draw_chip_stack(self.canvas, tag, cx, cy, amount, chip_r)
         else:
             self.canvas.create_text(cx, cy, text="tap to\nbet", fill=theme.FG_DIM,
                                      font=theme.font(9, weight="bold"), justify="center", tags=(tag,))
@@ -735,18 +731,14 @@ class PaiGowPokerFrame(tk.Frame):
                             outline=felt_theme["accent"], width=2, tags=(tag,))
         if textured:
             self._draw_felt_texture(x1, y1, x2, y2, felt_theme, tag)
-        self.canvas.create_text(cx, y1 + 16, text=label, fill=theme.FG,
+        self.canvas.create_text(cx, y2 + 12, text=label, fill=theme.FG,
                                  font=theme.font(11, weight="bold"), tags=(tag,))
         if amount:
-            # draw_chip_stack centres the whole stack on the cy it's given,
-            # growing equally up AND down as more denominations stack up --
-            # so bottom-anchoring it (rather than just reusing the same cy
-            # a single-layer stack would use) needs the actual layer count,
-            # or a multi-denomination bet's lowest chip pushes past the
-            # spot's own bottom edge the taller the stack gets.
-            layers = len(chip_breakdown(amount))
-            dy = chip_r * 0.85
-            stack_cy = y2 - 6 - chip_r - dy * (layers - 1) / 2
+            # draw_chip_stack anchors its base chip at the cy it's given and
+            # grows additional denominations upward from there -- so the
+            # base chip just sits resting on the spot's own bottom edge,
+            # with no layer-count-dependent shift needed.
+            stack_cy = y2 - chip_r - 6
             draw_chip_stack(self.canvas, tag, cx, stack_cy, amount, chip_r)
         else:
             stack_cy = y2 - chip_r - 6
@@ -768,7 +760,7 @@ class PaiGowPokerFrame(tk.Frame):
                 self.canvas.create_line(xs, xs - c, xe, xe - c, fill=color, width=1, tags=(tag,))
             c += step
 
-    def _draw_spot_jackpot(self, cx, cy, r):
+    def _draw_spot_jackpot(self, cx, cy, r, chip_r=JACKPOT_CHIP_R):
         tag = "spot_jackpot"
         felt_theme = self.app.settings.theme()
         placed = bool(self.bets["jackpot"])
@@ -780,12 +772,12 @@ class PaiGowPokerFrame(tk.Frame):
             outline_color = felt_theme["accent"]
         self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=felt_theme["felt_dark"],
                                  outline=outline_color, width=3, tags=(tag,))
-        self.canvas.create_text(cx, cy - r - 12, text="JACKPOT", fill=theme.FG,
-                                 font=theme.font(9, weight="bold"), tags=(tag,))
+        self.canvas.create_text(cx, cy + r + 12, text="JACKPOT", fill=theme.FG,
+                                 font=theme.font(11, weight="bold"), tags=(tag,))
         if placed:
             from ui.chips import CHIP_COLORS_BY_VALUE
             face, rim = CHIP_COLORS_BY_VALUE[1]
-            token_r = r - 8
+            token_r = chip_r
             self.canvas.create_oval(cx - token_r, cy - token_r, cx + token_r, cy + token_r,
                                      fill=face, outline=rim, width=2, tags=(tag,))
             self.canvas.create_text(cx, cy, text="£1", fill="#ffffff",
@@ -921,27 +913,114 @@ class PaiGowPokerFrame(tk.Frame):
                 self.app.show_frame("finances")
             return
 
-        self.round_bets = dict(self.bets)
-        self.app.finance.place_wager(total)
-        self._refresh_balance()
-
-        self.result = self.game.deal(
-            ante_bet=self.bets["ante"], fortune_bet=self.bets["fortune"], jackpot_bet=self.bets["jackpot"],
-            jackpot_amount=self.app.jackpot.amount,
-        )
-        self.state = "dealt"
-        self.card_zone = {i: "felt" for i in range(7)}
-        self.felt_slot_order = list(range(7))
-        self.front_order = []
-        self.back_order = []
-        self.active_zone = "front"
-        self._player_cards_revealed = 0
-        self._dealer_dealt_count = 0
-        self._dealer_revealed = 0
-        self._dealer_separated = False
-        self.result_lbl.configure(text="Dealing...", fg=theme.FG)
+        # New Deal re-deals with the same bets without a trip back through
+        # the betting screen -- the previous (now settled) round's stake
+        # chips are still sitting on the felt at this point, so those need
+        # sweeping away before this round's own stakes get placed (see
+        # _withdraw_stale_stakes). A plain DEAL from the betting screen has
+        # no such leftovers -- betting's own Ante/Fortune/Jackpot spots
+        # aren't the play felt's, and nothing's been placed on the felt yet.
+        is_new_deal = self.state == "resolved"
+        # Captured now, before anything's hidden -- the very button the
+        # player just pressed is still on-screen at this point, wherever
+        # DEAL/New Deal happens to be laid out, so the new stakes can fly
+        # on from *there* (see _place_stakes_then) rather than some
+        # unrelated fixed point.
+        origin_xy = self._widget_canvas_center(self.new_deal_btn if is_new_deal else self.deal_btn)
+        # Hidden immediately, before any withdrawal animation even starts --
+        # not just once it's done -- so New Deal/Change Bets can't be
+        # double-clicked mid-withdrawal into re-entering this method with
+        # the previous round's own stakes only halfway swept away.
         self._show_no_controls()
-        self._animate_deal_in()
+
+        def proceed():
+            self.round_bets = dict(self.bets)
+            self.app.finance.place_wager(total)
+            self._refresh_balance()
+
+            self.result = self.game.deal(
+                ante_bet=self.bets["ante"], fortune_bet=self.bets["fortune"], jackpot_bet=self.bets["jackpot"],
+                jackpot_amount=self.app.jackpot.amount,
+            )
+            self.state = "dealt"
+            self.card_zone = {i: "felt" for i in range(7)}
+            self.felt_slot_order = list(range(7))
+            self.front_order = []
+            self.back_order = []
+            self.active_zone = "front"
+            self._player_cards_revealed = 0
+            self._dealer_dealt_count = 0
+            self._dealer_revealed = 0
+            self._dealer_separated = False
+            self.result_lbl.configure(text="Dealing...", fg=theme.FG)
+            self._place_stakes_then(origin_xy, self._animate_deal_in)
+
+        if is_new_deal:
+            self._withdraw_stale_stakes(origin_xy, proceed)
+        else:
+            proceed()
+
+    def _widget_canvas_center(self, widget):
+        """A Tk widget's own on-screen centre, converted into self.canvas's
+        local coordinate space -- lets an animation start from wherever a
+        button the player just pressed actually sits (see origin_xy above),
+        even though that button lives in a totally different widget/layout
+        hierarchy than the canvas itself."""
+        self.canvas.update_idletasks()
+        cx = widget.winfo_rootx() + widget.winfo_width() / 2 - self.canvas.winfo_rootx()
+        cy = widget.winfo_rooty() + widget.winfo_height() / 2 - self.canvas.winfo_rooty()
+        return cx, cy
+
+    def _place_stakes_then(self, origin_xy, on_done):
+        """Flies this round's Ante/Fortune/Jackpot stakes onto their felt
+        spots from origin_xy (the DEAL/New Deal button just pressed) before
+        calling on_done -- the placement half of the same "chips physically
+        move" language the payout side already has (_chip_move_away/
+        _chip_move_in), which previously just had the finished stack pop in
+        with the rest of _redraw_felt's own static drawing.
+
+        Runs to completion (all stakes at once, see _run_parallel) before
+        on_done -- normally _animate_deal_in -- ever starts, rather than
+        overlapping with it: _animate_deal_in's own repeated _redraw_felt
+        calls (one per card as it lands) would otherwise stomp an
+        in-progress fly-in with the finished, full-size stack on every one
+        of those redraws."""
+        assert self.result is not None
+        self._side_stakes_animating = True
+        self._redraw_felt()  # dealer mat / zones / felt mat + stake shells -- no chips, no cards, yet
+
+        def finish():
+            self._side_stakes_animating = False
+            on_done()
+
+        fns = []
+        for cx, cy, amount, tag in (
+            (ANTE_TOKEN_CX, SIDE_STAKE_BOTTOM_CY, self.result.ante_bet, "chip_ante"),
+            (FORTUNE_CX_PLAY, SIDE_STAKE_TOP_CY, self.result.fortune_bet, "chip_fortune"),
+            (JACKPOT_CX_PLAY, SIDE_STAKE_TOP_CY, self.result.jackpot_bet, "chip_jackpot"),
+        ):
+            if amount > 0:
+                fns.append(lambda cb, cx=cx, cy=cy, amount=amount, tag=tag:
+                           self._place_stake_chip(origin_xy, cx, cy, amount, tag, cb))
+        self._run_parallel(fns, finish)
+
+    def _place_stake_chip(self, origin_xy, cx, cy, amount, tag, on_done):
+        ox, oy = origin_xy
+        travel_tag = f"place_{tag}"
+
+        def frame(t):
+            x = ox + (cx - ox) * t
+            y = oy + (cy - oy) * t
+            r = CHIP_R * t
+            self.canvas.delete(travel_tag)
+            if r > 1:
+                draw_chip_stack(self.canvas, travel_tag, x, y, amount, r)
+
+        def done():
+            self.canvas.delete(travel_tag)
+            on_done()
+
+        self._animate(STAKE_PLACE_MS, frame, on_done=done)
 
     # ------------------------------------------------------------------ deal-in
     def _animate_deal_in(self):
@@ -1208,7 +1287,7 @@ class PaiGowPokerFrame(tk.Frame):
             # Your Ante/Fortune/Jackpot stakes -- visible for the whole
             # round, from the moment the cards start dealing, not just
             # once the outcome's determined (see _draw_side_stakes).
-            self._draw_side_stakes()
+            self._draw_side_stakes(draw_chips=not self._side_stakes_animating)
         self._draw_felt_mat()
         if self.result:
             self._draw_felt_cards()
@@ -1282,6 +1361,7 @@ class PaiGowPokerFrame(tk.Frame):
         if front_ready and back_ready:
             # Fully placed -- CONFIRM, gated by the normal foul check.
             valid = self._current_split_valid()
+            self.result_lbl.configure(text="Confirm your hand?", fg=theme.FG)
             self.confirm_btn.configure(
                 text="CONFIRM", command=self._on_confirm,
                 state="normal" if valid else "disabled",
@@ -1292,8 +1372,6 @@ class PaiGowPokerFrame(tk.Frame):
             if not valid:
                 self.result_lbl.configure(
                     text="That's a foul -- the Back hand must outrank the Front. Rearrange it.", fg=theme.WARN)
-            elif self.state == "setting":
-                self.result_lbl.configure(text="Set your hand: 2 cards Front, 5 Back.", fg=theme.FG)
         else:
             # Still being placed -- SET, a shortcut that drops the rest of
             # the felt straight into Back once Front's own 2 cards are in
@@ -1307,7 +1385,10 @@ class PaiGowPokerFrame(tk.Frame):
                 highlightbackground=theme.ACCENT if front_ready else theme.GREY_BTN_BORDER,
             )
             if self.state == "setting":
-                self.result_lbl.configure(text="Set your hand: 2 cards Front, 5 Back.", fg=theme.FG)
+                if front_ready:
+                    self.result_lbl.configure(text="Place the rest?", fg=theme.FG)
+                else:
+                    self.result_lbl.configure(text="Set your hand: 2 cards Front, 5 Back.", fg=theme.FG)
 
     def _lock_setting_buttons(self):
         """Disables Sort/middle/Confirm, and sets _setting_locked, for the
@@ -1613,6 +1694,62 @@ class PaiGowPokerFrame(tk.Frame):
                                ret=self.result.jackpot_return, max_r=CHIP_R, tag="chip_jackpot"))
         return items
 
+    def _withdraw_stale_stakes(self, dest_xy, on_done):
+        """New Deal re-deals without a trip back through the betting
+        screen (see _on_deal), so the previous round's settled stakes --
+        each one's original bet stack, plus any win-payout overlay
+        _chip_move_in left sitting beside it (that one's never cleaned up
+        on its own -- see its own docstring) -- are still sitting on the
+        felt at this point. Sweeps whatever's actually still there off
+        toward dest_xy (the New Deal button the player just pressed -- see
+        _on_deal; the player's taking these chips back, not the dealer)
+        before this round's own fresh stakes get placed, rather than
+        letting them simply vanish under the canvas wipe that starts the
+        next deal-in.
+
+        Driven by what's actually on the canvas (find_withtag), not by
+        re-deriving win/loss/push from self.result -- a losing stake's own
+        chips are already gone by now (_chip_move_away deleted them at
+        settlement), so this only ever sweeps a tag that still has
+        something to sweep."""
+        fns = []
+        for item in self._payout_items():
+            tag = item["tag"]
+            if self.canvas.find_withtag(tag):
+                fns.append(lambda cb, item=item: self._sweep_stake_away(item, dest_xy, cb))
+            win_tag = f"travelwin_{tag}"
+            if self.canvas.find_withtag(win_tag):
+                win_item = dict(item, tag=win_tag, bet=item["ret"] - item["bet"],
+                                 cx=item["cx"] + PAYOUT_WIN_LANDING_OFFSET_X,
+                                 cy=item["cy"] + PAYOUT_WIN_LANDING_OFFSET_Y)
+                fns.append(lambda cb, win_item=win_item: self._sweep_stake_away(win_item, dest_xy, cb))
+        self._run_parallel(fns, on_done)
+
+    def _sweep_stake_away(self, item, dest_xy, on_done):
+        """One stale chip stack's own sweep toward dest_xy -- the same
+        shrink-while-travelling motion _chip_move_away uses for a losing
+        payout (which always sweeps to the dealer), just reused here with
+        an arbitrary destination so a stake can be withdrawn toward the
+        player instead (see _withdraw_stale_stakes)."""
+        dx, dy = dest_xy
+        travel_tag = f"withdraw_{item['tag']}"
+
+        def frame(t):
+            cx = item["cx"] + (dx - item["cx"]) * t
+            cy = item["cy"] + (dy - item["cy"]) * t
+            r = item["max_r"] * (1 - t)
+            self.canvas.delete(travel_tag)
+            if r > 1:
+                draw_chip_stack(self.canvas, travel_tag, cx, cy, item["bet"], r)
+
+        def done():
+            self.canvas.delete(travel_tag)
+            self.canvas.delete(item["tag"])
+            on_done()
+
+        self.canvas.delete(item["tag"])
+        self._animate(PAYOUT_CHIP_MOVE_MS, frame, on_done=done)
+
     def _chip_move_away(self, item, on_done):
         travel_tag = f"travel_{item['tag']}"
 
@@ -1638,10 +1775,11 @@ class PaiGowPokerFrame(tk.Frame):
             on_done()
             return
         travel_tag = f"travelwin_{item['tag']}"
-        landing_cy = item["cy"] + _payout_overlay_offset(item["max_r"])
+        landing_cx = item["cx"] + PAYOUT_WIN_LANDING_OFFSET_X
+        landing_cy = item["cy"] + PAYOUT_WIN_LANDING_OFFSET_Y
 
         def frame(t):
-            cx = DEALER_CENTER_X + (item["cx"] - DEALER_CENTER_X) * t
+            cx = DEALER_CENTER_X + (landing_cx - DEALER_CENTER_X) * t
             cy = DEALER_CENTER_Y + (landing_cy - DEALER_CENTER_Y) * t
             r = item["max_r"] * t
             self.canvas.delete(travel_tag)
@@ -1668,23 +1806,35 @@ class PaiGowPokerFrame(tk.Frame):
         # by their existing tags.
         self._animate_payouts(self._on_round_settled)
 
-    def _draw_side_stakes(self):
+    def _draw_side_stakes(self, draw_chips=True):
         # Fortune/Jackpot/Ante in a triangle -- Fortune and Jackpot as the
         # top two points, Ante below them -- matching the betting screen's
         # own Fortune/Jackpot-above-Ante convention, in the space between
         # the Back zone and the Dealer mat's right edge.
+        #
+        # `draw_chips=False` (see _place_stakes_then) draws just the
+        # felt+label shells, leaving the chip stacks themselves to an
+        # in-progress fly-in animation instead of popping them straight to
+        # their finished, full size.
         assert self.result is not None
-        draw_chip_stack(self.canvas, "chip_ante", ANTE_TOKEN_CX, SIDE_STAKE_BOTTOM_CY, self.result.ante_bet, CHIP_R)
-        self.canvas.create_text(ANTE_TOKEN_CX, SIDE_STAKE_BOTTOM_CY - CHIP_R - 8, text="ANTE", fill=theme.FG_DIM,
-                                 font=theme.font(8, weight="bold"))
+        felt_theme = self.app.settings.theme()
+
+        def stake(cx, cy, amount, chips_tag, label):
+            shell_tag = f"shell_{chips_tag}"
+            self.canvas.create_oval(cx - SIDE_STAKE_FELT_R, cy - SIDE_STAKE_FELT_R,
+                                     cx + SIDE_STAKE_FELT_R, cy + SIDE_STAKE_FELT_R,
+                                     fill=felt_theme["felt_dark"], outline=felt_theme["accent"], width=2,
+                                     tags=(shell_tag,))
+            if draw_chips:
+                draw_chip_stack(self.canvas, chips_tag, cx, cy, amount, CHIP_R)
+            self.canvas.create_text(cx, cy + SIDE_STAKE_FELT_R + 10, text=label, fill=theme.FG_DIM,
+                                     font=theme.font(8, weight="bold"), tags=(shell_tag,))
+
+        stake(ANTE_TOKEN_CX, SIDE_STAKE_BOTTOM_CY, self.result.ante_bet, "chip_ante", "ANTE")
         if self.result.fortune_bet > 0:
-            draw_chip_stack(self.canvas, "chip_fortune", FORTUNE_CX_PLAY, SIDE_STAKE_TOP_CY, self.result.fortune_bet, CHIP_R)
-            self.canvas.create_text(FORTUNE_CX_PLAY, SIDE_STAKE_TOP_CY - CHIP_R - 8, text="FORTUNE", fill=theme.FG_DIM,
-                                     font=theme.font(8, weight="bold"))
+            stake(FORTUNE_CX_PLAY, SIDE_STAKE_TOP_CY, self.result.fortune_bet, "chip_fortune", "FORTUNE")
         if self.result.jackpot_bet > 0:
-            draw_chip_stack(self.canvas, "chip_jackpot", JACKPOT_CX_PLAY, SIDE_STAKE_TOP_CY, self.result.jackpot_bet, CHIP_R)
-            self.canvas.create_text(JACKPOT_CX_PLAY, SIDE_STAKE_TOP_CY - CHIP_R - 8, text="JACKPOT", fill=theme.FG_DIM,
-                                     font=theme.font(8, weight="bold"))
+            stake(JACKPOT_CX_PLAY, SIDE_STAKE_TOP_CY, self.result.jackpot_bet, "chip_jackpot", "JACKPOT")
 
     # ------------------------------------------------------------------ settle
     def _record_stats(self, summary):
@@ -1818,6 +1968,24 @@ class PaiGowPokerFrame(tk.Frame):
                 return
             fns[i](lambda: step(i + 1))
         step(0)
+
+    def _run_parallel(self, fns, on_done=None):
+        """Starts every fn(cb) at once rather than chaining them -- used for
+        "every stake's chips fly/sweep at the same time" (contrast
+        _run_sequential, used for payouts settling one at a time)."""
+        if not fns:
+            if on_done:
+                on_done()
+            return
+        remaining = [len(fns)]
+
+        def one_done():
+            remaining[0] -= 1
+            if remaining[0] == 0 and on_done:
+                on_done()
+
+        for fn in fns:
+            fn(one_done)
 
     def _run_staggered(self, count, stagger_ms, fn):
         """Calls fn(i) for i in range(count), staggered by `stagger_ms` --

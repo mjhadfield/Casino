@@ -57,6 +57,15 @@ def draw_chip_stack(canvas, tag, cx, cy, amount, max_r):
     fit some notional budget (a large payout could otherwise end up with a
     correctly-sized bottom chip and comically small ones stacked above it).
 
+    The base chip always sits at `cy` itself, not at some midpoint that
+    shifts as the stack grows -- since `chip_breakdown` is recomputed from
+    the running total on every draw, that base chip's own denomination can
+    change draw to draw (e.g. four £1 chips collapsing into one £5 once the
+    spot reaches £5), but its position doesn't: additional denominations
+    only ever stack upward from it. A large enough stack is left to clip
+    into whatever sits above the spot rather than being squeezed back down
+    to fit.
+
     `tag` is usually a single string, but a payout animation that needs to
     delete/redraw just the chips on a spot without touching that spot's own
     box+label can pass a (shell_tag, chips_tag) pair instead, so both are
@@ -65,10 +74,9 @@ def draw_chip_stack(canvas, tag, cx, cy, amount, max_r):
     tags = (tag,) if isinstance(tag, str) else tuple(tag)
     breakdown = chip_breakdown(amount)  # largest denomination first
     layer_r = max_r
-    dy = layer_r * 0.85
-    base_cy = cy + dy * (len(breakdown) - 1) / 2
+    dy = layer_r * 0.35
     for i, (value, count) in enumerate(breakdown):
-        layer_cy = base_cy - i * dy
+        layer_cy = cy - i * dy
         face, rim = CHIP_COLORS_BY_VALUE[value]
         canvas.create_oval(cx - layer_r, layer_cy - layer_r, cx + layer_r, layer_cy + layer_r,
                             fill=face, outline=rim, width=2, tags=tags)

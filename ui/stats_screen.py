@@ -22,49 +22,34 @@ from ui.scrollable import ScrollableFrame
 # ships, the same data-driven way ui/main_menu.py's GAMES list works.
 #
 # "tracks_folding": whether this game has a Fold-style decision at all --
-# Three Card Poker's "Played vs Folded" split and its "Correctly" strategy
-# breakdown (see _build_hands_summary) only mean anything for a game shaped
-# that way. A game without one (Blackjack: Hit/Stand/Double/Split, no fold
-# concept) sets this False and just gets the plain "Total Hands" count --
-# GameStatsManager itself is unaffected either way, this only controls what
-# the Stats screen chooses to *display*.
+# Three card poker is currently the only game where it's being tracked and compared to optimal
+# Will do the others when I'm ready to do some sort of "training mode", probably after achievements. 
 GAME_SECTIONS = [
     {"key": tcp_logic.GAME_KEY, "label": tcp_logic.GAME_LABEL, "enabled": True, "tracks_folding": True,
      "bet_types": tcp_logic.BET_TYPES, "hand_labels": tcp_logic.HAND_OUTCOME_LABELS},
+     # Currently the only game that specifically tracks folding and compares to otpimal play. Easy logic, Q-6-4 or better. 
     {"key": bj_logic.GAME_KEY, "label": bj_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
      "bet_types": bj_logic.BET_TYPES, "hand_labels": bj_logic.HAND_OUTCOME_LABELS},
     {"key": pgp_logic.GAME_KEY, "label": pgp_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
      "bet_types": pgp_logic.BET_TYPES, "hand_labels": pgp_logic.HAND_OUTCOME_LABELS},
     {"key": pgpfu_logic.GAME_KEY, "label": pgpfu_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
      "bet_types": pgpfu_logic.BET_TYPES, "hand_labels": pgpfu_logic.HAND_OUTCOME_LABELS},
-    # tracks_folding=False despite this game genuinely having a Fold decision
-    # at every street -- same reasoning as pai_gow_poker_face_up's own entry
-    # above: no optimal-strategy checker was built for it (see logic.py's own
-    # module docstring), so there's nothing real to show a "Correctly" line
-    # against.
     {"key": ms_logic.GAME_KEY, "label": ms_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
      "bet_types": ms_logic.BET_TYPES, "hand_labels": ms_logic.HAND_OUTCOME_LABELS},
-    # Same tracks_folding=False reasoning as above -- Ultimate Texas Hold'em
-    # genuinely has a Fold decision (at the final, post-turn stage only),
-    # but no optimal-strategy checker was built for it either.
+    # tracks_folding=False until I can be bothered to implement Kisenwether's strategy.
     {"key": uth_logic.GAME_KEY, "label": uth_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
      "bet_types": uth_logic.BET_TYPES, "hand_labels": uth_logic.HAND_OUTCOME_LABELS},
-    # Same tracks_folding=False reasoning as above -- Let It Ride genuinely
-    # has two Pull Back/Let It Ride decisions, but no optimal-strategy
-    # checker was built for them either.
+    # tracks_folding=False probably forever, optimal strategy is convoluted.  
     {"key": lir_logic.GAME_KEY, "label": lir_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
      "bet_types": lir_logic.BET_TYPES, "hand_labels": lir_logic.HAND_OUTCOME_LABELS},
-    # Same tracks_folding=False reasoning as above -- High Card Flush
-    # genuinely has a Fold decision, but no optimal-strategy checker was
-    # built for it either.
+    # tracks_folding=False until optimal strategy can be implemented, pretty high complexity though.
     {"key": hcf_logic.GAME_KEY, "label": hcf_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
      "bet_types": hcf_logic.BET_TYPES, "hand_labels": hcf_logic.HAND_OUTCOME_LABELS},
-    # tracks_folding=False here is actually correct, not just "no checker
-    # built yet" -- Baccarat is the first game in this app with genuinely
-    # zero player decisions after the bet at all.
+    #tracks_folding=False - this is probably the game to start with optimal strategy. 
     {"key": bacc_logic.GAME_KEY, "label": bacc_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
      "bet_types": bacc_logic.BET_TYPES, "hand_labels": bacc_logic.HAND_OUTCOME_LABELS},
 ]
+
 
 LIFETIME_STAT_ROWS = [
     ("lifetime_deposited", "Total Deposited", "money"),
