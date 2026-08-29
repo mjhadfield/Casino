@@ -944,8 +944,13 @@ class UltimateTexasHoldemFrame(tk.Frame):
             self.game.reveal_flop()
             self._animate_community_reveal([0, 1, 2], self._after_preflop_check)
         else:  # postflop
+            # A post-flop check goes straight to the final Bet-1x-or-Fold
+            # decision -- there's no separate post-turn check in Ultimate
+            # Texas Hold'em -- so the turn AND river both need to be face
+            # up before that decision, not just the turn.
             self.game.reveal_turn()
-            self._animate_community_reveal([3], self._after_postflop_check)
+            self.game.reveal_river()
+            self._animate_community_reveal([3, 4], self._after_postflop_check)
 
     def _after_preflop_check(self):
         self.stage = "postflop"
