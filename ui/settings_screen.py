@@ -39,7 +39,22 @@ class SettingsFrame(tk.Frame):
         ).pack(side="left", padx=(20, 10), pady=12)
         tk.Label(top_bar, text="Settings", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
                  font=theme.font(18, weight="bold")).pack(side="left", padx=10)
-        theme.breadcrumb(top_bar, "settings", bg=theme.BG_ELEVATED).pack(side="right", padx=20, pady=12)
+        theme.breadcrumb(top_bar, "settings", bg=theme.BG_ELEVATED,
+                          player=app.current_player["name"]).pack(side="right", padx=20, pady=12)
+
+        # Centred regardless of how wide the left ("← Back"/"Settings") or
+        # right (breadcrumb) groups end up -- place() positions relative to
+        # top_bar's own current size independently of what's pack()ed on
+        # either side of it, rather than needing a pack "expand" spacer on
+        # both sides to balance. Switches back to the player-select screen
+        # (see ui/logon_screen.py) without closing the app -- also the
+        # planned home for character creation/bonus stores later.
+        tk.Button(
+            top_bar, text="Player Screen", bg=theme.BG_ELEVATED, fg=theme.ACCENT, relief="flat",
+            font=theme.font(11, weight="bold"), padx=14, pady=6, cursor="hand2",
+            highlightthickness=1, highlightbackground=theme.ACCENT,
+            command=lambda: app.show_frame("logon"),
+        ).place(relx=0.5, rely=0.5, anchor="center")
 
         # Scrollable -- the Preferences/Jackpot/Danger Zone panels plus the
         # Save/Cancel row can add up to more height than the window

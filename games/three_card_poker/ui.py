@@ -371,7 +371,8 @@ class ThreeCardPokerFrame(tk.Frame):
         self.balance_lbl = tk.Label(top_bar, text="£0.00", bg=theme.BG_ELEVATED, fg=theme.WIN_COLOR,
                                      font=theme.font(12, weight="bold"))
         self.balance_lbl.pack(side="right", padx=20)
-        theme.breadcrumb(top_bar, "three_card_poker", bg=theme.BG_ELEVATED).pack(side="right", padx=(6, 6))
+        theme.breadcrumb(top_bar, "three_card_poker", bg=theme.BG_ELEVATED,
+                          player=self.app.current_player["name"]).pack(side="right", padx=(6, 6))
 
         # `body` is the full-window stage; `content` is the actual UI at its
         # fixed base size, centred horizontally within it as one block rather

@@ -199,6 +199,53 @@ def confirm_with_password(parent, title, message, password,
     return dialog.run()
 
 
+def prompt_text(parent, title, message, max_length=24, confirm_text="Create"):
+    """Same shape as confirm_with_password, but for a single unmasked line
+    of free text rather than a password check -- used by the logon
+    screen's "+ New Player" flow. Confirm only actually closes the dialog
+    (returning the trimmed text) once it's non-empty and no longer than
+    `max_length`; an invalid entry shows an inline error and lets the user
+    try again, the same way a wrong password does. Returns None if the
+    dialog was cancelled instead.
+
+    Deliberately not used for the logon screen's legacy-migration prompt
+    (see ui/logon_screen.py) -- a popup Toplevel right after the main
+    window's very first deiconify is a real problem: the window manager
+    hasn't settled focus onto the new window yet, so an override-redirect
+    dialog shown at exactly that moment can come up uncentred and never
+    actually receive keyboard input. That one's built as flat widgets
+    directly on the frame instead, which doesn't have this failure mode."""
+    dialog = _TerminalDialog(parent, title, message, danger=False)
+    dialog.confirm_btn.configure(text=confirm_text)
+
+    text_var = tk.StringVar()
+    entry = tk.Entry(
+        dialog.extra, textvariable=text_var, font=theme.font(11),
+        bg=theme.BG, fg=theme.FG, insertbackground=theme.FG, relief="flat",
+        highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
+    )
+    entry.pack(fill="x", pady=(4, 4))
+    entry.focus_set()
+
+    def try_confirm():
+        name = text_var.get().strip()
+        if not name:
+            dialog.error_lbl.configure(text="Enter a name to continue.")
+        elif len(name) > max_length:
+            dialog.error_lbl.configure(text=f"Keep it to {max_length} characters or fewer.")
+        else:
+            dialog.result = name
+            dialog.destroy()
+
+    # See confirm_with_password's matching comment -- not also bound on
+    # `entry` itself, <Return> already bubbles up to this Toplevel binding.
+    dialog._confirm = try_confirm
+    dialog.confirm_btn.configure(command=try_confirm)
+
+    result = dialog.run()
+    return result or None  # dialog.result defaults to False on cancel, not ""/None
+
+
 def ensure_admin_unlocked(app, parent, slug):
     """The shared gate behind every "admin" section anywhere in the app --
     Settings' Jackpot Config and Danger Zone, Cashier's override panel, and

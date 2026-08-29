@@ -95,7 +95,8 @@ class StatsFrame(tk.Frame):
         ).pack(side="left", padx=(20, 10), pady=12)
         tk.Label(top_bar, text="Stats", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
                  font=theme.font(18, weight="bold")).pack(side="left", padx=10)
-        theme.breadcrumb(top_bar, "stats", bg=theme.BG_ELEVATED).pack(side="right", padx=20, pady=12)
+        theme.breadcrumb(top_bar, "stats", bg=theme.BG_ELEVATED,
+                          player=app.current_player["name"]).pack(side="right", padx=20, pady=12)
 
         # Scrollable -- lifetime stats plus a growing list of per-game
         # sections easily outgrows the window, especially once more games

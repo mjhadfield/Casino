@@ -1,0 +1,9 @@
+# Runtime save state -- balances, stats, settings, unlocks, the shared
+# jackpot, and every per-player profile under data/players/. None of this
+# is source; it's generated on first launch and migrated/rewritten by the
+# app itself (see core/persistence.py, core/players.py).
+data/
+
+# Python bytecode cache
+__pycache__/
+*.pyc

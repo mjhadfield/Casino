@@ -26,11 +26,11 @@ DEFAULT_UNLOCKS = {
     "blackjack": True,
     "pai_gow_poker": True,
     "pai_gow_poker_face_up": True,
-    "mississippi_stud": False,
-    "baccarat": False,
-    "let_it_ride": False,
-    "ultimate_texas_holdem": False,
-    "high_card_flush": False,
+    "mississippi_stud": True,
+    "baccarat": True,
+    "let_it_ride": True,
+    "ultimate_texas_holdem": True,
+    "high_card_flush": True,
 }
 
 

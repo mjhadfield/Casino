@@ -24,7 +24,8 @@ class FinancesFrame(tk.Frame):
         ).pack(side="left", padx=(20, 10), pady=12)
         tk.Label(top_bar, text="Cashier", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
                  font=theme.font(18, weight="bold")).pack(side="left", padx=10)
-        theme.breadcrumb(top_bar, "cashier", bg=theme.BG_ELEVATED).pack(side="right", padx=20, pady=12)
+        theme.breadcrumb(top_bar, "cashier", bg=theme.BG_ELEVATED,
+                          player=app.current_player["name"]).pack(side="right", padx=20, pady=12)
 
         # Scrollable -- two transaction panels plus their quick-amount rows
         # add up to more vertical space than the window's minimum height

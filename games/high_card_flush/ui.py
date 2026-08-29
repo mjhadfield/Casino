@@ -340,7 +340,8 @@ class HighCardFlushFrame(tk.Frame):
         self.balance_lbl = tk.Label(top_bar, text="£0.00", bg=theme.BG_ELEVATED, fg=theme.WIN_COLOR,
                                      font=theme.font(12, weight="bold"))
         self.balance_lbl.pack(side="right", padx=20)
-        theme.breadcrumb(top_bar, "high_card_flush", bg=theme.BG_ELEVATED).pack(side="right", padx=(6, 6))
+        theme.breadcrumb(top_bar, "high_card_flush", bg=theme.BG_ELEVATED,
+                          player=self.app.current_player["name"]).pack(side="right", padx=(6, 6))
 
         body = tk.Frame(self, bg=felt_theme["felt"])
         body.pack(fill="both", expand=True)

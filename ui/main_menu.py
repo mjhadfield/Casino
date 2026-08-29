@@ -20,6 +20,9 @@ from ui import game_icons, theme
 # core/unlocks.py's DEFAULT_UNLOCKS, and once it's implemented, an icon in
 # game_icons.py and a real frame_name) -- the grid below lays itself out
 # automatically, no layout code to touch.
+
+VERSION = "1.7.0"
+
 GAMES = [
     (game_icons.draw_three_card_poker_icon, "Three Card Poker", "Ante, Play, Pair Plus & Prime side bets",
      "three_card_poker", "three_card_poker"),
@@ -76,7 +79,7 @@ class MainMenuFrame(tk.Frame):
 
         self._make_spade(top_bar).pack(side="left", padx=(20, 8), pady=14)
         tk.Label(
-            top_bar, text="HADFIELD CASINO v1.6.0", bg=theme.MENU_BG, fg=theme.SECONDARY,
+            top_bar, text=f"HADFIELD CASINO v{VERSION}", bg=theme.MENU_BG, fg=theme.SECONDARY,
             font=theme.font(18, weight="bold"),
         ).pack(side="left")
         self._make_spade(top_bar).pack(side="left", padx=(8, 0), pady=14)
@@ -114,7 +117,8 @@ class MainMenuFrame(tk.Frame):
             cursor="hand2", command=lambda: app.show_frame("settings"),
         ).pack(side="right", padx=6, pady=14)
 
-        breadcrumb_lbl = theme.breadcrumb(top_bar, "menu", bg=theme.MENU_BG)
+        breadcrumb_lbl = theme.breadcrumb(top_bar, "menu", bg=theme.MENU_BG,
+                                           player=app.current_player["name"])
         breadcrumb_lbl.pack(side="right", padx=(6, 6), pady=14)
 
         # A visible grey rule between the top bar and the body -- MENU_BG is
@@ -190,9 +194,7 @@ class MainMenuFrame(tk.Frame):
             # A Frame border can only ever be solid -- the site's dashed
             # "soon"/"locked" look has to be Canvas-drawn, sized to exactly
             # cover the tile and placed behind everything else (created
-            # first, so every later-packed child renders on top of it). A
-            # locked game gets the dark-red palette; an unlocked-but-not-
-            # yet-built one keeps the original neutral grey.
+            # first, so every later-packed child renders on top of it).
             border_canvas = tk.Canvas(tile, width=TILE_WIDTH, height=TILE_HEIGHT, bg=bg, highlightthickness=0)
             border_canvas.place(x=0, y=0)
             dash_color = theme.LOCK_BORDER if not unlocked else theme.GREY_BTN_BORDER
@@ -201,13 +203,6 @@ class MainMenuFrame(tk.Frame):
                 outline=dash_color, width=1.5, dash=(5, 3), fill="",
             )
 
-        # A locked game still shows its real icon/name/subtitle -- "locked"
-        # is conveyed purely by colour (the dark-red palette above) and the
-        # padlock badge below, not by hiding what the game actually is.
-        #
-        # Icon is always a Canvas -- even Three Card Poker's plain glyph --
-        # rather than sometimes a Label, purely so both cases share one
-        # code path here.
         icon_widget = tk.Canvas(tile, width=ICON_CANVAS_SIZE, height=ICON_CANVAS_SIZE,
                                  bg=bg, highlightthickness=0)
         if callable(icon):
@@ -221,11 +216,7 @@ class MainMenuFrame(tk.Frame):
         # height=2 reserves the same two-line footprint whether this
         # particular name wraps to one line or two -- a plain single-line
         # game name ("Blackjack") and a longer one that wraps ("Pai Gow
-        # Poker (Face Up!)", "Ultimate Texas Hold'em") both then leave the
-        # subtitle/pill below landing at the same height on every tile,
-        # rather than the longer name's tile alone growing past the rest
-        # (pack_propagate is off -- see the tile Frame above -- so without
-        # this the pill would just get clipped off the bottom instead).
+        # Poker (Face Up!)"
         name_lbl = tk.Label(tile, text=name, bg=bg, fg=fg, font=theme.font(13, weight="bold"),
                              wraplength=TILE_TEXT_WRAP, justify="center", height=2)
         name_lbl.pack()
@@ -235,12 +226,6 @@ class MainMenuFrame(tk.Frame):
         sub_lbl.pack(pady=(2, 0))
 
         status_widgets = [tile, icon_widget, name_lbl, sub_lbl]
-        # height=24 (not the pill's own ~19px) with the pill centred in it,
-        # not flush against the top -- sized exactly to the pill's own
-        # height, its outline's bottom edge sat right on (or just past) the
-        # canvas's own bottom boundary and got clipped off, invisible
-        # against the felt but obvious once PLAY's brighter accent outline
-        # made the same clipping show up clearly.
         pill_canvas = tk.Canvas(tile, width=TILE_TEXT_WRAP, height=24, bg=bg, highlightthickness=0)
         pill_canvas.pack(pady=(6, 0))
         if playable:
@@ -259,11 +244,7 @@ class MainMenuFrame(tk.Frame):
         status_widgets.append(pill_canvas)
 
         if not unlocked:
-            # Lock-status badge -- only a still-locked tile gets one; an
-            # unlocked game's tile carries no badge at all. Placed (not
-            # packed) over the *tile's* own top-right corner, on top of
-            # everything else here (created last, so it stacks above the
-            # dashed border/icon/pill all packed or placed before it).
+            # Lock-status badge
             padlock_canvas = tk.Canvas(tile, width=PADLOCK_CANVAS, height=PADLOCK_CANVAS, bg=bg, highlightthickness=0)
             padlock_canvas.place(x=TILE_WIDTH - PADLOCK_MARGIN - PADLOCK_CANVAS, y=PADLOCK_MARGIN)
             game_icons.draw_padlock(padlock_canvas, PADLOCK_CANVAS / 2, PADLOCK_CANVAS * 0.6, PADLOCK_SIZE,
@@ -277,9 +258,6 @@ class MainMenuFrame(tk.Frame):
 
     def on_show(self):
         self.refresh_balance()
-        # A game's lock state can change on the Settings screen between one
-        # visit to this menu and the next -- rebuild every tile fresh each
-        # time rather than only ever drawing them once at startup.
         self._build_tiles()
 
     def refresh_balance(self):

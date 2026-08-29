@@ -21,15 +21,9 @@ from ui import theme
 
 REEL_DIGIT_WIDTH = 20
 REEL_DIGIT_HEIGHT = 32
-# Not resolved at import time -- theme.font() needs a live Tk root, which
-# doesn't exist yet when this module is first imported (see _reel_font()).
-# Deliberately NOT reskinned to the mint accent -- this red "LED" look is a
-# signature "arcade jackpot" accent that's meant to pop against the new
-# terminal palette rather than blend into it. Leave it red.
-REEL_BG = "#0a0a0a"           # recessed "LED window" look, independent of the felt theme
-REEL_FG = "#ff4136"           # classic red jackpot-meter digits
-
-INTEGER_DIGITS = 5   # fixed so the ceiling (£50,000.00) never needs more room
+REEL_BG = "#0a0a0a"
+REEL_FG = "#ff4136"
+INTEGER_DIGITS = 5
 DECIMAL_DIGITS = 2
 
 

@@ -30,14 +30,24 @@ DEFAULT_JACKPOT_DATA = {"amount": JACKPOT_FLOOR}
 
 class JackpotManager:
     """Owns the jackpot's persisted amount and its continuous, real-time
-    growth. `settings` supplies the growth rate (£/second) via the
-    "jackpot_rate_per_second" preference, so Settings can tune -- or, for
-    debugging, directly override -- the amount without this class knowing
-    anything about how that UI works."""
+    growth. Shared by every player -- a casino has one progressive pot, not
+    one per player -- and built exactly once, the first time any session
+    starts (see CasinoApp.start_session), then never rebuilt for the rest
+    of the process.
 
-    def __init__(self, save_path, settings):
+    Takes `app` rather than a specific SettingsManager because of that: the
+    growth rate (£/second) is read live from `app.settings` -- i.e.
+    whichever player is *currently* active -- via the
+    "jackpot_rate_per_second" preference, each tick. That's deliberate now
+    that players can switch mid-session (see ui/settings_screen.py's
+    "Player Screen" button): the rate is an admin debug knob, not a
+    per-player belonging, so whoever's currently at the controls is the one
+    tuning it, rather than it staying permanently pinned to whichever
+    player happened to be first to log in."""
+
+    def __init__(self, save_path, app):
         self.save_path = save_path
-        self.settings = settings
+        self.app = app
         self.data = load_json(save_path, DEFAULT_JACKPOT_DATA)
         self.data["amount"] = self._clamp(float(self.data.get("amount", JACKPOT_FLOOR)))
         self._listeners = []
@@ -66,23 +76,26 @@ class JackpotManager:
         self._listeners.append(callback)
 
     # ------------------------------------------------------------------ growth
-    def start(self, tk_root, interval_ms=100):
-        """Begins the continuous-growth loop, self-rescheduling on `tk_root`
-        for as long as the app runs. Call once, e.g. from CasinoApp.__init__."""
+    def start(self, interval_ms=100):
+        """Begins the continuous-growth loop, self-rescheduling on `app` (a
+        tk.Tk) for as long as the app runs. Call once ever, when the first
+        session of the process starts (see CasinoApp.start_session) --
+        *not* again on a later player switch, which would stack up a
+        second concurrent tick loop."""
         self._last_tick = time.monotonic()
-        self._tick_loop(tk_root, interval_ms)
+        self._tick_loop(interval_ms)
 
-    def _tick_loop(self, tk_root, interval_ms):
+    def _tick_loop(self, interval_ms):
         now = time.monotonic()
         elapsed = now - self._last_tick
         self._last_tick = now
         self._grow(elapsed)
-        tk_root.after(interval_ms, self._tick_loop, tk_root, interval_ms)
+        self.app.after(interval_ms, self._tick_loop, interval_ms)
 
     def _grow(self, elapsed_seconds):
         if elapsed_seconds <= 0:
             return
-        rate = self.settings.get("jackpot_rate_per_second")
+        rate = self.app.settings.get("jackpot_rate_per_second")
         if rate is None:
             rate = DEFAULT_RATE_PER_SECOND
         if rate > 0 and self.data["amount"] < JACKPOT_CEILING:

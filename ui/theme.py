@@ -164,10 +164,17 @@ def outlined_glyph(canvas, cx, cy, text, size, fill, outline, outline_width=1, w
     canvas.create_text(cx, cy, text=text, font=f, fill=fill, tags=tags)
 
 
-def breadcrumb(parent, path, bg, host="hadfield-casino"):
+def breadcrumb(parent, path, bg, host="hadfield-casino", player="player"):
     """A dim shell-prompt-style breadcrumb label, e.g.
-    "player@hadfield-casino:~/cashier" -- the site's own top-bar signature."""
-    text = f"player@{host}:~/{path}"
+    "mike@hadfield-casino:~/cashier" -- the site's own top-bar signature.
+    `player` defaults to the literal word "player" so a call site built
+    before a profile exists (ui/logon_screen.py) still renders sensibly;
+    every screen built after login passes its actual player's name (see
+    CasinoApp.start_session in main.py). Read live at construction time,
+    not refreshed afterwards -- a mid-session rename wouldn't update an
+    already-built screen's banner until relaunch, the same pre-existing
+    limitation Settings' table-theme picker has (see core/settings.py)."""
+    text = f"{player}@{host}:~/{path}"
     return tk.Label(parent, text=text, bg=bg, fg=FG_DIM, font=font(9))
 
 
