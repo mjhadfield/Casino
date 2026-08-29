@@ -11,7 +11,9 @@ library only (`tkinter` — no extra installs needed).
 
 **Linux:** run `./Launch Casino (linux).sh`. If Python 3 or Tkinter is missing it prints the install command for your distro (apt/pacman/dnf/zypper/apk) rather than installing anything itself -- a system Python package needs root on Linux, unlike Windows' per-user installer.
 
-**Everyone else:**
+## Upgrading from an earlier version
+
+All player information and statistics are held in the "data" folder which is generated on game launch and no longer included in the repo. If you are moving from a version earlier than 1.6, copy your data folder into the new folder. 
 
 ```
 python3 main.py

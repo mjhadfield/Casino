@@ -100,13 +100,10 @@ MAIN_PAYTABLE = {
 }
 MAIN_PAYTABLE_STRAIGHT_FLUSH = 100
 MAIN_PAYTABLE_ROYAL_FLUSH = 500
-MAIN_PAYTABLE_PAIR_JACKS_OR_BETTER = 1  # named for ui.py's paytable panel -- see _final_hand_multiplier
-PAIR_JACKS_OR_BETTER_MIN_VALUE = 11  # Jack -- a Pair at or above this wins 1:1
-PAIR_PUSH_MIN_VALUE = 6              # a Pair of 6s-10s pushes rather than losing
+MAIN_PAYTABLE_PAIR_JACKS_OR_BETTER = 1  
+PAIR_JACKS_OR_BETTER_MIN_VALUE = 11 
+PAIR_PUSH_MIN_VALUE = 6  
 
-# --- 3 Card Bonus side bet paytable -- keyed by 3-card rank value, same
-# split-apart-the-top-tier treatment as the main paytable above (Mini-Royal
-# vs. an ordinary Straight Flush).
 BONUS_PAYTABLE = {
     THREE_OF_A_KIND: 30,
     STRAIGHT: 6,
