@@ -180,7 +180,8 @@ DEALER_CENTER_Y = DEALER_Y + CARD_HEIGHT / 2
 # A winning bet's payout lands a little above its spot's existing stake
 # stack rather than directly on it, so it visibly reads as an addition to
 # what's already there instead of just replacing it.
-PAYOUT_WIN_LANDING_OFFSET_Y = -20
+PAYOUT_WIN_LANDING_OFFSET_X = 20
+PAYOUT_WIN_LANDING_OFFSET_Y = 20
 
 # fan_canvas: the player's own small canvas, below the Play/Fold buttons --
 # overlapping, with the outer two cards riding slightly lower than the
@@ -1550,7 +1551,8 @@ class ThreeCardPokerFrame(tk.Frame):
         than sliding in already full-size."""
         win_amount = item["ret"] - item["bet"]
         travel_tag = f"chip_travel_{item['key']}"
-        to_cx, to_cy = item["cx"], item["cy"] + PAYOUT_WIN_LANDING_OFFSET_Y
+        to_cy = item["cy"] + PAYOUT_WIN_LANDING_OFFSET_Y
+        to_cx = item["cx"] + PAYOUT_WIN_LANDING_OFFSET_X
 
         def frame(t):
             cx = DEALER_CENTER_X + (to_cx - DEALER_CENTER_X) * t
@@ -1593,7 +1595,8 @@ class ThreeCardPokerFrame(tk.Frame):
                 win_amount = it["ret"] - it["bet"]
                 if win_amount > 0:
                     travel_tag = f"chip_travel_{it['key']}"
-                    wcx, wcy = it["cx"], it["cy"] + PAYOUT_WIN_LANDING_OFFSET_Y
+                    wcy = it["cy"] + PAYOUT_WIN_LANDING_OFFSET_Y
+                    wcx = it["cx"] + PAYOUT_WIN_LANDING_OFFSET_X
                     nwcx, nwcy = wcx + (target_x - wcx) * t, wcy + (target_y - wcy) * t
                     self.canvas.delete(travel_tag)
                     if r > 2:

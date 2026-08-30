@@ -215,21 +215,9 @@ def _ease_out_cubic(t):
     return 1 - (1 - t) ** 3
 
 
-# How much of the stake stack's own diameter still peeks out from beneath
-# the win stack once it lands on top of it -- overlaid (mostly hiding it,
-# same spot), but not so exactly on top that the two are indistinguishable.
-PAYOUT_OVERLAY_PEEK_RATIO = 0.25
-
-
-def _payout_overlay_offset(radius):
-    """The win stack's own vertical offset from the stake's centre so it
-    overlays the stake stack (same spot, on top) while leaving roughly
-    PAYOUT_OVERLAY_PEEK_RATIO of the stake's diameter showing beneath it --
-    used identically by the win-chip fly-in animation (_chip_move_in) and
-    both places that redraw the resting state (_draw_hand, _draw_header_
-    tokens), so the animation's landing spot and the redrawn resting spot
-    never drift apart."""
-    return -(radius * 2 * PAYOUT_OVERLAY_PEEK_RATIO)
+# Where a winning stack lands relative to the stake it overlays
+PAYOUT_WIN_LANDING_OFFSET_X = 10
+PAYOUT_WIN_LANDING_OFFSET_Y = 10
 
 
 def _format_signed(amount):
@@ -1455,15 +1443,11 @@ class BlackjackFrame(tk.Frame):
             on_done()
             return
         travel_tag = f"travelwin_{item['tag']}"
-        landing_cy = item["cy"] + _payout_overlay_offset(item["max_r"])
+        landing_cx = item["cx"] + PAYOUT_WIN_LANDING_OFFSET_X
+        landing_cy = item["cy"] + PAYOUT_WIN_LANDING_OFFSET_Y
 
-        # Lands overlaying the stake's own spot -- on top of it, not beside
-        # or above it -- so there's no second "shuffle apart into a tidy
-        # gap" step once it arrives; it just settles where it lands, a hair
-        # off the stake's own centre so a sliver of it still peeks out from
-        # underneath (see _payout_overlay_offset).
         def frame(t):
-            cx = DEALER_CENTER_X + (item["cx"] - DEALER_CENTER_X) * t
+            cx = DEALER_CENTER_X + (landing_cx - DEALER_CENTER_X) * t
             cy = DEALER_CENTER_Y + (landing_cy - DEALER_CENTER_Y) * t
             r = item["max_r"] * t
             self.canvas.delete(travel_tag)
@@ -1811,17 +1795,6 @@ class BlackjackFrame(tk.Frame):
             self.canvas.delete(chip_tag)
             self.canvas.delete(win_chip_tag)
 
-            # Same "two separate amounts, not one consolidated total" idea
-            # _draw_hand gives the main bet, at this token's own scale: once
-            # resolved, the stake stays put (0 -- nothing drawn -- if it
-            # lost) and any winnings are drawn as their own stack overlaying
-            # it (on top in z-order, offset by _payout_overlay_offset so a
-            # sliver of the stake still peeks out beneath -- see
-            # _chip_move_in, which lands them there too), rather than both
-            # being merged into one bigger stack. Without this, a token's
-            # chips would visibly grow in during _animate_side_bet_payouts/
-            # _animate_payouts and then either vanish or silently merge the
-            # moment anything else redraws the table.
             if key == "insurance":
                 stake = box.insurance_bet
                 ret = self.summary.boxes[box_idx].insurance_return if self.state == "resolved" and self.summary else None
@@ -1835,8 +1808,9 @@ class BlackjackFrame(tk.Frame):
             if stake_amount:
                 draw_chip_stack(self.canvas, chip_tag, cx, cy, stake_amount, SIDE_BET_TOKEN_R)
             if win_amount:
-                win_cy = cy + _payout_overlay_offset(SIDE_BET_TOKEN_R)
-                draw_chip_stack(self.canvas, win_chip_tag, cx, win_cy, win_amount, SIDE_BET_TOKEN_R)
+                win_cx = cx + PAYOUT_WIN_LANDING_OFFSET_X
+                win_cy = cy + PAYOUT_WIN_LANDING_OFFSET_Y
+                draw_chip_stack(self.canvas, win_chip_tag, win_cx, win_cy, win_amount, SIDE_BET_TOKEN_R)
             self.canvas.create_text(cx, cy + SIDE_BET_TOKEN_R + 8, text=label, fill=theme.FG_DIM,
                                      font=theme.font(7, weight="bold"), tags=(label_tag,))
 
@@ -1874,19 +1848,6 @@ class BlackjackFrame(tk.Frame):
         if not shown:
             return
 
-        # Once resolved, these are the hand's resting chips from here on,
-        # kept as two separate amounts -- the original stake in place, and
-        # (for a win) the winnings drawn overlaying it: on top in z-order,
-        # offset by _payout_overlay_offset (so a sliver of the stake still
-        # peeks out beneath it) exactly where _chip_move_in's animation
-        # already lands them, so there's no further "settle into a separate
-        # stack" step once they arrive. Rather than one consolidated total,
-        # neither survives this method's own redraw on its own (same
-        # reasoning as _draw_header_tokens' side-bet chips below), so
-        # without this a winning hand's win chips would visibly grow in
-        # during the payout animation and then vanish, or (consolidating
-        # instead) silently merge into one bigger stack, the moment
-        # anything (e.g. the next dealer-card reveal) redraws the table.
         stake_amount, win_amount = hand.bet, 0.0
         if self.state == "resolved":
             win_amount = max(0.0, hand.payout - hand.bet)
@@ -1896,8 +1857,9 @@ class BlackjackFrame(tk.Frame):
         if stake_amount:
             draw_chip_stack(self.canvas, chip_tag, x2 - 56, cy, stake_amount, chip_r)
         if win_amount:
-            win_cy = cy + _payout_overlay_offset(chip_r)
-            draw_chip_stack(self.canvas, win_chip_tag, x2 - 56, win_cy, win_amount, chip_r)
+            win_cy = cy + PAYOUT_WIN_LANDING_OFFSET_Y
+            draw_chip_stack(self.canvas, win_chip_tag, x2 - 56 + PAYOUT_WIN_LANDING_OFFSET_X, win_cy,
+                             win_amount, chip_r)
 
         # hand.total/is_blackjack read the full hand.cards regardless of how
         # much of it is currently revealed -- both are meaningless (and, for
