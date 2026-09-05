@@ -23,11 +23,13 @@ from core.unlocks import UnlocksManager
 from ui import theme
 from ui.logon_screen import LogonFrame
 from ui.main_menu import MainMenuFrame
+from ui.blackjack_menu import BlackjackMenuFrame
 from ui.finances_screen import FinancesFrame
 from ui.settings_screen import SettingsFrame
 from ui.stats_screen import StatsFrame
 from games.three_card_poker.ui import ThreeCardPokerFrame
 from games.blackjack.ui import BlackjackFrame
+from games.blackjack_count.ui import BlackjackCountFrame
 from games.pai_gow_poker.ui import PaiGowPokerFrame
 from games.pai_gow_poker_face_up.ui import PaiGowPokerFaceUpFrame
 from games.mississippi_stud.ui import MississippiStudFrame
@@ -180,7 +182,9 @@ class CasinoApp(tk.Tk):
                 (StatsFrame, "stats"),
                 (SettingsFrame, "settings"),
                 (ThreeCardPokerFrame, "three_card_poker"),
+                (BlackjackMenuFrame, "blackjack_menu"),
                 (BlackjackFrame, "blackjack"),
+                (BlackjackCountFrame, "blackjack_count"),
                 (PaiGowPokerFrame, "pai_gow_poker"),
                 (PaiGowPokerFaceUpFrame, "pai_gow_poker_face_up"),
                 (MississippiStudFrame, "mississippi_stud"),

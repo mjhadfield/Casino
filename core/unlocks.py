@@ -24,6 +24,7 @@ from core.persistence import load_json, save_json
 DEFAULT_UNLOCKS = {
     "three_card_poker": True,
     "blackjack": True,
+    "blackjack_count": True,
     "pai_gow_poker": True,
     "pai_gow_poker_face_up": True,
     "mississippi_stud": True,

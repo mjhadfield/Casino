@@ -374,14 +374,14 @@ class BlackjackGame:
         if any(bet <= 0 for bet in main_bets):
             raise ValueError("Every box needs a Blackjack bet to play.")
 
-        self.shoe.reset()  # a fresh, reshuffled 8-deck shoe every round
+        self._reshuffle_shoe_if_needed()
         self.boxes = [
             Box(main_bet=bet, **side_bets_per_box[i])
             for i, bet in enumerate(main_bets)
         ]
         for box in self.boxes:
-            box.hands = [Hand(self.shoe.deal(2), bet=box.main_bet)]
-        self.dealer_cards = self.shoe.deal(2)
+            box.hands = [Hand(self._deal_from_shoe(2), bet=box.main_bet)]
+        self.dealer_cards = self._deal_from_shoe(2)
 
         self._resolve_side_bets(jackpot_amount)
 
@@ -390,6 +390,24 @@ class BlackjackGame:
         peek = up_card.rank == "A" or _card_bj_value(up_card) == 10
         self.dealer_blackjack = peek and is_blackjack(self.dealer_cards)
         return self
+
+    def _reshuffle_shoe_if_needed(self):
+        """Reshuffles the shoe unconditionally -- a fresh 8-deck shoe every
+        round, the standard-Blackjack default. games/blackjack_count's own
+        BlackjackCountGame overrides this to keep one shoe alive across many
+        rounds instead, reshuffling only once a penetration threshold is
+        crossed."""
+        self.shoe.reset()
+
+    def _deal_from_shoe(self, count=1):
+        """Every card that ever leaves self.shoe goes through here -- one
+        seam a future engine-level variant could hook without touching
+        hit/double/split/_play_dealer_hand/deal's own logic at all. (The
+        Counting variant's own running count is tracked UI-side instead,
+        off when a card actually finishes its own reveal animation -- see
+        BlackjackFrame._on_card_revealed -- since the engine deals every
+        card into play well before the player's actually seen it.)"""
+        return self.shoe.deal(count)
 
     def _resolve_side_bets(self, jackpot_amount):
         up_card = self.dealer_cards[0]
@@ -437,7 +455,7 @@ class BlackjackGame:
         hand = self.boxes[box_idx].active_hand()
         if hand is None or not hand.can_hit:
             raise ValueError("This hand can't take another card.")
-        hand.cards.extend(self.shoe.deal(1))
+        hand.cards.extend(self._deal_from_shoe(1))
         if hand.is_bust or hand.total == 21:
             hand.done = True
         return hand
@@ -455,7 +473,7 @@ class BlackjackGame:
             raise ValueError("This hand can't be doubled.")
         hand.doubled = True
         hand.bet *= 2
-        hand.cards.extend(self.shoe.deal(1))
+        hand.cards.extend(self._deal_from_shoe(1))
         hand.done = True  # exactly one more card, then a forced stand
         return hand
 
@@ -467,8 +485,8 @@ class BlackjackGame:
         c1, c2 = hand.cards
         is_aces = c1.rank == "A" and c2.rank == "A"
         idx = box.hands.index(hand)
-        new_a = Hand([c1] + self.shoe.deal(1), bet=hand.bet, from_split=True, split_aces=is_aces)
-        new_b = Hand([c2] + self.shoe.deal(1), bet=hand.bet, from_split=True, split_aces=is_aces)
+        new_a = Hand([c1] + self._deal_from_shoe(1), bet=hand.bet, from_split=True, split_aces=is_aces)
+        new_b = Hand([c2] + self._deal_from_shoe(1), bet=hand.bet, from_split=True, split_aces=is_aces)
         if is_aces:
             # "After splitting Aces however, he receives one more card only
             # on each" -- no further action even if that card doesn't make 21.
@@ -492,7 +510,7 @@ class BlackjackGame:
     # ------------------------------------------------------------------ settle
     def _play_dealer_hand(self):
         while hand_value(self.dealer_cards)[0] < 17:
-            self.dealer_cards.extend(self.shoe.deal(1))
+            self.dealer_cards.extend(self._deal_from_shoe(1))
 
     def settle(self) -> RoundSummary:
         """Plays the Dealer out (unless they already peeked a Blackjack) and

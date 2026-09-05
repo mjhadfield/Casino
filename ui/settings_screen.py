@@ -137,8 +137,9 @@ class SettingsFrame(tk.Frame):
         )
         self._make_reset_row(
             danger_inner, "$ rm --stats --game blackjack",
-            "This permanently deletes Blackjack's statistics breakdown. Blackjack isn't "
-            "implemented yet, so this currently has nothing to remove.",
+            "This permanently deletes Blackjack's bet, hand and payout breakdown "
+            "on the Stats screen -- Standard and Counting share one breakdown, "
+            "so this clears both.",
             "Blackjack's statistics have been reset.",
             lambda: self.app.game_stats.reset_game("blackjack"),
         )

@@ -253,13 +253,27 @@ def _round_upfront_cost(bets, num_boxes):
 
 
 class BlackjackFrame(tk.Frame):
+    # Identity attributes -- what state-save file to use, which game
+    # engine/GAME_KEY to record stats under, and what the top bar's own
+    # title/breadcrumb read. Routed through self.X everywhere below (rather
+    # than these bare module constants/hardcoded literals) so a variant
+    # (see games/blackjack_count/ui.py's BlackjackCountFrame) can override
+    # just these four attributes plus _make_game() and get a fully
+    # independent, non-clobbering game for free -- same pattern
+    # games/pai_gow_poker/ui.py's PaiGowPokerFrame already established for
+    # its own Face Up variant.
+    STATE_FILENAME = STATE_FILENAME
+    GAME_KEY = GAME_KEY
+    GAME_TITLE = "Blackjack"
+    BREADCRUMB = "blackjack"
+
     def __init__(self, parent, app):
         super().__init__(parent, bg=theme.BG)
         self.app = app
-        self.game = BlackjackGame()
+        self.game = self._make_game()
         self.state = "betting"  # betting -> dealt -> resolved
 
-        self.save_path = os.path.join(app.data_dir, STATE_FILENAME)
+        self.save_path = os.path.join(app.data_dir, self.STATE_FILENAME)
         saved = load_json(self.save_path, DEFAULT_STATE)
         saved_bets = saved.get("bets", DEFAULT_STATE["bets"])
         self.bets = {k: int(saved_bets.get(k, 0)) for k in BET_KEYS}
@@ -300,6 +314,36 @@ class BlackjackFrame(tk.Frame):
         self._sanitize_bets(persist=False)
         self._show_betting_controls()
 
+    def _make_game(self):
+        """Factory for the game engine instance -- see the identity
+        attributes above; games/blackjack_count's own BlackjackCountFrame
+        overrides this to return a BlackjackCountGame instead."""
+        return BlackjackGame()
+
+    def _build_extra_top_bar_widgets(self, top_bar):
+        """Hook for a variant to add its own top-bar widgets (e.g. the
+        Counting variant's live "Count: N" label) without duplicating the
+        top-bar block above. No-op for standard Blackjack."""
+        pass
+
+    def _on_card_revealed(self, card):
+        """Called exactly once per card, at the moment it actually finishes
+        landing/flipping face-up on the table -- not when it's dealt into
+        the engine (self.game.hit/double/split/deal), which happens well
+        before its own reveal animation has played out. Every place a card
+        can become visible calls this: _animate_card_flight's own done()
+        (guarded by face_up_at_end -- the Dealer's hole card lands face-
+        down during the initial deal and isn't revealed until
+        _flip_hole_card later flips it), _flip_hole_card's own done(),
+        _reveal_extra_dealer_cards' reveal_next(), plus the
+        animations-disabled fallback branches of _animate_deal_in/_on_hit/
+        _on_double/_on_split, none of which touch _animate_card_flight at
+        all when animations are off. No-op for standard Blackjack; games/
+        blackjack_count's own BlackjackCountFrame overrides this to grow
+        its displayed running count in step with what the player's
+        actually seen."""
+        pass
+
     # ------------------------------------------------------------------ build
     def _build_ui(self):
         felt_theme = self.app.settings.theme()
@@ -314,13 +358,14 @@ class BlackjackFrame(tk.Frame):
             highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
             command=lambda: self.app.show_frame("menu"),
         ).pack(side="left", padx=(20, 10), pady=10)
-        tk.Label(top_bar, text="Blackjack", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
+        tk.Label(top_bar, text=self.GAME_TITLE, bg=theme.BG_ELEVATED, fg=theme.ACCENT,
                  font=theme.font(16, weight="bold")).pack(side="left", padx=10)
         self.balance_lbl = tk.Label(top_bar, text="£0.00", bg=theme.BG_ELEVATED, fg=theme.WIN_COLOR,
                                      font=theme.font(12, weight="bold"))
         self.balance_lbl.pack(side="right", padx=20)
-        theme.breadcrumb(top_bar, "blackjack", bg=theme.BG_ELEVATED,
+        theme.breadcrumb(top_bar, self.BREADCRUMB, bg=theme.BG_ELEVATED,
                           player=self.app.current_player["name"]).pack(side="right", padx=(6, 6))
+        self._build_extra_top_bar_widgets(top_bar)
 
         body = tk.Frame(self, bg=felt_theme["felt"])
         body.pack(fill="both", expand=True)
@@ -1047,6 +1092,12 @@ class BlackjackFrame(tk.Frame):
         else:
             for i in range(total):
                 self._reveal_count = i + 1
+                kind, box_idx, card_idx = order[i]
+                if kind == "dealer" and card_idx == 1:
+                    continue  # the hole card -- not revealed yet even with animations off
+                card = (self.game.dealer_cards[card_idx] if kind == "dealer"
+                        else self.game.boxes[box_idx].hands[0].cards[card_idx])
+                self._on_card_revealed(card)
             self._redraw_play_table()
             delay = 30
         self.after(delay, self._on_deal_in_done)
@@ -1143,6 +1194,8 @@ class BlackjackFrame(tk.Frame):
 
         def done():
             self.canvas.delete(tag)
+            if face_up_at_end:
+                self._on_card_revealed(card)
             on_arrive()
 
         self._animate(DEAL_FLIGHT_MS, frame, on_done=done)
@@ -1265,6 +1318,7 @@ class BlackjackFrame(tk.Frame):
         if self.app.settings.get("animations_enabled"):
             self._fly_new_card(box_idx, hand_idx, len(hand.cards) - 1, self._continue_after_action)
         else:
+            self._on_card_revealed(hand.cards[-1])
             self._continue_after_action()
 
     def _on_stand(self):
@@ -1289,6 +1343,7 @@ class BlackjackFrame(tk.Frame):
         if self.app.settings.get("animations_enabled"):
             self._fly_new_card(box_idx, hand_idx, len(hand.cards) - 1, self._continue_after_action)
         else:
+            self._on_card_revealed(hand.cards[-1])
             self._continue_after_action()
 
     def _on_split(self):
@@ -1309,6 +1364,9 @@ class BlackjackFrame(tk.Frame):
         if self.app.settings.get("animations_enabled"):
             self._fly_split_cards(box_idx, hand_idx)
         else:
+            hand_a, hand_b = box.hands[hand_idx], box.hands[hand_idx + 1]
+            self._on_card_revealed(hand_a.cards[-1])
+            self._on_card_revealed(hand_b.cards[-1])
             self._continue_after_action()
 
     # ------------------------------------------------------------------ dealer reveal / settle
@@ -1341,6 +1399,7 @@ class BlackjackFrame(tk.Frame):
         def done():
             self._hole_revealed = True
             self.canvas.delete("hole_flip")
+            self._on_card_revealed(hole_card)
             self._redraw_play_table()
             self.after(200, self._reveal_extra_dealer_cards)
 
@@ -1384,6 +1443,7 @@ class BlackjackFrame(tk.Frame):
             # narrowing doesn't carry into it.
             assert self._dealer_display_count is not None
             self._dealer_display_count += 1
+            self._on_card_revealed(self.game.dealer_cards[self._dealer_display_count - 1])
             self._redraw_play_table()
 
         self._run_staggered(remaining, DEAL_CARD_STAGGER_MS, reveal_next)
@@ -1482,12 +1542,12 @@ class BlackjackFrame(tk.Frame):
         gs = self.app.game_stats
         for box_result in summary.boxes:
             for hand in box_result.hands:
-                gs.record_bet(GAME_KEY, "blackjack", hand.bet, hand.payout)
-                gs.record_hand(GAME_KEY, hand.outcome)
+                gs.record_bet(self.GAME_KEY, "blackjack", hand.bet, hand.payout)
+                gs.record_hand(self.GAME_KEY, hand.outcome)
             if box_result.insurance_bet > 0:
-                gs.record_bet(GAME_KEY, "insurance", box_result.insurance_bet, box_result.insurance_return)
+                gs.record_bet(self.GAME_KEY, "insurance", box_result.insurance_bet, box_result.insurance_return)
             for key, ret in box_result.side_bet_results.items():
-                gs.record_bet(GAME_KEY, key, getattr(box_result, f"{key}_bet"), ret)
+                gs.record_bet(self.GAME_KEY, key, getattr(box_result, f"{key}_bet"), ret)
 
     def _on_round_settled(self):
         # Only ever reached at the end of the payout-animation chain kicked
@@ -1497,7 +1557,7 @@ class BlackjackFrame(tk.Frame):
         self._record_stats(summary)
         self.app.finance.add_return(summary.total_returned)
         self.app.finance.record_round_played(summary.net_result)
-        self.app.game_stats.record_round_net(GAME_KEY, summary.net_result)
+        self.app.game_stats.record_round_net(self.GAME_KEY, summary.net_result)
         if summary.jackpot_pool_won:
             self.app.jackpot.win()
         self._refresh_balance()
