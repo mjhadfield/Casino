@@ -15,10 +15,6 @@ library only (`tkinter` — no extra installs needed).
 python3 main.py
 ```
 
-Requires Python 3.9+. On some minimal Linux installs `tkinter` isn't bundled
-with Python by default — if you get `ModuleNotFoundError: No module named
-'tkinter'`, install it with your package manager, e.g.:
-
 ```
 # Debian/Ubuntu/CachyOS (Arch-based, use pacman instead):
 sudo apt install python3-tk        # Debian/Ubuntu
@@ -28,6 +24,18 @@ sudo pacman -S tk                  # Arch/CachyOS
 ## Upgrading from an earlier version
 
 All player information and statistics are held in the "data" folder which is generated on game launch and no longer included in the repo. If you are moving from a version earlier than 1.6, copy your data folder into the new folder. 
+
+## Changelog
+
+**V1.9.0** - Achievements & Progression
+- New fake currency created - "Crowns" which can be earned through completing achievements.   
+- Added Crown store cosmetics (additional table themes, card styles)
+- Added basic blackjack strategy as an overlay on blackjack tables (200 crowns)
+- Added story mode starting the casino with locked games, unlocking via achievements
+- Added Blackjack which pays 6:5 as the starting point, unlocking 3:2 and then a table with a live count
+- Minor UI tweaks
+
+**V1.8.0** - I should go back and write this up at some point. 
 
 ## Games Implemented
 

@@ -1,6 +1,7 @@
 import tkinter as tk
 
-from ui import game_icons, game_tile, theme
+from core import achievements_data
+from ui import dialogs, game_icons, game_tile, theme, tooltip
 
 # One row per game tile: (icon, name, subtitle, game_key, frame_name).
 # `icon` is either a single glyph string, rendered as text (supported, but
@@ -15,34 +16,43 @@ from ui import game_icons, game_tile, theme
 # subtitle are shown.
 # `frame_name` is looked up in app.frames via show_frame once a game is both
 # unlocked and actually implemented; leave it None for a "Coming soon"
-# placeholder that just isn't built yet.
+# placeholder that just isn't built yet. If a game has more than one TABLE
+# (different rules, e.g. Blackjack's Standard/Counting/6:5, or Pai Gow
+# Poker's Standard/Face Up), `frame_name` points at that game's own
+# ui/table_menu.py-based picker screen instead of a table directly -- the
+# tile's own `game_key` is the FIRST-available table's own unlock key
+# (blackjack_6_5, pai_gow_poker_face_up), not necessarily the "Standard"
+# one, since that's whichever table the progression chain actually opens
+# first (see core/achievements_data.py's UNLOCK_SOURCE) -- a locked tile
+# can't be clicked into at all, so the picker screen is only ever reached
+# once at least one of that game's tables is actually unlockable.
 #
 # To add a new game later: add one row here (a default lock state in
 # core/unlocks.py's DEFAULT_UNLOCKS, and once it's implemented, an icon in
 # game_icons.py and a real frame_name) -- the grid below lays itself out
-# automatically, no layout code to touch.
+# automatically, no layout code to touch. To add a new TABLE to an existing
+# multi-table game instead, add a row to that game's own TILES list (see
+# ui/blackjack_menu.py, ui/pai_gow_poker_menu.py) -- nothing here changes.
 
-VERSION = "1.8.0"
+VERSION = "1.9.0"
 
 GAMES = [
     (game_icons.draw_three_card_poker_icon, "Three Card Poker", "Ante, Play, Pair Plus & Prime side bets",
      "three_card_poker", "three_card_poker"),
     (game_icons.draw_blackjack_icon, "Blackjack", "Super Pairs, 21+3, Top 3 & Jackpot side bets",
-     "blackjack", "blackjack_menu"),
-    (game_icons.draw_pai_gow_icon, "Pai Gow Poker", "'Fortune' variant, with face down dealer hand.",
-     "pai_gow_poker", "pai_gow_poker"),
-    (game_icons.draw_pai_gow_face_up_icon, "Pai Gow Poker\n(Face Up!)",
-     "Dealer plays face up, with no commission.", "pai_gow_poker_face_up", "pai_gow_poker_face_up"),
+     "blackjack_6_5", "blackjack_menu"),
+    (game_icons.draw_pai_gow_icon, "Pai Gow Poker", "'Fortune' variant -- Standard & Face Up tables",
+     "pai_gow_poker_face_up", "pai_gow_poker_menu"),
     (game_icons.draw_mississippi_stud_icon, "Mississippi Stud", "3 Card Bonus side bet",
      "mississippi_stud", "mississippi_stud"),
     (game_icons.draw_ultimate_texas_holdem_icon, "Ultimate Texas Hold'em",
      "Trips bonus, Progressive Jackpot", "ultimate_texas_holdem", "ultimate_texas_holdem"),
-    (game_icons.draw_baccarat_icon, "Baccarat", "Dragon Bonus & 5 Treasures side bets",
-     "baccarat", "baccarat"),
     (game_icons.draw_let_it_ride_icon, "Let It Ride", "3 starter bets -- pull back or let it ride",
      "let_it_ride", "let_it_ride"),
     (game_icons.draw_high_card_flush_icon, "High Card Flush",
      "Flush bonus, Straight bonus", "high_card_flush", "high_card_flush"),
+    (game_icons.draw_baccarat_icon, "Baccarat", "Dragon Bonus & 5 Treasures side bets",
+     "baccarat", "baccarat"),
 ]
 GAMES_PER_ROW = 3
 
@@ -63,7 +73,7 @@ class MainMenuFrame(tk.Frame):
 
         self._make_spade(top_bar).pack(side="left", padx=(20, 8), pady=14)
         tk.Label(
-            top_bar, text=f"HADFIELD CASINO v{VERSION}", bg=theme.MENU_BG, fg=theme.SECONDARY,
+            top_bar, text=f"CASINO v{VERSION}", bg=theme.MENU_BG, fg=theme.SECONDARY,
             font=theme.font(18, weight="bold"),
         ).pack(side="left")
         self._make_spade(top_bar).pack(side="left", padx=(8, 0), pady=14)
@@ -80,6 +90,36 @@ class MainMenuFrame(tk.Frame):
             cursor="hand2", command=lambda: app.show_frame("finances"),
         )
         self.balance_btn.pack(side="right", padx=(6, 20), pady=14)
+
+        # Navigates to the Achievements screen -- the live Crowns balance
+        # used to be shown right on this button, but now lives on the
+        # Crowns Store tile's own description down in the grid instead
+        # (see _build_tiles), so this is a plain nav button like Stats/
+        # Settings rather than a dual-role one like Cashier above.
+        #
+        # A Sandbox player has achievements switched off entirely (see
+        # core/achievements.py's own sandbox flag) -- this button is greyed
+        # out and inert for them rather than hidden, with a tooltip
+        # explaining why. self.app.current_player (and so is_sandbox) is
+        # fixed for this frame's whole lifetime -- each player gets their
+        # own MainMenuFrame instance, built once and cached (see main.py's
+        # start_session) -- so this is decided once here, not refreshed.
+        is_sandbox = app.is_sandbox
+        self.achievements_btn = tk.Button(
+            top_bar, text="\U0001F3C6 Achievements",
+            bg=theme.MENU_BG, fg=theme.GREY_BTN_TEXT if is_sandbox else theme.SECONDARY,
+            activebackground=theme.MENU_BG if is_sandbox else theme.SECONDARY_DIM_MENU_BG,
+            activeforeground=theme.GREY_BTN_TEXT if is_sandbox else theme.SECONDARY,
+            font=theme.font(12), relief="flat", padx=14, pady=8,
+            highlightthickness=1,
+            highlightbackground=theme.GREY_BTN_BORDER if is_sandbox else theme.SECONDARY,
+            highlightcolor=theme.GREY_BTN_BORDER if is_sandbox else theme.SECONDARY,
+            cursor="arrow" if is_sandbox else "hand2",
+            command=(lambda: None) if is_sandbox else (lambda: app.show_frame("achievements")),
+        )
+        self.achievements_btn.pack(side="right", padx=6, pady=14)
+        if is_sandbox:
+            tooltip.attach(self.achievements_btn, "Achievements are unavailable in Sandbox mode")
 
         # Stats/Settings get the SECONDARY (gold) treatment rather than
         # ACCENT -- a second, warmer highlight so the top bar isn't just the
@@ -134,7 +174,69 @@ class MainMenuFrame(tk.Frame):
             unlocked = self.app.unlocks.is_unlocked(game_key)
             playable = unlocked and frame_name is not None
             command = (lambda f=frame_name: self.app.show_frame(f)) if playable else None
-            game_tile.make_game_tile(self.tile_grid, row, col, icon, name, subtitle, unlocked, playable, command=command)
+            game_tile.make_game_tile(
+                self.tile_grid, row, col, icon, name, subtitle, unlocked, playable, command=command,
+                # Both None (no-op) once unlocked -- only a still-locked
+                # tile explains itself on hover or offers an early-unlock
+                # purchase on click. Every GAMES row is main-menu-tile-level
+                # by definition, so it's always eligible to buy early
+                # (contrast ui/table_menu.py's own sub-table tiles, which
+                # get a tooltip but never a purchase prompt).
+                tooltip_text=(lambda gk=game_key: self._lock_tooltip(gk)) if not unlocked else None,
+                locked_command=(lambda gk=game_key: self._on_locked_tile_click(gk)) if not unlocked else None,
+            )
+
+        # One extra tile after every real game -- gold-bordered
+        # (border_color) rather than the usual mint ACCENT, so it reads as
+        # its own kind of thing rather than one more game. Its own
+        # description embeds the live Crowns balance, which is why this
+        # whole grid needs rebuilding (not just this one tile's text)
+        # whenever Crowns change -- see refresh_crowns. A Sandbox player
+        # (achievements switched off entirely) sees it greyed out and
+        # inert instead of its normal gold/PLAY-able self, same tooltip as
+        # the Achievements button above.
+        is_sandbox = self.app.is_sandbox
+        row, col = divmod(len(GAMES), GAMES_PER_ROW)
+        game_tile.make_game_tile(
+            self.tile_grid, row, col, game_icons.draw_crown_icon, "Crowns Store",
+            "Feature/Game unlocks \n"
+            f"Current balance: {self.app.achievements.crowns}",
+            unlocked=True, playable=not is_sandbox,
+            command=None if is_sandbox else (lambda: self.app.show_frame("store")),
+            border_color=theme.SECONDARY,
+            # This description is a full sentence plus a live figure, too
+            # long to fit two lines at the usual 9pt within a tile's fixed
+            # width -- dropped to 6pt/3 lines just for this one tile (see
+            # make_game_tile's own docstring note on these two params).
+            pill_label="OPEN",  # not a game to "play"
+            disabled_pill_label="N/A" if is_sandbox else None,
+            tooltip_text="Achievements are unavailable in Sandbox mode" if is_sandbox else None,
+        )
+
+    def _lock_tooltip(self, game_key):
+        achievement = achievements_data.UNLOCK_SOURCE.get(game_key)
+        return f"Requires: {achievement.name}" if achievement else None
+
+    def _on_locked_tile_click(self, game_key):
+        achievement = achievements_data.UNLOCK_SOURCE.get(game_key)
+        name = achievement.name if achievement else game_key
+        price = achievements_data.STORE_UNLOCK_PRICE_CROWNS
+        crowns = self.app.achievements.crowns
+        if not dialogs.confirm(
+            self, "$ unlock --early",
+            f"Unlock early for {price} Crowns? You currently have {crowns} Crowns.\n\n"
+            f"Otherwise, this unlocks naturally via: {name}.",
+        ):
+            return
+        if self.app.achievements.purchase_unlock(game_key):
+            dialogs.info(self, "$ unlock --early", "Unlocked! Enjoy the tables.")
+            self.app.on_crowns_changed()  # already rebuilds the tile grid
+        else:
+            dialogs.info(
+                self, "$ unlock --early",
+                f"You don't have enough Crowns -- you need {price}, you have {crowns}.",
+                accent=theme.WARN,
+            )
 
     def _make_spade(self, parent):
         """A small black-fill, mint-outline spade -- a purely decorative
@@ -153,3 +255,12 @@ class MainMenuFrame(tk.Frame):
 
     def refresh_balance(self):
         self.balance_btn.configure(text=f"Cashier: £{self.app.finance.balance:,.2f}")
+
+    def refresh_crowns(self):
+        """Called by app.on_crowns_changed() whenever Crowns change
+        elsewhere (earning an achievement, a Store purchase) -- the balance
+        lives in the Crowns Store tile's own description now (see
+        _build_tiles), not a standalone top-bar figure, so refreshing it
+        means rebuilding the whole tile grid rather than re-configuring one
+        label's text."""
+        self._build_tiles()

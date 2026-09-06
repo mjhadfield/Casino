@@ -18,7 +18,7 @@ later one.
 """
 import tkinter as tk
 
-from core.players import legacy_migration_needed, migrate_legacy_data
+from core.players import ACCOUNT_TYPE_REWARDS, ACCOUNT_TYPE_SANDBOX, legacy_migration_needed, migrate_legacy_data
 from ui import theme, dialogs
 
 ROW_WIDTH = 420
@@ -27,6 +27,18 @@ NAME_MAX_LENGTH = 24
 DELETE_CONTINUE_PHRASE = "continue"
 DELETE_FINAL_PHRASE = "sudo rm -rf"
 
+# (account_type, title, description) -- the two cards on the new-player
+# Account Type step (see _build_account_type_picker). Order here is
+# display order, left to right.
+ACCOUNT_TYPES = [
+    (ACCOUNT_TYPE_REWARDS, "Player Rewards",
+     "Unlock new games, features, and rewards as you play. Starting balance "
+     "£200.00 and you may return to the ATM at any time."),
+    (ACCOUNT_TYPE_SANDBOX, "Sandbox Mode",
+     "Start with all the games and features unlocked, achievements are "
+     "disabled. Starting balance £1,000.00"),
+]
+
 
 class LogonFrame(tk.Frame):
     def __init__(self, parent, app):
@@ -34,6 +46,7 @@ class LogonFrame(tk.Frame):
         self.app = app
         self._delete_step = None       # None | "warning" | "picker" | "final"
         self._delete_selected = set()  # slugs currently toggled in the picker step
+        self._pending_new_player_name = None  # set between "+ New Player"'s name prompt and its account-type step
 
         # --- top bar --- same look as ui/main_menu.py's, minus the
         # Cashier/Stats/Settings buttons -- nothing to navigate to yet.
@@ -66,9 +79,11 @@ class LogonFrame(tk.Frame):
         account deleted can all mean the roster's changed since this was
         last shown. Also drops back out of any in-progress delete flow --
         arriving at this screen fresh should never leave a half-finished
-        deletion pending from a previous visit."""
+        deletion pending from a previous visit -- nor a half-finished new
+        player, waiting on an account-type pick from a previous visit."""
         self._delete_step = None
         self._delete_selected = set()
+        self._pending_new_player_name = None
         self._render_body()
 
     def _render_body(self):
@@ -77,6 +92,8 @@ class LogonFrame(tk.Frame):
 
         if legacy_migration_needed(self.app.data_dir, self.app.players.save_path):
             self._build_welcome_form(self.body)
+        elif self._pending_new_player_name is not None:
+            self._build_account_type_picker(self.body)
         elif self._delete_step == "warning":
             self._build_delete_warning(self.body)
         elif self._delete_step == "picker":
@@ -192,7 +209,72 @@ class LogonFrame(tk.Frame):
         )
         if not name:
             return  # cancelled
-        slug = self.app.players.create_player(name)
+        # Doesn't create the player yet -- see _build_account_type_picker,
+        # the next step in this flow, which needs the name to actually
+        # exist before it can call create_player.
+        self._pending_new_player_name = name
+        self._render_body()
+
+    # ------------------------------------------------------------ account type
+    def _build_account_type_picker(self, parent):
+        """Step 2 of "+ New Player": choose Player Rewards or Sandbox Mode
+        (see the ACCOUNT_TYPES table up top for the exact copy) -- two
+        clickable cards, same visual weight as _make_player_row's own
+        roster rows. Cancel drops back to plain player-select without
+        creating anything."""
+        tk.Label(
+            parent, text="Account type", bg=theme.MENU_BG, fg=theme.FG,
+            font=theme.font(16, weight="bold"),
+        ).pack(pady=(40, 4))
+        tk.Label(
+            parent, text=f'Choose how "{self._pending_new_player_name}" plays.',
+            bg=theme.MENU_BG, fg=theme.FG_DIM, font=theme.font(10),
+        ).pack(pady=(0, 24))
+
+        cards_row = tk.Frame(parent, bg=theme.MENU_BG)
+        cards_row.pack()
+        for account_type, title, description in ACCOUNT_TYPES:
+            self._make_account_type_card(cards_row, account_type, title, description).pack(
+                side="left", padx=10,
+            )
+
+        cancel = tk.Label(
+            parent, text="← Cancel", bg=theme.MENU_BG, fg=theme.FG_DIM,
+            font=theme.font(10), cursor="hand2",
+        )
+        cancel.pack(pady=(20, 0))
+        cancel.bind("<Button-1>", lambda _e: self._cancel_new_player())
+
+    def _make_account_type_card(self, parent, account_type, title, description):
+        card = tk.Frame(
+            parent, bg=theme.BG, width=ROW_WIDTH // 2 - 10, height=190,
+            highlightbackground=theme.ACCENT, highlightthickness=1, cursor="hand2",
+        )
+        card.pack_propagate(False)
+        title_lbl = tk.Label(
+            card, text=title, bg=theme.BG, fg=theme.ACCENT,
+            font=theme.font(13, weight="bold"), wraplength=ROW_WIDTH // 2 - 30,
+        )
+        title_lbl.pack(pady=(18, 8), padx=15)
+        desc_lbl = tk.Label(
+            card, text=description, bg=theme.BG, fg=theme.FG_DIM, font=theme.font(9),
+            wraplength=ROW_WIDTH // 2 - 30, justify="left",
+        )
+        desc_lbl.pack(padx=15, fill="x")
+
+        for widget in (card, title_lbl, desc_lbl):
+            widget.configure(cursor="hand2")
+            widget.bind("<Button-1>", lambda _e, at=account_type: self._finish_new_player(at))
+        return card
+
+    def _cancel_new_player(self):
+        self._pending_new_player_name = None
+        self._render_body()
+
+    def _finish_new_player(self, account_type):
+        name = self._pending_new_player_name
+        self._pending_new_player_name = None
+        slug = self.app.players.create_player(name, account_type)
         self.app.start_session(slug)
 
     # ------------------------------------------------------------ legacy migration

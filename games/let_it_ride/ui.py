@@ -6,7 +6,7 @@ from typing import Optional
 from core.persistence import load_json, save_json
 from games.let_it_ride.logic import GAME_KEY, hand_outcome_label, LetItRideGame, RoundResult
 from games.let_it_ride import logic as lir_logic
-from ui import dialogs, theme
+from ui import achievement_banner, dialogs, theme
 from ui.card_widgets import draw_card, draw_card_back, CARD_HEIGHT, CARD_WIDTH
 from ui.chips import CHIP_DENOMINATIONS, CHIP_LAYER_MAX_R, CHIP_SIZE, draw_chip_face, draw_chip_stack
 from ui.jackpot_display import JackpotDisplay
@@ -261,6 +261,7 @@ class LetItRideFrame(tk.Frame):
         self.chip_canvases = {}
         self._jackpot_pulse_t = 0.0
         self._bound_spot_tags = set()
+        self._pending_achievements = []
 
         self._build_ui()
         self.app.jackpot.add_listener(self._on_jackpot_changed)
@@ -271,6 +272,7 @@ class LetItRideFrame(tk.Frame):
     def _build_ui(self):
         felt_theme = self.app.settings.theme()
         self._current_felt = felt_theme["felt"]
+        self._current_card_style = self.app.settings.card_style()
         self.configure(bg=felt_theme["felt"])
 
         top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
@@ -652,6 +654,7 @@ class LetItRideFrame(tk.Frame):
             return
         self._bound_spot_tags.add(tag)
         self.canvas.tag_bind(tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
+        self.canvas.tag_bind(tag, "<Button-3>", lambda e, k=key: self._on_remove_chip(k))
         self.canvas.tag_bind(tag, "<Enter>", lambda e: self.canvas.configure(cursor="hand2"))
         self.canvas.tag_bind(tag, "<Leave>", lambda e: self.canvas.configure(cursor=""))
 
@@ -719,6 +722,19 @@ class LetItRideFrame(tk.Frame):
             self._toggle_flat_bet(key)
         else:
             self._adjust_bet(key, self.selected_chip)
+
+    def _on_remove_chip(self, key):
+        """Right-click's mirror of _on_place_chip -- see blackjack/ui.py's
+        own _on_remove_chip for the full rationale (same pattern here).
+        "bonus"/"jackpot" are both flat on/off spots (see _toggle_flat_bet),
+        not stacks, so removal just turns whichever one's on back off."""
+        if self.state != "betting":
+            return
+        if key in ("bonus", "jackpot"):
+            if self.bets[key]:
+                self._toggle_flat_bet(key)
+        elif self.bets[key] > 0:
+            self._adjust_bet(key, -min(self.selected_chip, self.bets[key]))
 
     def _toggle_flat_bet(self, key):
         amount = lir_logic.BONUS_BET_AMOUNT if key == "bonus" else lir_logic.JACKPOT_BET_AMOUNT
@@ -953,10 +969,10 @@ class LetItRideFrame(tk.Frame):
         tag = f"player_card_{i}"
         self.fan_canvas.delete(tag)
         if face_up:
-            draw_card(self.fan_canvas, x, y, card, tags=(tag,))
+            draw_card(self.fan_canvas, x, y, card, tags=(tag,), style=self._current_card_style)
         else:
             draw_card_back(self.fan_canvas, x, y, self._current_felt,
-                            self.app.settings.theme()["accent"], tags=(tag,))
+                            self.app.settings.theme()["accent"], tags=(tag,), style=self._current_card_style)
 
     def _fan_slots(self):
         start_x = FAN_CANVAS_WIDTH / 2 - _FAN_TOTAL_W / 2
@@ -1020,10 +1036,10 @@ class LetItRideFrame(tk.Frame):
             face_up_now = reveal if t >= 0.5 else not reveal
             if squeeze > 0.35:
                 if face_up_now:
-                    draw_card(canvas, x, y, card, width=w, tags=(tag,))
+                    draw_card(canvas, x, y, card, width=w, tags=(tag,), style=self._current_card_style)
                 else:
                     draw_card_back(canvas, x, y, self._current_felt, self.app.settings.theme()["accent"],
-                                    width=w, tags=(tag,))
+                                    width=w, tags=(tag,), style=self._current_card_style)
             else:
                 canvas.create_rectangle(x, y, x + w, y + CARD_HEIGHT,
                                          fill="#fdfdf5", outline="#222222", tags=(tag,))
@@ -1085,7 +1101,7 @@ class LetItRideFrame(tk.Frame):
                 y = sy + (ty - sy) * t
                 felt_theme = self.app.settings.theme()
                 draw_card_back(self.canvas, x, y, felt_theme["felt"], felt_theme["accent"],
-                                tags=(f"community_card_{i}",))
+                                tags=(f"community_card_{i}",), style=self._current_card_style)
 
             self._animate(DEAL_IN_DROP_MS, frame, on_done=(self._on_deal_complete if i == n - 1 else None))
 
@@ -1151,6 +1167,7 @@ class LetItRideFrame(tk.Frame):
         elif result.jackpot_pool_partial_fraction:
             self.app.jackpot.set_amount(self.app.jackpot.amount * (1 - result.jackpot_pool_partial_fraction))
         self.app.finance.record_round_played(result.net_result)
+        self._pending_achievements = self.app.achievements.check_round(GAME_KEY, result.net_result)
 
         # bet1/bet2 pulled back mid-round were already credited back to the
         # balance the moment that decision was made (see _on_pull_back) --
@@ -1288,6 +1305,9 @@ class LetItRideFrame(tk.Frame):
         self._show_result(result)
         self._show_round_over_controls()
         self.state = "resolved"
+        if self._pending_achievements:
+            achievement_banner.queue(self, self.app, self._pending_achievements)
+            self.app.on_crowns_changed()
 
     def _show_result(self, result):
         hand_name = _TIER_DISPLAY_NAMES[result.five_card_tier]
@@ -1361,6 +1381,7 @@ class LetItRideFrame(tk.Frame):
     def _apply_theme(self):
         felt_theme = self.app.settings.theme()
         new_felt = felt_theme["felt"]
+        self._current_card_style = self.app.settings.card_style()
         if new_felt == self._current_felt:
             return
         old_felt = self._current_felt

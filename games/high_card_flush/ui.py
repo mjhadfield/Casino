@@ -13,7 +13,7 @@ from games.high_card_flush.logic import (
     max_raise_multiplier,
 )
 from games.high_card_flush import logic as hcf_logic
-from ui import dialogs, theme
+from ui import achievement_banner, dialogs, theme
 from ui.card_widgets import draw_card, draw_card_back, CARD_HEIGHT, CARD_WIDTH
 from ui.chips import CHIP_DENOMINATIONS, CHIP_LAYER_MAX_R, CHIP_SIZE, draw_chip_face, draw_chip_stack
 from ui.jackpot_display import JackpotDisplay
@@ -327,6 +327,7 @@ class HighCardFlushFrame(tk.Frame):
         # from tkinter's own _register, days into a session with a jackpot
         # bet sitting on the betting screen).
         self._bound_spot_tags = set()
+        self._pending_achievements = []
 
         # Per-round card-placement state -- see the module docstring's own
         # "play area is cosmetic" note: none of this is ever read by
@@ -347,6 +348,7 @@ class HighCardFlushFrame(tk.Frame):
     def _build_ui(self):
         felt_theme = self.app.settings.theme()
         self._current_felt = felt_theme["felt"]
+        self._current_card_style = self.app.settings.card_style()
         self.configure(bg=felt_theme["felt"])
 
         top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
@@ -680,6 +682,7 @@ class HighCardFlushFrame(tk.Frame):
             return
         self._bound_spot_tags.add(tag)
         self.canvas.tag_bind(tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
+        self.canvas.tag_bind(tag, "<Button-3>", lambda e, k=key: self._on_remove_chip(k))
         self.canvas.tag_bind(tag, "<Enter>", lambda e: self.canvas.configure(cursor="hand2"))
         self.canvas.tag_bind(tag, "<Leave>", lambda e: self.canvas.configure(cursor=""))
 
@@ -784,6 +787,17 @@ class HighCardFlushFrame(tk.Frame):
             self._toggle_jackpot_bet()
         else:
             self._adjust_bet(key, self.selected_chip)
+
+    def _on_remove_chip(self, key):
+        """Right-click's mirror of _on_place_chip -- see blackjack/ui.py's
+        own _on_remove_chip for the full rationale (same pattern here)."""
+        if self.state != "betting":
+            return
+        if key == "jackpot":
+            if self.bets["jackpot"]:
+                self._toggle_jackpot_bet()
+        elif self.bets[key] > 0:
+            self._adjust_bet(key, -min(self.selected_chip, self.bets[key]))
 
     def _toggle_jackpot_bet(self):
         trial_bets = dict(self.bets)
@@ -907,7 +921,7 @@ class HighCardFlushFrame(tk.Frame):
         self.canvas.delete("all")
         self._draw_zone_backgrounds()
         draw_card_back(self.canvas, DECK_X1, DECK_Y, self._current_felt, self.app.settings.theme()["accent"],
-                        tags=("zone_bg",))
+                        tags=("zone_bg",), style=self._current_card_style)
 
         if self.bets["jackpot"]:
             self._draw_strip_circle("jackpot", JACKPOT_CX, JACKPOT_CY, JACKPOT_R, "JACKPOT", self.bets["jackpot"])
@@ -939,10 +953,10 @@ class HighCardFlushFrame(tk.Frame):
         tag = f"player_card_{i}"
         self.fan_canvas.delete(tag)
         if face_up:
-            draw_card(self.fan_canvas, x, y, card, width=width, height=height, tags=(tag,))
+            draw_card(self.fan_canvas, x, y, card, width=width, height=height, tags=(tag,), style=self._current_card_style)
         else:
             draw_card_back(self.fan_canvas, x, y, self._current_felt, self.app.settings.theme()["accent"],
-                            width=width, height=height, tags=(tag,))
+                            width=width, height=height, tags=(tag,), style=self._current_card_style)
 
     def _draw_fan_mat(self):
         felt_theme = self.app.settings.theme()
@@ -962,7 +976,7 @@ class HighCardFlushFrame(tk.Frame):
                 continue
             pos = self.felt_slot_order.index(i) if i in self.felt_slot_order else i
             x = _felt_card_x(pos)
-            draw_card(self.fan_canvas, x, FAN_Y, card, tags=(tag, f"cardidx_{i}"))
+            draw_card(self.fan_canvas, x, FAN_Y, card, tags=(tag, f"cardidx_{i}"), style=self._current_card_style)
             self.fan_canvas.tag_bind(tag, "<Button-1>", lambda e, idx=i: self._on_felt_card_click(idx))
             self.fan_canvas.tag_bind(
                 tag, "<Enter>",
@@ -987,7 +1001,7 @@ class HighCardFlushFrame(tk.Frame):
         for pos, idx in enumerate(self.flush_order):
             tag = f"flushcard_{idx}"
             x = start_x + pos * ZONE_CARD_OVERLAP
-            draw_card(self.canvas, x, ZONE_ROW_Y, cards[idx], tags=(tag, f"cardidx_{idx}"))
+            draw_card(self.canvas, x, ZONE_ROW_Y, cards[idx], tags=(tag, f"cardidx_{idx}"), style=self._current_card_style)
             exposed_w = ZONE_CARD_OVERLAP if pos < n - 1 else CARD_WIDTH
             self._bind_zone_card_hit(idx, x, ZONE_ROW_Y, exposed_w, CARD_HEIGHT)
 
@@ -1084,10 +1098,10 @@ class HighCardFlushFrame(tk.Frame):
             face_up_now = reveal if t >= 0.5 else not reveal
             if squeeze > 0.35:
                 if face_up_now:
-                    draw_card(canvas, x, y, card, width=w, height=height, tags=(tag,))
+                    draw_card(canvas, x, y, card, width=w, height=height, tags=(tag,), style=self._current_card_style)
                 else:
                     draw_card_back(canvas, x, y, self._current_felt, self.app.settings.theme()["accent"],
-                                    width=w, height=height, tags=(tag,))
+                                    width=w, height=height, tags=(tag,), style=self._current_card_style)
             else:
                 canvas.create_rectangle(x, y, x + w, y + height, fill="#fdfdf5", outline="#222222", tags=(tag,))
 
@@ -1130,7 +1144,7 @@ class HighCardFlushFrame(tk.Frame):
                     y = sy + (ty - sy) * t
                     felt_theme = self.app.settings.theme()
                     draw_card_back(self.canvas, x, y, felt_theme["felt"], felt_theme["accent"],
-                                    width=DEALER_CARD_W, height=DEALER_CARD_H, tags=(f"dealer_card_{i}",))
+                                    width=DEALER_CARD_W, height=DEALER_CARD_H, tags=(f"dealer_card_{i}",), style=self._current_card_style)
 
                 self._animate(DEAL_IN_DROP_MS, frame, on_done=on_done)
 
@@ -1234,7 +1248,7 @@ class HighCardFlushFrame(tk.Frame):
                     tag = f"flushcard_{idx}"
                     self.canvas.delete(tag)
                     draw_card_back(self.canvas, x + (tx - x) * t, ZONE_ROW_Y + (ty - ZONE_ROW_Y) * t,
-                                    self._current_felt, self.app.settings.theme()["accent"], tags=(tag,))
+                                    self._current_felt, self.app.settings.theme()["accent"], tags=(tag,), style=self._current_card_style)
                 self._animate(FOLD_FLY_MS, frame, on_done=one_done)
 
             self._animate_flip(self.canvas, f"flushcard_{idx}", cx_slot, ZONE_ROW_Y, cards[idx], reveal=False,
@@ -1274,7 +1288,7 @@ class HighCardFlushFrame(tk.Frame):
                 x = x0 + (x1 - x0) * t
                 tag = f"player_card_{idx}"
                 self.fan_canvas.delete(tag)
-                draw_card(self.fan_canvas, x, FAN_Y, cards[idx], tags=(tag,))
+                draw_card(self.fan_canvas, x, FAN_Y, cards[idx], tags=(tag,), style=self._current_card_style)
 
         def done():
             # Rebuild felt_slot_order: cards already moved to the flush
@@ -1438,6 +1452,7 @@ class HighCardFlushFrame(tk.Frame):
         elif result.jackpot_pool_partial_fraction:
             self.app.jackpot.set_amount(self.app.jackpot.amount * (1 - result.jackpot_pool_partial_fraction))
         self.app.finance.record_round_played(result.net_result)
+        self._pending_achievements = self.app.achievements.check_round(GAME_KEY, result.net_result)
 
         payout_items = self._payout_chip_items(result)
         credit = sum(it["ret"] for it in payout_items)
@@ -1475,7 +1490,7 @@ class HighCardFlushFrame(tk.Frame):
                 self.canvas.delete(f"dealer_placed_{idx}")
                 x, y = sx + (tx - sx) * t, sy + (ty - sy) * t
                 draw_card(self.canvas, x, y, result.dealer_cards[idx], width=DEALER_CARD_W, height=DEALER_CARD_H,
-                          tags=(f"dealer_placed_{idx}", "dealer_placed"))
+                          tags=(f"dealer_placed_{idx}", "dealer_placed"), style=self._current_card_style)
 
             self._animate(SEPARATE_MOVE_MS, frame)
 
@@ -1490,7 +1505,7 @@ class HighCardFlushFrame(tk.Frame):
                 self.canvas.delete(f"dealer_card_{idx}")
                 x = sx + (tx - sx) * t
                 draw_card(self.canvas, x, DEALT_Y, result.dealer_cards[idx], width=DEALER_CARD_W,
-                          height=DEALER_CARD_H, tags=(f"dealer_card_{idx}",))
+                          height=DEALER_CARD_H, tags=(f"dealer_card_{idx}",), style=self._current_card_style)
 
             self._animate(SEPARATE_MOVE_MS, frame)
 
@@ -1627,6 +1642,9 @@ class HighCardFlushFrame(tk.Frame):
         self._show_result(result)
         self._show_round_over_controls()
         self.state = "resolved"
+        if self._pending_achievements:
+            achievement_banner.queue(self, self.app, self._pending_achievements)
+            self.app.on_crowns_changed()
 
     def _show_result(self, result):
         self.result_lbl.configure(text=result.summary,
@@ -1686,6 +1704,7 @@ class HighCardFlushFrame(tk.Frame):
     def _apply_theme(self):
         felt_theme = self.app.settings.theme()
         new_felt = felt_theme["felt"]
+        self._current_card_style = self.app.settings.card_style()
         if new_felt == self._current_felt:
             return
         old_felt = self._current_felt

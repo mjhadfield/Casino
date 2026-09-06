@@ -207,9 +207,9 @@ class PaiGowPokerFaceUpFrame(PaiGowPokerFrame):
                 self.canvas.delete(tag)
                 fx = x + (CARD_WIDTH - w) / 2
                 if t < 0.5:
-                    draw_card(self.canvas, fx, y, cards[idx], width=w, tags=(tag,))
+                    draw_card(self.canvas, fx, y, cards[idx], width=w, tags=(tag,), style=self._current_card_style)
                 else:
-                    draw_card_back(self.canvas, fx, y, self._current_felt, accent, width=w, tags=(tag,))
+                    draw_card_back(self.canvas, fx, y, self._current_felt, accent, width=w, tags=(tag,), style=self._current_card_style)
 
         self._animate(FOLD_FLIP_MS, frame, on_done=on_done)
 
@@ -232,7 +232,7 @@ class PaiGowPokerFaceUpFrame(PaiGowPokerFrame):
             self.canvas.delete(tag)
             x = sx + (tx - sx) * t
             y = sy + (ty - sy) * t
-            draw_card_back(self.canvas, x, y, self._current_felt, accent, tags=(tag,))
+            draw_card_back(self.canvas, x, y, self._current_felt, accent, tags=(tag,), style=self._current_card_style)
 
         def done():
             self.canvas.delete(tag)

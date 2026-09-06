@@ -1,7 +1,7 @@
 import tkinter as tk
 
 from core.finances import TRANSACTION_BALANCE_THRESHOLD, deposit_limit
-from ui import dialogs, theme
+from ui import achievement_banner, dialogs, theme
 from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
 
@@ -181,6 +181,11 @@ class FinancesFrame(tk.Frame):
         self.refresh()
         self.app.on_balance_changed()
 
+        newly = self.app.achievements.check_deposit()
+        if newly:
+            achievement_banner.queue(self, self.app, newly)
+            self.app.on_crowns_changed()
+
     def _do_withdraw(self):
         raw = self.withdraw_var.get().strip().replace("£", "")
         try:
@@ -198,6 +203,11 @@ class FinancesFrame(tk.Frame):
         self.withdraw_var.set("")
         self.refresh()
         self.app.on_balance_changed()
+
+        newly = self.app.achievements.check_withdraw(amount)
+        if newly:
+            achievement_banner.queue(self, self.app, newly)
+            self.app.on_crowns_changed()
 
     def _apply_balance_override(self):
         try:

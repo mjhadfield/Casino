@@ -84,7 +84,9 @@ HAND_OUTCOME_LABELS = ["Bust", "Lose", "Push", "Win", "Blackjack"]
 
 DECK_COUNT = 8
 
-BLACKJACK_PAYOUT_MULTIPLIER = 1.5  # 3:2
+BLACKJACK_PAYOUT_MULTIPLIER = 1.5  # 3:2 -- overridable per table (see
+# BlackjackGame.BLACKJACK_PAYOUT_MULTIPLIER and games/blackjack_6_5/logic.py,
+# a same-game-different-table variant that pays 6:5 instead).
 INSURANCE_PAYOUT_MULTIPLIER = 2    # 2:1
 MAX_SPLITS = 4                     # up to 4 splits -- 5 hands from one box
 
@@ -273,13 +275,14 @@ def _jackpot_tier(three_eval, three_cards):
     return 0.0, False
 
 
-def _settle_hand(hand, dealer_total, dealer_bust, dealer_blackjack):
+def _settle_hand(hand, dealer_total, dealer_bust, dealer_blackjack,
+                  blackjack_payout_multiplier=BLACKJACK_PAYOUT_MULTIPLIER):
     if hand.is_bust:
         return "Bust", 0.0
     if hand.is_blackjack:
         if dealer_blackjack:
             return "Push", hand.bet
-        return "Blackjack", hand.bet * (1 + BLACKJACK_PAYOUT_MULTIPLIER)
+        return "Blackjack", hand.bet * (1 + blackjack_payout_multiplier)
     if dealer_blackjack:
         return "Lose", 0.0
     if dealer_bust or hand.total > dealer_total:
@@ -344,7 +347,18 @@ class RoundSummary:
 
 class BlackjackGame:
     """Engine for a single Blackjack table (8-deck shoe). Create one
-    instance per table."""
+    instance per table.
+
+    BLACKJACK_PAYOUT_MULTIPLIER is a class attribute (not just the bare
+    module constant above) specifically so a same-game-different-table
+    variant can override just this one number by subclassing -- see
+    games/blackjack_6_5/logic.py's BlackjackSixFiveGame, which pays 6:5
+    instead of 3:2 and changes nothing else. This is the general pattern
+    for "different rules, same game" table variants; a future "different
+    min/max bet" variant would follow the same shape with its own
+    MIN_BET/MAX_BET class attributes, enforced wherever a table's own
+    Frame checks affordability."""
+    BLACKJACK_PAYOUT_MULTIPLIER = BLACKJACK_PAYOUT_MULTIPLIER
 
     def __init__(self):
         self.shoe = Deck(num_decks=DECK_COUNT)
@@ -532,7 +546,8 @@ class BlackjackGame:
         total_returned = 0.0
         for box in self.boxes:
             for hand in box.hands:
-                outcome, payout = _settle_hand(hand, dealer_total, dealer_bust, self.dealer_blackjack)
+                outcome, payout = _settle_hand(hand, dealer_total, dealer_bust, self.dealer_blackjack,
+                                                self.BLACKJACK_PAYOUT_MULTIPLIER)
                 hand.outcome = outcome
                 hand.payout = payout
                 total_wagered += hand.bet

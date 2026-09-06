@@ -28,10 +28,10 @@ GAME_SECTIONS = [
     {"key": tcp_logic.GAME_KEY, "label": tcp_logic.GAME_LABEL, "enabled": True, "tracks_folding": True,
      "bet_types": tcp_logic.BET_TYPES, "hand_labels": tcp_logic.HAND_OUTCOME_LABELS},
      # Currently the only game that specifically tracks folding and compares to otpimal play. Easy logic, Q-6-4 or better. 
-    # Blackjack's own section covers both tables -- Standard and Counting
-    # (games/blackjack_count) deliberately share one GAME_KEY, see that
-    # game's own logic.py -- so there's no separate blackjack_count entry
-    # here.
+    # Blackjack's own section covers all three tables -- Standard, Counting
+    # (games/blackjack_count) and 6:5 (games/blackjack_6_5) deliberately
+    # share one GAME_KEY, see either variant's own logic.py -- so there's no
+    # separate blackjack_count/blackjack_6_5 entry here.
     {"key": bj_logic.GAME_KEY, "label": bj_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,
      "bet_types": bj_logic.BET_TYPES, "hand_labels": bj_logic.HAND_OUTCOME_LABELS},
     {"key": pgp_logic.GAME_KEY, "label": pgp_logic.GAME_LABEL, "enabled": True, "tracks_folding": False,

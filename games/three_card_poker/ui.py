@@ -21,7 +21,7 @@ from games.three_card_poker.logic import (
     should_play,
     ThreeCardPokerGame,
 )
-from ui import dialogs, theme
+from ui import achievement_banner, dialogs, theme
 from ui.card_widgets import draw_card, draw_card_back, CARD_HEIGHT, CARD_WIDTH
 from ui.chips import (
     CHIP_COLORS_BY_VALUE,
@@ -345,6 +345,11 @@ class ThreeCardPokerFrame(tk.Frame):
         self.chip_canvases = {}  # value -> (canvas, face colour, rim colour)
         self._jackpot_pulse_t = 0.0  # phase for the jackpot spot's breathing glow, once a bet's placed
         self._bound_spot_tags = set()
+        # Achievements earned by the round just settled (see _finish_round),
+        # stashed here since stats are recorded there but the banner isn't
+        # shown until _on_round_settled, once the payout animation and
+        # result panel are actually up.
+        self._pending_achievements = []
 
         self._build_ui()
         self.app.jackpot.add_listener(self._on_jackpot_changed)
@@ -355,6 +360,7 @@ class ThreeCardPokerFrame(tk.Frame):
     def _build_ui(self):
         felt_theme = self.app.settings.theme()
         self._current_felt = felt_theme["felt"]
+        self._current_card_style = self.app.settings.card_style()
         self.configure(bg=felt_theme["felt"])
 
         # Top bar is NOT felt-scoped -- it's this app's global chrome, so it
@@ -772,6 +778,7 @@ class ThreeCardPokerFrame(tk.Frame):
             return
         self._bound_spot_tags.add(tag)
         self.canvas.tag_bind(tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
+        self.canvas.tag_bind(tag, "<Button-3>", lambda e, k=key: self._on_remove_chip(k))
         self.canvas.tag_bind(tag, "<Enter>", lambda e: self.canvas.configure(cursor="hand2"))
         self.canvas.tag_bind(tag, "<Leave>", lambda e: self.canvas.configure(cursor=""))
 
@@ -848,6 +855,19 @@ class ThreeCardPokerFrame(tk.Frame):
             self._toggle_jackpot_bet()
         else:
             self._adjust_bet(key, self.selected_chip)
+
+    def _on_remove_chip(self, key):
+        """Right-click's mirror of _on_place_chip: takes one chip of the
+        selected denomination back off this spot, clamped at £0 rather than
+        going negative (see _adjust_bet's own min() below) -- the only other
+        way to lower a bet used to be Clear Bets and starting over."""
+        if self.state != "betting":
+            return
+        if key == "jackpot":
+            if self.bets["jackpot"]:
+                self._toggle_jackpot_bet()
+        elif self.bets[key] > 0:
+            self._adjust_bet(key, -min(self.selected_chip, self.bets[key]))
 
     def _toggle_jackpot_bet(self):
         """The jackpot spot is on/off, not a stack -- tapping it places or
@@ -990,6 +1010,8 @@ class ThreeCardPokerFrame(tk.Frame):
             self.app.finance.add_return(result.total_returned)
         self.app.finance.record_round_played(result.net_result)
         self.app.game_stats.record_round_net(GAME_KEY, result.net_result)
+        self._pending_achievements = self.app.achievements.check_round(GAME_KEY, result.net_result)
+        self._pending_achievements += self.app.achievements.check_three_card_poker(result)
         for key, bet, ret in self._resolved_bet_totals(result):
             self.app.game_stats.record_bet(GAME_KEY, key, bet, ret)
         self.app.game_stats.record_hand(GAME_KEY, hand_outcome_label(result.player_eval, result.folded))
@@ -1136,10 +1158,10 @@ class ThreeCardPokerFrame(tk.Frame):
         self.canvas.delete(tag)
         x = self._dealer_slot_x(i)
         if face_up:
-            draw_card(self.canvas, x, DEALER_Y, self.result.dealer_cards[i], tags=(tag,))
+            draw_card(self.canvas, x, DEALER_Y, self.result.dealer_cards[i], tags=(tag,), style=self._current_card_style)
         else:
             draw_card_back(self.canvas, x, DEALER_Y, self._current_felt,
-                            self.app.settings.theme()["accent"], tags=(tag,))
+                            self.app.settings.theme()["accent"], tags=(tag,), style=self._current_card_style)
 
     def _draw_player_card_at(self, i, card, x, y, face_up=True):
         """Draws into fan_canvas -- every caller of this is drawing the
@@ -1148,10 +1170,10 @@ class ThreeCardPokerFrame(tk.Frame):
         tag = f"player_card_{i}"
         self.fan_canvas.delete(tag)
         if face_up:
-            draw_card(self.fan_canvas, x, y, card, tags=(tag,))
+            draw_card(self.fan_canvas, x, y, card, tags=(tag,), style=self._current_card_style)
         else:
             draw_card_back(self.fan_canvas, x, y, self._current_felt,
-                            self.app.settings.theme()["accent"], tags=(tag,))
+                            self.app.settings.theme()["accent"], tags=(tag,), style=self._current_card_style)
 
     def _fan_slots(self):
         """Top-left (x, y) for each of the player's 3 cards, in dealt order,
@@ -1249,10 +1271,10 @@ class ThreeCardPokerFrame(tk.Frame):
             face_up_now = reveal if t >= 0.5 else not reveal
             if squeeze > 0.35:
                 if face_up_now:
-                    draw_card(canvas, x, y, card, width=w, tags=(tag,))
+                    draw_card(canvas, x, y, card, width=w, tags=(tag,), style=self._current_card_style)
                 else:
                     draw_card_back(canvas, x, y, self._current_felt, self.app.settings.theme()["accent"],
-                                    width=w, tags=(tag,))
+                                    width=w, tags=(tag,), style=self._current_card_style)
             else:
                 canvas.create_rectangle(x, y, x + w, y + CARD_HEIGHT,
                                          fill="#fdfdf5", outline="#222222", tags=(tag,))
@@ -1327,10 +1349,10 @@ class ThreeCardPokerFrame(tk.Frame):
                 self.fan_canvas.delete(tag)
                 if w > 3 and h > 3:
                     if face_up:
-                        draw_card(self.fan_canvas, cx - w / 2, cy - h / 2, cards[i], width=w, height=h, tags=(tag,))
+                        draw_card(self.fan_canvas, cx - w / 2, cy - h / 2, cards[i], width=w, height=h, tags=(tag,), style=self._current_card_style)
                     else:
                         draw_card_back(self.fan_canvas, cx - w / 2, cy - h / 2, self._current_felt,
-                                        self.app.settings.theme()["accent"], width=w, height=h, tags=(tag,))
+                                        self.app.settings.theme()["accent"], width=w, height=h, tags=(tag,), style=self._current_card_style)
 
         def grow_frame(t):
             for new_pos, orig_i in enumerate(order):
@@ -1343,10 +1365,10 @@ class ThreeCardPokerFrame(tk.Frame):
                 if w > 3 and h > 3:
                     if face_up:
                         draw_card(self.canvas, tcx - w / 2, tcy - h / 2, cards[orig_i], width=w, height=h,
-                                  tags=draw_tags)
+                                  tags=draw_tags, style=self._current_card_style)
                     else:
                         draw_card_back(self.canvas, tcx - w / 2, tcy - h / 2, self._current_felt,
-                                        self.app.settings.theme()["accent"], width=w, height=h, tags=draw_tags)
+                                        self.app.settings.theme()["accent"], width=w, height=h, tags=draw_tags, style=self._current_card_style)
                     if spot_tag:
                         self.canvas.tag_lower(tag, spot_tag)
 
@@ -1650,6 +1672,9 @@ class ThreeCardPokerFrame(tk.Frame):
         self._show_result(result)
         self._show_round_over_controls()
         self.state = "resolved"
+        if self._pending_achievements:
+            achievement_banner.queue(self, self.app, self._pending_achievements)
+            self.app.on_crowns_changed()
 
     def _show_result(self, result):
         headline = {
@@ -1740,6 +1765,7 @@ class ThreeCardPokerFrame(tk.Frame):
         everything from scratch."""
         felt_theme = self.app.settings.theme()
         new_felt = felt_theme["felt"]
+        self._current_card_style = self.app.settings.card_style()
         if new_felt == self._current_felt:
             return
         old_felt = self._current_felt

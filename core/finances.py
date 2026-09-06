@@ -45,9 +45,17 @@ DEFAULT_FINANCE_DATA = {
 
 
 class FinanceManager:
-    def __init__(self, save_path):
+    def __init__(self, save_path, starting_balance=None):
         self.save_path = save_path
-        self.data = load_json(save_path, DEFAULT_FINANCE_DATA)
+        # starting_balance overrides DEFAULT_FINANCE_DATA's own £200 --
+        # used for a brand-new Sandbox player's £1,000 start (see main.py's
+        # start_session). load_json overlays whatever's actually already on
+        # disk on top of these defaults, so this only ever takes effect the
+        # very first time (no save file yet) -- an existing player's real
+        # saved balance is never touched by this, no matter what's passed.
+        defaults = DEFAULT_FINANCE_DATA if starting_balance is None else \
+            {**DEFAULT_FINANCE_DATA, "balance": starting_balance}
+        self.data = load_json(save_path, defaults)
         if not self.data.get("account_created"):
             self.data["account_created"] = datetime.now(timezone.utc).isoformat()
             self._save()

@@ -14,6 +14,7 @@ import tkinter as tk
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from core.achievements import AchievementsManager
 from core.finances import FinanceManager
 from core.game_stats import GameStatsManager
 from core.jackpot import JackpotManager
@@ -24,12 +25,16 @@ from ui import theme
 from ui.logon_screen import LogonFrame
 from ui.main_menu import MainMenuFrame
 from ui.blackjack_menu import BlackjackMenuFrame
+from ui.pai_gow_poker_menu import PaiGowPokerMenuFrame
+from ui.achievements_screen import AchievementsFrame
+from ui.store_screen import StoreFrame
 from ui.finances_screen import FinancesFrame
 from ui.settings_screen import SettingsFrame
 from ui.stats_screen import StatsFrame
 from games.three_card_poker.ui import ThreeCardPokerFrame
 from games.blackjack.ui import BlackjackFrame
 from games.blackjack_count.ui import BlackjackCountFrame
+from games.blackjack_6_5.ui import BlackjackSixFiveFrame
 from games.pai_gow_poker.ui import PaiGowPokerFrame
 from games.pai_gow_poker_face_up.ui import PaiGowPokerFaceUpFrame
 from games.mississippi_stud.ui import MississippiStudFrame
@@ -73,6 +78,7 @@ class CasinoApp(tk.Tk):
         self.jackpot = None
         self.game_stats = None
         self.unlocks = None
+        self.achievements = None
 
         # Per-player state, built once per slug the first time that player
         # is ever selected this run and kept alive for the rest of the
@@ -82,7 +88,7 @@ class CasinoApp(tk.Tk):
         # than reloading from disk or rebuilding any widget. See
         # start_session's docstring for why frames in particular can't just
         # be handed a different player and carry on.
-        self.sessions = {}  # slug -> {"player_dir", "settings", "finance", "game_stats", "unlocks", "frames"}
+        self.sessions = {}  # slug -> {"player_dir", "settings", "finance", "game_stats", "unlocks", "achievements", "frames"}
 
         self.container = tk.Frame(self, bg=theme.BG)
         self.container.pack(fill="both", expand=True)
@@ -115,14 +121,14 @@ class CasinoApp(tk.Tk):
         Screen" button.
 
         The first time a given slug is seen, this builds that player's 5
-        managers and all 13 game/menu frames, exactly as it always has, and
+        managers and all 17 game/menu frames, exactly as it always has, and
         caches them in self.sessions[slug]. On every later call for a slug
         already in that cache, no manager is reloaded and no frame is
         rebuilt -- table felt colour, the breadcrumb's player name, and
         every jackpot-listener binding are all baked in once at
         frame-construction time (see each frame's own _build_ui), so
         reusing the same already-built widgets is what keeps them correct
-        across a switch, rather than a live in-place refresh of 13 screens'
+        across a switch, rather than a live in-place refresh of 17 screens'
         worth of widgets. The one manager that's a genuine exception is the
         jackpot: it's shared by every player, so it's built once ever (the
         very first session of the process, whoever that is) and simply
@@ -150,10 +156,21 @@ class CasinoApp(tk.Tk):
             player_dir = self.players.player_dir(slug, DATA_DIR)
             os.makedirs(player_dir, exist_ok=True)
 
+            # Sandbox Mode is a runtime bypass baked into these three
+            # managers themselves (see their own docstrings), re-derived
+            # fresh from the roster every session rather than persisted in
+            # any of their own save files -- an existing player predating
+            # this field defaults to "rewards" (unaffected).
+            is_sandbox = player.get("account_type", "rewards") == "sandbox"
+
             settings = SettingsManager(os.path.join(player_dir, "settings.json"))
-            finance = FinanceManager(os.path.join(player_dir, "finances.json"))
+            finance = FinanceManager(
+                os.path.join(player_dir, "finances.json"),
+                starting_balance=1000.0 if is_sandbox else None,
+            )
             game_stats = GameStatsManager(os.path.join(player_dir, "game_stats.json"))
-            unlocks = UnlocksManager(os.path.join(player_dir, "unlocks.json"))
+            unlocks = UnlocksManager(os.path.join(player_dir, "unlocks.json"), always_unlocked=is_sandbox)
+            achievements = AchievementsManager(os.path.join(player_dir, "achievements.json"), self, sandbox=is_sandbox)
 
             # Swap the live pointers in *before* building any frame --
             # every frame reads self.app.<manager> during its own
@@ -163,7 +180,15 @@ class CasinoApp(tk.Tk):
             self.finance = finance
             self.game_stats = game_stats
             self.unlocks = unlocks
+            self.achievements = achievements
             self.data_dir = player_dir
+
+            # Only safe now that self.unlocks is actually live (see
+            # AchievementsManager's own note on why this isn't just called
+            # from inside its __init__) -- a one-time-per-session catch-up
+            # for any achievement whose unlock effect didn't exist (or
+            # pointed somewhere else) the last time it was actually earned.
+            achievements._reconcile_unlocks()
 
             if self.jackpot is None:
                 # jackpot.json stays at the top level, shared by every
@@ -181,10 +206,14 @@ class CasinoApp(tk.Tk):
                 (FinancesFrame, "finances"),
                 (StatsFrame, "stats"),
                 (SettingsFrame, "settings"),
+                (AchievementsFrame, "achievements"),
+                (StoreFrame, "store"),
                 (ThreeCardPokerFrame, "three_card_poker"),
                 (BlackjackMenuFrame, "blackjack_menu"),
                 (BlackjackFrame, "blackjack"),
                 (BlackjackCountFrame, "blackjack_count"),
+                (BlackjackSixFiveFrame, "blackjack_6_5"),
+                (PaiGowPokerMenuFrame, "pai_gow_poker_menu"),
                 (PaiGowPokerFrame, "pai_gow_poker"),
                 (PaiGowPokerFaceUpFrame, "pai_gow_poker_face_up"),
                 (MississippiStudFrame, "mississippi_stud"),
@@ -203,6 +232,7 @@ class CasinoApp(tk.Tk):
                 "finance": finance,
                 "game_stats": game_stats,
                 "unlocks": unlocks,
+                "achievements": achievements,
                 "frames": frames,
             }
         else:
@@ -211,6 +241,7 @@ class CasinoApp(tk.Tk):
             self.finance = session["finance"]
             self.game_stats = session["game_stats"]
             self.unlocks = session["unlocks"]
+            self.achievements = session["achievements"]
             self.data_dir = session["player_dir"]
 
         # self.frames always means "logon, plus whichever player is
@@ -228,11 +259,26 @@ class CasinoApp(tk.Tk):
             frame.on_show()
         frame.tkraise()
 
+    @property
+    def is_sandbox(self):
+        """True iff the currently active player is a Sandbox account -- a
+        thin, guarded convenience so UI code can just check
+        self.app.is_sandbox rather than every call site re-deriving it from
+        self.current_player itself (which is still None before the very
+        first session starts)."""
+        return bool(self.current_player) and self.current_player.get("account_type") == "sandbox"
+
     def on_balance_changed(self):
         """Called by any screen that changes the balance/stats, so the menu
         and finances screen stay in sync without polling."""
         self.frames["menu"].refresh_balance()
         self.frames["finances"].refresh()
+
+    def on_crowns_changed(self):
+        """Called by anything that changes the Crowns balance (an
+        achievement firing, or a Crowns Store purchase), so the Main Menu's
+        own readout stays in sync without polling."""
+        self.frames["menu"].refresh_crowns()
 
 
 def main():

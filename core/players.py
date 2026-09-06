@@ -23,6 +23,17 @@ from core.persistence import load_json, save_json
 
 DEFAULT_ROSTER = {"players": []}
 
+# The two account types offered on the logon screen's own "+ New Player"
+# flow (see ui/logon_screen.py's account-type picker) -- stored on the
+# roster entry itself (not per-player-save-directory state), read back by
+# main.py's start_session to decide starting balance/unlock/achievement
+# behaviour for that player's very first session. ACCOUNT_TYPE_REWARDS is
+# also the default for any player predating this field (an existing save,
+# or one created via legacy migration) -- see create_player/
+# migrate_legacy_data below.
+ACCOUNT_TYPE_REWARDS = "rewards"
+ACCOUNT_TYPE_SANDBOX = "sandbox"
+
 # The 13 flat save files a pre-player-select install has directly under
 # data/ -- everything except jackpot.json, which stays global (see
 # core/jackpot.py's docstring: one shared pot, not one per player).
@@ -85,7 +96,7 @@ class PlayerManager:
             n += 1
         return f"{base_slug}-{n}"
 
-    def create_player(self, name):
+    def create_player(self, name, account_type=ACCOUNT_TYPE_REWARDS):
         name = name.strip()
         if not name:
             raise ValueError("Player name can't be empty.")
@@ -95,6 +106,7 @@ class PlayerManager:
             "name": name,
             "created_at": _now(),
             "last_played_at": None,
+            "account_type": account_type,
         })
         self._save()
         return slug
@@ -150,6 +162,7 @@ def migrate_legacy_data(data_dir, players_save_path, name):
         "name": name,
         "created_at": _now(),
         "last_played_at": None,
+        "account_type": ACCOUNT_TYPE_REWARDS,  # a migrated legacy player is never Sandbox
     })
     manager._save()
     return slug

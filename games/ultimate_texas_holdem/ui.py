@@ -29,7 +29,7 @@ from games.ultimate_texas_holdem.logic import (
     TRIPS_STRAIGHT_FLUSH,
     UltimateTexasHoldemGame,
 )
-from ui import dialogs, theme
+from ui import achievement_banner, dialogs, theme
 from ui.card_widgets import draw_card, draw_card_back, CARD_HEIGHT, CARD_WIDTH
 from ui.chips import (
     CHIP_COLORS_BY_VALUE,
@@ -317,6 +317,7 @@ class UltimateTexasHoldemFrame(tk.Frame):
         self.chip_canvases = {}
         self._jackpot_pulse_t = 0.0
         self._bound_spot_tags = set()
+        self._pending_achievements = []
 
         self._build_ui()
         self.app.jackpot.add_listener(self._on_jackpot_changed)
@@ -327,6 +328,7 @@ class UltimateTexasHoldemFrame(tk.Frame):
     def _build_ui(self):
         felt_theme = self.app.settings.theme()
         self._current_felt = felt_theme["felt"]
+        self._current_card_style = self.app.settings.card_style()
         self.configure(bg=felt_theme["felt"])
 
         top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
@@ -726,6 +728,7 @@ class UltimateTexasHoldemFrame(tk.Frame):
             return
         self._bound_spot_tags.add(tag)
         self.canvas.tag_bind(tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
+        self.canvas.tag_bind(tag, "<Button-3>", lambda e, k=key: self._on_remove_chip(k))
         self.canvas.tag_bind(tag, "<Enter>", lambda e: self.canvas.configure(cursor="hand2"))
         self.canvas.tag_bind(tag, "<Leave>", lambda e: self.canvas.configure(cursor=""))
 
@@ -813,6 +816,17 @@ class UltimateTexasHoldemFrame(tk.Frame):
             self._toggle_jackpot_bet()
         else:
             self._adjust_bet(key, self.selected_chip)
+
+    def _on_remove_chip(self, key):
+        """Right-click's mirror of _on_place_chip -- see blackjack/ui.py's
+        own _on_remove_chip for the full rationale (same pattern here)."""
+        if self.state != "betting":
+            return
+        if key == "jackpot":
+            if self.bets["jackpot"]:
+                self._toggle_jackpot_bet()
+        elif self.bets[key] > 0:
+            self._adjust_bet(key, -min(self.selected_chip, self.bets[key]))
 
     def _toggle_jackpot_bet(self):
         trial_bets = dict(self.bets)
@@ -1073,10 +1087,10 @@ class UltimateTexasHoldemFrame(tk.Frame):
         self._draw_zone_backgrounds()
         for i in range(2):
             draw_card_back(self.canvas, self._dealer_hand_slot_x(i), DEALER_Y, felt_theme["felt"],
-                            felt_theme["accent"], tags=(f"dealer_card_{i}",))
+                            felt_theme["accent"], tags=(f"dealer_card_{i}",), style=self._current_card_style)
         for i in range(5):
             draw_card_back(self.canvas, self._community_slot_x(i), DEALER_Y, felt_theme["felt"],
-                            felt_theme["accent"], tags=(f"community_card_{i}",))
+                            felt_theme["accent"], tags=(f"community_card_{i}",), style=self._current_card_style)
 
         if self.bets["jackpot"]:
             self._draw_strip_circle("jackpot", JACKPOT_CX, JACKPOT_CY, JACKPOT_SPOT_R,
@@ -1146,10 +1160,10 @@ class UltimateTexasHoldemFrame(tk.Frame):
         tag = f"player_card_{i}"
         self.fan_canvas.delete(tag)
         if face_up:
-            draw_card(self.fan_canvas, x, y, card, tags=(tag,))
+            draw_card(self.fan_canvas, x, y, card, tags=(tag,), style=self._current_card_style)
         else:
             draw_card_back(self.fan_canvas, x, y, self._current_felt,
-                            self.app.settings.theme()["accent"], tags=(tag,))
+                            self.app.settings.theme()["accent"], tags=(tag,), style=self._current_card_style)
 
     def _fan_slots(self):
         cx = FAN_CANVAS_WIDTH / 2
@@ -1214,10 +1228,10 @@ class UltimateTexasHoldemFrame(tk.Frame):
             face_up_now = reveal if t >= 0.5 else not reveal
             if squeeze > 0.35:
                 if face_up_now:
-                    draw_card(canvas, x, y, card, width=w, tags=(tag,))
+                    draw_card(canvas, x, y, card, width=w, tags=(tag,), style=self._current_card_style)
                 else:
                     draw_card_back(canvas, x, y, self._current_felt, self.app.settings.theme()["accent"],
-                                    width=w, tags=(tag,))
+                                    width=w, tags=(tag,), style=self._current_card_style)
             else:
                 canvas.create_rectangle(x, y, x + w, y + CARD_HEIGHT,
                                          fill="#fdfdf5", outline="#222222", tags=(tag,))
@@ -1350,6 +1364,7 @@ class UltimateTexasHoldemFrame(tk.Frame):
             self.app.finance.add_return(result.total_returned)
         self.app.finance.record_round_played(result.net_result)
         self.app.game_stats.record_round_net(GAME_KEY, result.net_result)
+        self._pending_achievements = self.app.achievements.check_round(GAME_KEY, result.net_result)
         for key, bet, ret in self._resolved_bet_totals(result):
             self.app.game_stats.record_bet(GAME_KEY, key, bet, ret)
         self.app.game_stats.record_hand(GAME_KEY, hand_outcome_label(result))
@@ -1482,6 +1497,9 @@ class UltimateTexasHoldemFrame(tk.Frame):
         self._show_result(result)
         self._show_round_over_controls()
         self.state = "resolved"
+        if self._pending_achievements:
+            achievement_banner.queue(self, self.app, self._pending_achievements)
+            self.app.on_crowns_changed()
 
     def _show_result(self, result):
         headline = {
@@ -1564,6 +1582,7 @@ class UltimateTexasHoldemFrame(tk.Frame):
     def _apply_theme(self):
         felt_theme = self.app.settings.theme()
         new_felt = felt_theme["felt"]
+        self._current_card_style = self.app.settings.card_style()
         if new_felt == self._current_felt:
             return
         old_felt = self._current_felt

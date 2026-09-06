@@ -26,7 +26,8 @@ from games.blackjack.logic import (
     TWENTY_ONE_PLUS_THREE_MULTIPLIER,
     hand_value,
 )
-from ui import dialogs, theme
+from games.blackjack import strategy
+from ui import achievement_banner, dialogs, theme
 from ui.card_widgets import CARD_HEIGHT, CARD_WIDTH, draw_card, draw_card_back
 from ui.chips import CHIP_COLORS_BY_VALUE, CHIP_DENOMINATIONS, CHIP_LAYER_MAX_R, CHIP_SIZE, draw_chip_face, draw_chip_stack
 from ui.jackpot_display import JackpotDisplay
@@ -43,6 +44,19 @@ DEFAULT_STATE = {"bets": {k: 0 for k in BET_KEYS}, "selected_chip": 5, "num_boxe
 # chip_zone already relies on.
 CANVAS_WIDTH = 760
 CANVAS_HEIGHT = 460
+
+# Same width as the main table canvas, for a consistent look directly
+# beneath it. Tall enough for a title, one header row (dealer up-cards)
+# and one data row (this hand's own strategy row) -- see
+# _draw_strategy_panel.
+STRATEGY_PANEL_WIDTH = CANVAS_WIDTH
+STRATEGY_PANEL_HEIGHT = 96
+
+# The eye icon's "hidden" colour -- deliberately its own dark red, not
+# theme.LOSE_COLOR (a brighter red this app already uses for a genuine
+# loss/error state elsewhere) -- this is a neutral "answer hidden" signal,
+# not one of those.
+STRATEGY_HIDDEN_COLOR = "#8b1e1e"
 
 PAYTABLE_WIDTH = 240
 PAYTABLE_HEIGHT = 320
@@ -266,6 +280,11 @@ class BlackjackFrame(tk.Frame):
     GAME_KEY = GAME_KEY
     GAME_TITLE = "Blackjack"
     BREADCRUMB = "blackjack"
+    # Display string for the natural-Blackjack payout shown in the paytable
+    # panel and rules dialog -- kept in lockstep with _make_game()'s own
+    # engine (see BlackjackGame.BLACKJACK_PAYOUT_MULTIPLIER) by every
+    # variant that overrides it, e.g. games/blackjack_6_5/ui.py's "6:5".
+    BLACKJACK_PAYOUT_LABEL = "3:2"
 
     def __init__(self, parent, app):
         super().__init__(parent, bg=theme.BG)
@@ -348,6 +367,7 @@ class BlackjackFrame(tk.Frame):
     def _build_ui(self):
         felt_theme = self.app.settings.theme()
         self._current_felt = felt_theme["felt"]
+        self._current_card_style = self.app.settings.card_style()
         self.configure(bg=felt_theme["felt"])
 
         top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
@@ -453,6 +473,28 @@ class BlackjackFrame(tk.Frame):
             highlightthickness=1, highlightbackground=theme.ACCENT,
             command=self._on_split,
         )
+
+        # Strategy Guide overlay (Crowns Store feature, see
+        # core/unlocks.py's PREMIUM_FEATURES) -- built once here but never
+        # packed in this method; only shown during an active decision (see
+        # _show_strategy_panel_if_enabled/_hide_strategy_panel), placed off
+        # action_frame's own bottom edge exactly like extra_action_frame is,
+        # at a FIXED offset that always clears Double/Split whether or not
+        # they're actually showing -- a fixed position reads as more stable
+        # than one that jumps up/down depending on which buttons a given
+        # hand happens to offer.
+        self.strategy_canvas = tk.Canvas(
+            game_col, width=STRATEGY_PANEL_WIDTH, height=STRATEGY_PANEL_HEIGHT,
+            bg=felt_theme["felt"], highlightthickness=0,
+        )
+        # Whether the recommended action's own TEXT (only that -- the
+        # highlighted column's box/border and every other column's own
+        # hint letter stay put either way) is currently hidden, toggled by
+        # the eye icon drawn in the panel's own corner -- a self-quiz aid,
+        # not a persisted setting, so it deliberately stays as plain
+        # session-lived state on the frame rather than going through
+        # SettingsManager.
+        self._strategy_answer_hidden = False
 
         # --- round-over state: three columns below the canvas, each aligned
         # under its own box -- Box 1's result + paytable on the left, Box 2's
@@ -595,7 +637,7 @@ class BlackjackFrame(tk.Frame):
 
         y = 40
         canvas.create_text(20, y, text="Blackjack", fill=theme.FG, font=theme.font(9), anchor="w")
-        canvas.create_text(w - 20, y, text="3:2", fill=accent,
+        canvas.create_text(w - 20, y, text=self.BLACKJACK_PAYOUT_LABEL, fill=accent,
                             font=theme.font(9, weight="bold"), anchor="e")
         y += 22
         canvas.create_line(20, y, w - 20, y, fill=theme.BORDER)
@@ -618,6 +660,128 @@ class BlackjackFrame(tk.Frame):
                                 font=theme.font(9, weight="bold"), anchor="e")
             y += 19
         return y
+
+    # ------------------------------------------------------------------ strategy guide
+    def _hide_strategy_panel(self):
+        self.strategy_canvas.place_forget()
+
+    def _show_strategy_panel_if_enabled(self):
+        """Only ever called from _show_decision_controls, right after
+        action_frame/extra_action_frame's own visibility for this turn is
+        settled -- an active decision is the only state this overlay is
+        ever relevant in (see the other three _show_*_controls methods,
+        which all call _hide_strategy_panel instead)."""
+        if not (self.app.settings.get("strategy_guide_enabled")
+                and self.app.achievements.owns_feature("strategy_guide")):
+            self._hide_strategy_panel()
+            return
+        box = self.game.boxes[self.active_box_idx]
+        if box.active_hand() is None:
+            self._hide_strategy_panel()
+            return
+        self.strategy_canvas.place(in_=self.action_frame, relx=0.5, rely=1.0, anchor="n", y=64)
+        # tkinter stacks siblings by CREATION order regardless of geometry
+        # manager, and self.chip_zone/round_over_frame are both built
+        # AFTER this canvas in _build_ui -- without this, chip_zone's own
+        # (narrower, roughly-centred) region renders on TOP of the middle
+        # of this wider panel, blanking it out there while its own left/
+        # right edges stay visible either side. tk.Misc.lift (an unbound
+        # call), not self.strategy_canvas.lift() -- Canvas overrides
+        # .lift()/.tkraise() to mean tag_raise (a canvas-ITEM op, wrong
+        # here and would need its own tag argument to even not error).
+        tk.Misc.lift(self.strategy_canvas)
+        self._draw_strategy_panel()
+
+    def _draw_strategy_panel(self):
+        """Full delete-and-redraw, same convention as _draw_paytable --
+        called from _show_strategy_panel_if_enabled (a new card dealt via
+        _continue_after_action, or the active hand changing via
+        _advance_turn -- both funnel through _show_decision_controls) and
+        from _apply_theme (a live table-felt change, which can land here
+        in ANY state, including "betting" before self.game.boxes even has
+        anything in it -- unlike _show_strategy_panel_if_enabled, which is
+        only ever reached once _show_decision_controls has already proven
+        self.active_box_idx points at a real box, this has to check for
+        itself)."""
+        canvas = self.strategy_canvas
+        canvas.delete("all")
+        if self.active_box_idx >= len(self.game.boxes):
+            return
+        box = self.game.boxes[self.active_box_idx]
+        hand = box.active_hand()
+        if hand is None:
+            return
+        felt_theme = self.app.settings.theme()
+        accent = felt_theme["accent"]
+        w, h = STRATEGY_PANEL_WIDTH, STRATEGY_PANEL_HEIGHT
+        theme.recessed_panel(canvas, 0, 0, w, h, title="STRATEGY GUIDE", title_font_size=12,
+                              fill=felt_theme["felt_dark"], outline=accent)
+
+        label, row, dealer_col, effective = strategy.recommend(
+            hand.cards, self.game.dealer_cards[0], hand.can_double, hand.can_split(box.split_count()),
+        )
+
+        label_x = 24
+        grid_x0 = 130
+        grid_w = w - grid_x0 - 24
+        col_w = grid_w / len(strategy.DEALER_COLUMNS)
+        header_y = 46
+        action_y = 70
+        highlight_fill = theme.lerp_color(felt_theme["felt_dark"], accent, 0.28)
+
+        canvas.create_text(label_x, (header_y + action_y) / 2, text=label, fill=theme.FG,
+                            font=theme.font(13, weight="bold"), anchor="w")
+
+        for i, dealer_label in enumerate(strategy.DEALER_COLUMNS):
+            is_current = i == dealer_col
+            x0, x1 = grid_x0 + col_w * i, grid_x0 + col_w * (i + 1)
+            cx = (x0 + x1) / 2
+            if is_current:
+                canvas.create_rectangle(x0 + 2, header_y - 14, x1 - 2, action_y + 12,
+                                         fill=highlight_fill, outline=accent, width=1.5)
+            canvas.create_text(cx, header_y, text=dealer_label,
+                                fill=accent if is_current else theme.FG_DIM,
+                                font=theme.font(10, weight="bold" if is_current else "normal"))
+            if is_current:
+                # The eye toggle only ever hides THIS one cell's own text --
+                # its highlight box above stays put, and every other
+                # column's own hint letter is untouched either way.
+                if not self._strategy_answer_hidden:
+                    canvas.create_text(cx, action_y, text=strategy.ACTION_LABELS[effective].upper(),
+                                        fill=accent, font=theme.font(10, weight="bold"))
+            else:
+                canvas.create_text(cx, action_y, text=strategy.DISPLAY_CHAR[row[i]],
+                                    fill=theme.FG, font=theme.font(11))
+
+        self._draw_strategy_eye_toggle(canvas, w, accent)
+
+    def _draw_strategy_eye_toggle(self, canvas, panel_width, accent):
+        """The show/hide icon in the panel's own top-right corner -- an
+        open eye in the table's own accent colour normally, or the same
+        eye with a diagonal slash through it in STRATEGY_HIDDEN_COLOR once
+        toggled off. Drawn from primitives (ovals/lines/a rectangle), same
+        "no image assets" convention as every other icon in this app."""
+        cx, cy, half = panel_width - 22, 18, 10
+        color = STRATEGY_HIDDEN_COLOR if self._strategy_answer_hidden else accent
+        tag = "strategy_eye_toggle"
+        canvas.create_rectangle(cx - half, cy - half, cx + half, cy + half,
+                                 outline=color, width=1.5, tags=(tag,))
+        eye_w, eye_h = half * 1.2, half * 0.64
+        canvas.create_oval(cx - eye_w / 2, cy - eye_h / 2, cx + eye_w / 2, cy + eye_h / 2,
+                            outline=color, width=1.3, tags=(tag,))
+        pupil_r = half * 0.22
+        canvas.create_oval(cx - pupil_r, cy - pupil_r, cx + pupil_r, cy + pupil_r,
+                            fill=color, outline="", tags=(tag,))
+        if self._strategy_answer_hidden:
+            canvas.create_line(cx - half + 3, cy + half - 3, cx + half - 3, cy - half + 3,
+                                fill=color, width=1.8, tags=(tag,))
+        canvas.tag_bind(tag, "<Button-1>", self._on_toggle_strategy_answer)
+        canvas.tag_bind(tag, "<Enter>", lambda _e: canvas.configure(cursor="hand2"))
+        canvas.tag_bind(tag, "<Leave>", lambda _e: canvas.configure(cursor=""))
+
+    def _on_toggle_strategy_answer(self, _event=None):
+        self._strategy_answer_hidden = not self._strategy_answer_hidden
+        self._draw_strategy_panel()
 
     # ------------------------------------------------------------------ betting table
     def _draw_table(self):
@@ -652,7 +816,7 @@ class BlackjackFrame(tk.Frame):
 
     def _show_rules(self):
         dialogs.document(
-            self, "♠ Blackjack -- Rules",
+            self, f"♠ {self.GAME_TITLE} -- Rules",
             [
                 ("GAMEPLAY", [
                     "**Betting:** Place a Blackjack wager (mandatory) plus Super Pairs, 21+3, "
@@ -667,7 +831,8 @@ class BlackjackFrame(tk.Frame):
                     "value first two cards, up to 4 splits). Split Aces get exactly one more "
                     "card each and then stand automatically.",
                     "**Dealer:** Draws to 17, stands on all 17s, then every hand is settled.",
-                    "**Payouts:** Blackjack pays 3:2. A win pays 1:1. A push returns your stake.",
+                    f"**Payouts:** Blackjack pays {self.BLACKJACK_PAYOUT_LABEL}. A win pays 1:1. "
+                    "A push returns your stake.",
                 ]),
                 ("SIDE BETS", [
                     "**Super Pairs:** your own first two cards -- Any Pair 5:1, Prime Pair "
@@ -790,6 +955,7 @@ class BlackjackFrame(tk.Frame):
             return
         self._bound_spot_tags.add(tag)
         self.canvas.tag_bind(tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
+        self.canvas.tag_bind(tag, "<Button-3>", lambda e, k=key: self._on_remove_chip(k))
         self.canvas.tag_bind(tag, "<Enter>", lambda e: self.canvas.configure(cursor="hand2"))
         self.canvas.tag_bind(tag, "<Leave>", lambda e: self.canvas.configure(cursor=""))
 
@@ -807,6 +973,7 @@ class BlackjackFrame(tk.Frame):
         self.canvas.configure(height=BETTING_CANVAS_HEIGHT)
         self.round_over_frame.pack_forget()
         self.extra_action_frame.place_forget()
+        self._hide_strategy_panel()
         # result_lbl/action_frame get forgotten (as a whole, not just their
         # children) in round-over -- see _show_round_over_controls -- so
         # every re-pack here has to pin its position with before=, or a
@@ -827,6 +994,7 @@ class BlackjackFrame(tk.Frame):
         self.canvas.configure(height=CANVAS_HEIGHT)
         self.round_over_frame.pack_forget()
         self.extra_action_frame.place_forget()
+        self._hide_strategy_panel()
         self.result_lbl.pack(pady=PLAY_RESULT_LBL_PADY, before=self.chip_zone)
         self.chip_frame.pack_forget()
         for w in self.action_frame.pack_slaves():
@@ -835,6 +1003,7 @@ class BlackjackFrame(tk.Frame):
 
     def _show_round_over_controls(self):
         self.extra_action_frame.place_forget()
+        self._hide_strategy_panel()
         self.chip_frame.pack_forget()
         for w in self.action_frame.pack_slaves():
             w.pack_forget()
@@ -900,6 +1069,8 @@ class BlackjackFrame(tk.Frame):
         else:
             self.extra_action_frame.place_forget()
 
+        self._show_strategy_panel_if_enabled()
+
     def _refresh_box_buttons(self):
         for n, btn in ((1, self.box1_btn), (2, self.box2_btn)):
             selected = n == self.num_boxes
@@ -932,6 +1103,23 @@ class BlackjackFrame(tk.Frame):
             self._toggle_jackpot_bet()
         else:
             self._adjust_bet(key, self.selected_chip)
+
+    def _on_remove_chip(self, key):
+        """Right-click's mirror of _on_place_chip: takes one chip of the
+        selected denomination back off this spot, clamped at £0 (see
+        _adjust_bet's own min() below) -- the only other way to lower a bet
+        used to be Clear Bets and starting over. Reuses _adjust_bet itself
+        (not a separate code path) so the dependent Top 3-needs-21+3
+        cascade already there applies to removal for free; the >0 guard
+        keeps an already-empty Top 3 spot from tripping that bet's own
+        "needs 21+3 first" dialog on a no-op right-click."""
+        if self.state != "betting":
+            return
+        if key == "jackpot":
+            if self.bets["jackpot"]:
+                self._toggle_jackpot_bet()
+        elif self.bets[key] > 0:
+            self._adjust_bet(key, -min(self.selected_chip, self.bets[key]))
 
     def _toggle_jackpot_bet(self):
         trial_bets = dict(self.bets)
@@ -1186,11 +1374,11 @@ class BlackjackFrame(tk.Frame):
                 fw = max(4, w * squeeze)
                 fx = x + (w - fw) / 2
                 if flip_t >= 0.5:
-                    draw_card(self.canvas, fx, y, card, width=fw, height=h, tags=(tag,))
+                    draw_card(self.canvas, fx, y, card, width=fw, height=h, tags=(tag,), style=self._current_card_style)
                 else:
-                    draw_card_back(self.canvas, fx, y, self._current_felt, accent, width=fw, height=h, tags=(tag,))
+                    draw_card_back(self.canvas, fx, y, self._current_felt, accent, width=fw, height=h, tags=(tag,), style=self._current_card_style)
             else:
-                draw_card_back(self.canvas, x, y, self._current_felt, accent, width=w, height=h, tags=(tag,))
+                draw_card_back(self.canvas, x, y, self._current_felt, accent, width=w, height=h, tags=(tag,), style=self._current_card_style)
 
         def done():
             self.canvas.delete(tag)
@@ -1416,10 +1604,10 @@ class BlackjackFrame(tk.Frame):
             self.canvas.delete("hole_flip")
             if squeeze > 0.35:
                 if t >= 0.5:
-                    draw_card(self.canvas, x, DEALER_Y, hole_card, width=w, tags=("hole_flip",))
+                    draw_card(self.canvas, x, DEALER_Y, hole_card, width=w, tags=("hole_flip",), style=self._current_card_style)
                 else:
                     draw_card_back(self.canvas, x, DEALER_Y, self._current_felt,
-                                    self.app.settings.theme()["accent"], width=w, tags=("hole_flip",))
+                                    self.app.settings.theme()["accent"], width=w, tags=("hole_flip",), style=self._current_card_style)
             else:
                 self.canvas.create_rectangle(x, DEALER_Y, x + w, DEALER_Y + CARD_HEIGHT,
                                               fill="#fdfdf5", outline="#222222", tags=("hole_flip",))
@@ -1558,6 +1746,15 @@ class BlackjackFrame(tk.Frame):
         self.app.finance.add_return(summary.total_returned)
         self.app.finance.record_round_played(summary.net_result)
         self.app.game_stats.record_round_net(self.GAME_KEY, summary.net_result)
+        # A round can be worth more than one hand for achievement purposes
+        # (a second box, a split, or both) -- count exactly what _record_stats
+        # just handed GameStatsManager.record_hand above, so the "Play N
+        # Hands" achievements track the same number the Stats screen itself
+        # calls "Total Hands" for this game (see check_round's own
+        # hand_count docstring).
+        hand_count = sum(len(box.hands) for box in summary.boxes)
+        pending = self.app.achievements.check_round(self.GAME_KEY, summary.net_result, hand_count=hand_count)
+        pending += self.app.achievements.check_blackjack(summary)
         if summary.jackpot_pool_won:
             self.app.jackpot.win()
         self._refresh_balance()
@@ -1568,6 +1765,9 @@ class BlackjackFrame(tk.Frame):
         self._draw_box_payout(0, summary)
         self._draw_box_payout(1, summary)
         self._show_round_over_controls()
+        if pending:
+            achievement_banner.queue(self, self.app, pending)
+            self.app.on_crowns_changed()
 
     def _show_result(self, summary):
         # The round-over screen is its own 3-column layout (round_over_frame)
@@ -1728,7 +1928,7 @@ class BlackjackFrame(tk.Frame):
         felt_theme = self.app.settings.theme()
         self.canvas.create_text(DECK_X1 + CARD_WIDTH / 2, DECK_LABEL_Y, text="DECK", fill=theme.FG_DIM,
                                  font=theme.font(9, weight="bold"), tags=(tag,))
-        draw_card_back(self.canvas, DECK_X1, DECK_Y, self._current_felt, felt_theme["accent"], tags=(tag,))
+        draw_card_back(self.canvas, DECK_X1, DECK_Y, self._current_felt, felt_theme["accent"], tags=(tag,), style=self._current_card_style)
 
     def _dealer_card_x(self, pos, n):
         gap = min(DEALER_CARD_GAP_MAX, max(30, (DEALER_MAT_X2 - DEALER_MAT_X1 - 40) / max(1, n)))
@@ -1741,10 +1941,10 @@ class BlackjackFrame(tk.Frame):
         self.canvas.delete(tag)
         x = self._dealer_card_x(pos, n)
         if face_up:
-            draw_card(self.canvas, x, DEALER_Y, card, tags=(tag,))
+            draw_card(self.canvas, x, DEALER_Y, card, tags=(tag,), style=self._current_card_style)
         else:
             draw_card_back(self.canvas, x, DEALER_Y, self._current_felt,
-                            self.app.settings.theme()["accent"], tags=(tag,))
+                            self.app.settings.theme()["accent"], tags=(tag,), style=self._current_card_style)
 
     def _draw_dealer_cards(self):
         cards = self.game.dealer_cards
@@ -1903,7 +2103,7 @@ class BlackjackFrame(tk.Frame):
                 continue
             cx = cards_x_start + shown * overlap
             draw_card(self.canvas, cx, cy - card_h / 2, card, width=int(card_w), height=int(card_h),
-                      tags=(hand_tag,))
+                      tags=(hand_tag,), style=self._current_card_style)
             shown += 1
         if not shown:
             return
@@ -2036,6 +2236,7 @@ class BlackjackFrame(tk.Frame):
     def _apply_theme(self):
         felt_theme = self.app.settings.theme()
         new_felt = felt_theme["felt"]
+        self._current_card_style = self.app.settings.card_style()
         if new_felt == self._current_felt:
             return
         old_felt = self._current_felt
@@ -2047,6 +2248,7 @@ class BlackjackFrame(tk.Frame):
         # need their own refresh whenever the felt theme actually changes.
         self.jackpot_display.retheme(felt_theme["felt_dark"], felt_theme["accent"])
         self._draw_paytable()
+        self._draw_strategy_panel()
         if self.state == "resolved" and self.summary is not None:
             for box_idx in range(self.num_boxes_in_round):
                 self._draw_box_payout(box_idx, self.summary)

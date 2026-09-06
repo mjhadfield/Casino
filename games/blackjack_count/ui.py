@@ -93,7 +93,7 @@ class BlackjackCountFrame(BlackjackFrame):
         felt_theme = self.app.settings.theme()
         self.canvas.create_text(DECK_X1 + CARD_WIDTH / 2, DECK_LABEL_Y, text="DECK", fill=theme.FG_DIM,
                                  font=theme.font(9, weight="bold"), tags=(tag,))
-        draw_card_back(self.canvas, DECK_X1, DECK_Y, self._current_felt, felt_theme["accent"], tags=(tag,))
+        draw_card_back(self.canvas, DECK_X1, DECK_Y, self._current_felt, felt_theme["accent"], tags=(tag,), style=self._current_card_style)
 
         total = self.game.shoe.num_decks * 52
         dealt = total - self.game.shoe.cards_remaining()

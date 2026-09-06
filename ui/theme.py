@@ -74,6 +74,10 @@ WARN_DIM_BG = lerp_color(BG, WARN, 0.12)
 LOSE_DIM_BG = lerp_color(BG, LOSE_COLOR, 0.12)
 LOSE_DIM_BG_ELEVATED = lerp_color(BG_ELEVATED, LOSE_COLOR, 0.14)
 SECONDARY_DIM_MENU_BG = lerp_color(MENU_BG, SECONDARY, 0.16)
+# The gold-tinted fill behind a "+N Crowns" pill badge drawn on a
+# BG_ELEVATED surface (the achievement banner, achievement cards) -- same
+# formula as ACCENT_DIM_BG_ELEVATED just above, in SECONDARY's own gold.
+SECONDARY_DIM_BG_ELEVATED = lerp_color(BG_ELEVATED, SECONDARY, 0.14)
 
 # A visible neutral-grey rule for separators against MENU_BG -- BORDER/
 # BORDER_SOFT are calibrated for the near-black BG and read as almost

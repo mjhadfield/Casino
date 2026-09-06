@@ -1,7 +1,9 @@
 import tkinter as tk
 from tkinter import messagebox
 
-from core.settings import TABLE_THEMES
+from core.cards import Card, Suit
+from core.settings import STANDARD_CARD_STYLES, TABLE_THEMES
+from core.unlocks import PREMIUM_CARD_STYLES, PREMIUM_FEATURES, PREMIUM_TABLE_THEMES
 from games.three_card_poker import logic as tcp_logic
 from games.pai_gow_poker import logic as pgp_logic
 from games.pai_gow_poker_face_up import logic as pgpfu_logic
@@ -10,9 +12,17 @@ from games.ultimate_texas_holdem import logic as uth_logic
 from games.let_it_ride import logic as lir_logic
 from games.high_card_flush import logic as hcf_logic
 from games.baccarat import logic as bacc_logic
-from ui import dialogs, main_menu, theme
+from ui import card_widgets, dialogs, main_menu, theme
 from ui.collapsible import make_collapsible
 from ui.scrollable import ScrollableFrame
+
+# (PREMIUM_FEATURES key, display label, settings.py key) -- one entry per
+# feature that gets a Settings toggle once owned. Only ever iterated
+# through _draw_features()'s own ownership check, so a future second
+# feature is just one more tuple here.
+FEATURE_TOGGLES = [
+    ("strategy_guide", "Strategy Guide", "strategy_guide_enabled"),
+]
 
 
 class SettingsFrame(tk.Frame):
@@ -20,12 +30,14 @@ class SettingsFrame(tk.Frame):
         super().__init__(parent, bg=theme.BG)
         self.app = app
         self._toggle_redraws = []
-        self.theme_canvases = {}
+        self._feature_toggle_redraws = []  # rebuilt fresh by _draw_features() every call, not appended-to
         self._collapsers = []       # every gated section's collapse() -- on_show resets them all
+        self.feature_vars = {}      # settings_key -> BooleanVar, populated by _draw_features()
 
         self.sound_var = tk.BooleanVar(value=app.settings.get("sound_enabled"))
         self.anim_var = tk.BooleanVar(value=app.settings.get("animations_enabled"))
         self.theme_var = tk.StringVar(value=app.settings.get("table_theme"))
+        self.card_style_var = tk.StringVar(value=app.settings.get("card_style"))
         self.jackpot_rate_var = tk.StringVar(value=f"{app.settings.get('jackpot_rate_per_second'):.2f}")
         self._original = self._snapshot()
 
@@ -81,6 +93,12 @@ class SettingsFrame(tk.Frame):
 
         self._make_theme_row(inner)
 
+        tk.Frame(inner, bg=theme.BORDER, height=1).pack(fill="x", pady=16)
+
+        self._make_card_style_row(inner)
+
+        self._make_features_row(inner)
+
         # --- Jackpot Config -- collapsed by default, admin-gated to expand.
         jackpot_inner = make_collapsible(
             body, "$ jackpot --config",
@@ -94,9 +112,10 @@ class SettingsFrame(tk.Frame):
         # --- Game Unlocks -- same gating; each checkbox applies immediately
         # (no Save needed), the same immediate-apply convention the Jackpot
         # debug "Set" button and Danger Zone's own actions already use.
-        # Foundation for a future achievements/unlock-progression system
-        # (see core/unlocks.py) -- today an admin toggling this panel is the
-        # only way a game ever gets unlocked.
+        # This is an admin override sitting alongside the real unlock
+        # routes now (achievements and the Crowns Store, see core/unlocks.py
+        # and core/achievements.py) -- a manual escape hatch, not the only
+        # way a game gets unlocked any more.
         unlock_inner = make_collapsible(
             body, "$ game --unlock",
             before_expand=lambda: dialogs.ensure_admin_unlocked(self.app, self, "unlock"),
@@ -138,8 +157,8 @@ class SettingsFrame(tk.Frame):
         self._make_reset_row(
             danger_inner, "$ rm --stats --game blackjack",
             "This permanently deletes Blackjack's bet, hand and payout breakdown "
-            "on the Stats screen -- Standard and Counting share one breakdown, "
-            "so this clears both.",
+            "on the Stats screen -- Standard, Counting and 6:5 share one breakdown, "
+            "so this clears all three.",
             "Blackjack's statistics have been reset.",
             lambda: self.app.game_stats.reset_game("blackjack"),
         )
@@ -220,7 +239,7 @@ class SettingsFrame(tk.Frame):
         ).pack(side="left", padx=8)
 
     # ------------------------------------------------------------------ toggle switches
-    def _make_toggle_row(self, parent, label, var):
+    def _make_toggle_row(self, parent, label, var, redraw_list=None):
         row = tk.Frame(parent, bg=theme.BG_ELEVATED)
         row.pack(fill="x", pady=8)
         tk.Label(row, text=label, bg=theme.BG_ELEVATED, fg=theme.FG, font=theme.font(12)).pack(side="left")
@@ -244,31 +263,62 @@ class SettingsFrame(tk.Frame):
 
         canvas.bind("<Button-1>", on_click)
         redraw()
-        self._toggle_redraws.append(redraw)
+        # Static rows (Sound Effects/Animations) live for the frame's whole
+        # lifetime, so their own redraw closure is appended once and stays
+        # valid forever -- self._toggle_redraws is the default target.
+        # Features rows are rebuilt from scratch every time _draw_features()
+        # runs (their own OWNED set can change mid-session), so THEIR
+        # closures go into a caller-supplied list instead, one that gets
+        # reset (not appended-to) on every rebuild -- appending them here
+        # too would leak a growing pile of closures pointing at canvases
+        # that no longer exist.
+        (redraw_list if redraw_list is not None else self._toggle_redraws).append(redraw)
 
     # ------------------------------------------------------------------ theme swatches
     def _make_theme_row(self, parent):
         row = tk.Frame(parent, bg=theme.BG_ELEVATED)
         row.pack(fill="x", pady=(6, 0))
         tk.Label(row, text="Table Felt Theme", bg=theme.BG_ELEVATED, fg=theme.FG,
-                 font=theme.font(12)).pack(anchor="w", pady=(0, 10))
+                 font=theme.font(12)).pack(anchor="w", pady=(0, 6))
 
-        swatch_row = tk.Frame(row, bg=theme.BG_ELEVATED)
-        swatch_row.pack(anchor="w")
-        for name, colors in TABLE_THEMES.items():
-            cell = tk.Frame(swatch_row, bg=theme.BG_ELEVATED)
-            cell.pack(side="left", padx=(0, 18))
-            canvas = tk.Canvas(cell, width=44, height=44, bg=theme.BG_ELEVATED, highlightthickness=0, cursor="hand2")
-            canvas.pack()
-            canvas.bind("<Button-1>", lambda e, n=name: self._select_theme(n))
-            tk.Label(cell, text=name, bg=theme.BG_ELEVATED, fg=theme.FG_DIM, font=theme.font(9)).pack(pady=(4, 0))
-            self.theme_canvases[name] = canvas
+        desc = tk.Frame(row, bg=theme.BG_ELEVATED)
+        desc.pack(anchor="w", pady=(0, 10))
+        tk.Label(desc, text="Buy additional themes with ", bg=theme.BG_ELEVATED, fg=theme.FG_DIM,
+                 font=theme.font(9)).pack(side="left")
+        crowns_link = tk.Label(desc, text="crowns", bg=theme.BG_ELEVATED, fg=theme.SECONDARY,
+                                font=theme.font(9, weight="bold"), cursor="hand2")
+        crowns_link.pack(side="left")
+        crowns_link.bind("<Button-1>", lambda e: self.app.show_frame("store"))
+
+        self.swatch_row = tk.Frame(row, bg=theme.BG_ELEVATED)
+        self.swatch_row.pack(anchor="w")
         self._draw_theme_swatches()
 
+    def _owns_theme(self, name):
+        return name in TABLE_THEMES or self.app.achievements.owns_theme(name)
+
     def _draw_theme_swatches(self):
-        for name, canvas in self.theme_canvases.items():
-            canvas.delete("all")
-            colors = TABLE_THEMES[name]
+        # Rebuilt from scratch on every call (initial build, on_show, and
+        # after picking one) rather than a fixed set of widgets toggled in
+        # place -- a theme bought in the Crowns Store mid-session needs to
+        # newly APPEAR here on the very next on_show(), not just change
+        # colour, since a still-locked one is hidden entirely now (a felt
+        # theme is purely cosmetic with nothing worth previewing locked,
+        # unlike a game tile, which stays visible with a padlock).
+        for child in self.swatch_row.winfo_children():
+            child.destroy()
+        all_themes = {**TABLE_THEMES, **PREMIUM_TABLE_THEMES}
+        for name, colors in all_themes.items():
+            if not self._owns_theme(name):
+                continue
+            cell = tk.Frame(self.swatch_row, bg=theme.BG_ELEVATED)
+            cell.pack(side="left", padx=(0, 18))
+            canvas = tk.Canvas(cell, width=44, height=44, bg=theme.BG_ELEVATED, highlightthickness=0,
+                                cursor="hand2")
+            canvas.pack()
+            canvas.bind("<Button-1>", lambda e, n=name: self._select_theme(n))
+            tk.Label(cell, text=name, bg=theme.BG_ELEVATED, fg=theme.FG_DIM,
+                     font=theme.font(9)).pack(pady=(4, 0))
             if name == self.theme_var.get():
                 canvas.create_oval(1, 1, 43, 43, outline=theme.ACCENT, width=3)
             canvas.create_oval(8, 8, 36, 36, fill=colors["felt"], outline=colors["accent"], width=2)
@@ -276,6 +326,96 @@ class SettingsFrame(tk.Frame):
     def _select_theme(self, name):
         self.theme_var.set(name)
         self._draw_theme_swatches()
+
+    # ------------------------------------------------------------------ card style swatches
+    _CARD_STYLE_PREVIEW = Card("K", Suit.SPADES)  # same rank/suit for every
+    # swatch and every style -- the point is comparing how ONE card looks
+    # across styles, not showing off different ranks.
+    _SWATCH_CARD_W, _SWATCH_CARD_H = 30, 42
+
+    def _make_card_style_row(self, parent):
+        row = tk.Frame(parent, bg=theme.BG_ELEVATED)
+        row.pack(fill="x")
+        tk.Label(row, text="Card Style", bg=theme.BG_ELEVATED, fg=theme.FG,
+                 font=theme.font(12)).pack(anchor="w", pady=(0, 6))
+
+        desc = tk.Frame(row, bg=theme.BG_ELEVATED)
+        desc.pack(anchor="w", pady=(0, 10))
+        tk.Label(desc, text="Buy additional styles with ", bg=theme.BG_ELEVATED, fg=theme.FG_DIM,
+                 font=theme.font(9)).pack(side="left")
+        crowns_link = tk.Label(desc, text="crowns", bg=theme.BG_ELEVATED, fg=theme.SECONDARY,
+                                font=theme.font(9, weight="bold"), cursor="hand2")
+        crowns_link.pack(side="left")
+        crowns_link.bind("<Button-1>", lambda e: self.app.show_frame("store"))
+
+        self.card_style_row = tk.Frame(row, bg=theme.BG_ELEVATED)
+        self.card_style_row.pack(anchor="w")
+        self._draw_card_style_swatches()
+
+    def _owns_card_style(self, name):
+        return name in STANDARD_CARD_STYLES or self.app.achievements.owns_card_style(name)
+
+    def _draw_card_style_swatches(self):
+        # Same "rebuilt from scratch, locked ones hidden entirely" approach
+        # as _draw_theme_swatches -- see its own comment for why.
+        for child in self.card_style_row.winfo_children():
+            child.destroy()
+        all_styles = {**STANDARD_CARD_STYLES, **PREMIUM_CARD_STYLES}
+        w, h = self._SWATCH_CARD_W, self._SWATCH_CARD_H
+        pad = 6
+        canvas_w, canvas_h = w * 2 + pad * 3, h + pad * 2
+        for name, style in all_styles.items():
+            if not self._owns_card_style(name):
+                continue
+            cell = tk.Frame(self.card_style_row, bg=theme.BG_ELEVATED)
+            cell.pack(side="left", padx=(0, 18))
+            canvas = tk.Canvas(cell, width=canvas_w, height=canvas_h, bg=theme.BG_ELEVATED,
+                                highlightthickness=0, cursor="hand2")
+            canvas.pack()
+            canvas.bind("<Button-1>", lambda e, n=name: self._select_card_style(n))
+            card_widgets.draw_card(canvas, pad, pad, self._CARD_STYLE_PREVIEW, width=w, height=h, style=style)
+            card_widgets.draw_card_back(canvas, pad * 2 + w, pad, self.app.settings.theme()["felt"],
+                                         self.app.settings.theme()["accent"], width=w, height=h, style=style)
+            if name == self.card_style_var.get():
+                canvas.create_rectangle(1, 1, canvas_w - 1, canvas_h - 1, outline=theme.ACCENT, width=2)
+            tk.Label(cell, text=name, bg=theme.BG_ELEVATED, fg=theme.FG_DIM,
+                     font=theme.font(9)).pack(pady=(4, 0))
+
+    def _select_card_style(self, name):
+        self.card_style_var.set(name)
+        self._draw_card_style_swatches()
+
+    # ------------------------------------------------------------------ features
+    def _make_features_row(self, parent):
+        # A container of its own (rather than building straight into
+        # `parent`) so _draw_features() can wipe and rebuild ONLY this
+        # section's own children -- including its own heading/divider,
+        # which only appear at all once something is actually owned (see
+        # _draw_features).
+        self.features_container = tk.Frame(parent, bg=theme.BG_ELEVATED)
+        self.features_container.pack(fill="x")
+        self._draw_features()
+
+    def _draw_features(self):
+        for child in self.features_container.winfo_children():
+            child.destroy()
+        self.feature_vars = {}
+        self._feature_toggle_redraws = []
+        owned = [(key, label, setting_key) for key, label, setting_key in FEATURE_TOGGLES
+                 if self.app.achievements.owns_feature(key)]
+        if not owned:
+            # Nothing bought yet -- no heading, no divider, no trace of the
+            # category at all (same "hide entirely rather than show
+            # locked" reasoning ui/store_screen.py's own catalogs follow).
+            return
+        tk.Frame(self.features_container, bg=theme.BORDER, height=1).pack(fill="x", pady=16)
+        tk.Label(self.features_container, text="Features", bg=theme.BG_ELEVATED, fg=theme.FG,
+                 font=theme.font(12)).pack(anchor="w", pady=(0, 10))
+        for _key, label, setting_key in owned:
+            var = tk.BooleanVar(value=self.app.settings.get(setting_key))
+            self.feature_vars[setting_key] = var
+            self._make_toggle_row(self.features_container, label, var,
+                                   redraw_list=self._feature_toggle_redraws)
 
     # ------------------------------------------------------------------ jackpot
     def _make_jackpot_rate_row(self, parent):
@@ -399,7 +539,13 @@ class SettingsFrame(tk.Frame):
             "sound_enabled": self.sound_var.get(),
             "animations_enabled": self.anim_var.get(),
             "table_theme": self.theme_var.get(),
+            "card_style": self.card_style_var.get(),
             "jackpot_rate_per_second": self.jackpot_rate_var.get(),
+            # feature_vars is dynamic (rebuilt by _draw_features() from
+            # whatever's currently owned) -- iterating it generically here
+            # rather than hardcoding "strategy_guide_enabled" by name means
+            # a second future feature needs no changes to this method at all.
+            **{setting_key: var.get() for setting_key, var in self.feature_vars.items()},
         }
 
     def _is_dirty(self):
@@ -416,6 +562,9 @@ class SettingsFrame(tk.Frame):
         self.app.settings.set("sound_enabled", self.sound_var.get())
         self.app.settings.set("animations_enabled", self.anim_var.get())
         self.app.settings.set("table_theme", self.theme_var.get())
+        self.app.settings.set("card_style", self.card_style_var.get())
+        for setting_key, var in self.feature_vars.items():
+            self.app.settings.set(setting_key, var.get())
         self.app.settings.set("jackpot_rate_per_second", rate)
         self._original = self._snapshot()
         self.app.show_frame("menu")
@@ -438,6 +587,7 @@ class SettingsFrame(tk.Frame):
         self.sound_var.set(self.app.settings.get("sound_enabled"))
         self.anim_var.set(self.app.settings.get("animations_enabled"))
         self.theme_var.set(self.app.settings.get("table_theme"))
+        self.card_style_var.set(self.app.settings.get("card_style"))
         self.jackpot_rate_var.set(f"{self.app.settings.get('jackpot_rate_per_second'):.2f}")
         self.jackpot_debug_var.set(f"{self.app.jackpot.amount:.2f}")
         for var, game_key in self._unlock_vars:
@@ -445,6 +595,8 @@ class SettingsFrame(tk.Frame):
         for redraw in self._toggle_redraws:
             redraw()
         self._draw_theme_swatches()
+        self._draw_card_style_swatches()
+        self._draw_features()
         # Gated sections always start collapsed on a fresh visit -- but
         # app.admin_unlocked is deliberately NOT reset here, so re-opening
         # one after having already entered the password once this session

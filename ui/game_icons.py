@@ -231,3 +231,32 @@ def draw_let_it_ride_icon(canvas, cx, cy, size, color):
     canvas.create_line(ax1, ay, ax2, ay, fill=color, width=2)
     canvas.create_line(ax2, ay, ax2 - size * 0.12, ay - size * 0.1, fill=color, width=2)
     canvas.create_line(ax2, ay, ax2 - size * 0.12, ay + size * 0.1, fill=color, width=2)
+
+
+def draw_crown_icon(canvas, cx, cy, size, color):
+    """A three-point crown -- the Crowns Store's own tile icon (not a game,
+    so it doesn't get a card/chip/table-prop icon like every row above; the
+    Crowns currency itself is the natural namesake instead). Same plain
+    outlined-line-art style as every other tile icon here: a base band plus
+    a zigzag outline (left/centre/right peaks, dipping between each), with
+    a small jewel circle atop each peak."""
+    stroke = max(1.2, size * 0.045)
+    band_w, band_h = size * 0.84, size * 0.14
+    band_top = cy + size * 0.22
+    band_bottom = band_top + band_h
+    x1, x2 = cx - band_w / 2, cx + band_w / 2
+    canvas.create_rectangle(x1, band_top, x2, band_bottom, outline=color, width=stroke)
+
+    peak_y, center_peak_y, dip_y = band_top - size * 0.46, band_top - size * 0.58, band_top - size * 0.16
+    xs = [x1, x1 + band_w * 0.25, cx, x1 + band_w * 0.75, x2]
+    ys = [peak_y, dip_y, center_peak_y, dip_y, peak_y]
+    points = [x1, band_top]
+    for x, y in zip(xs, ys):
+        points.extend([x, y])
+    points.extend([x2, band_top])
+    canvas.create_polygon(points, outline=color, fill="", width=stroke, joinstyle="round")
+
+    jewel_r = size * 0.045
+    for x, y in ((xs[0], ys[0]), (xs[2], ys[2]), (xs[4], ys[4])):
+        canvas.create_oval(x - jewel_r, y - jewel_r, x + jewel_r, y + jewel_r,
+                            outline=color, width=stroke * 0.8)

@@ -9,7 +9,7 @@ ui/chips.py's own "shared function takes the widget explicitly" convention.
 """
 import tkinter as tk
 
-from ui import game_icons, theme
+from ui import game_icons, theme, tooltip
 
 ICON_CANVAS_SIZE = 64  # fixed footprint every icon (glyph or vector) sits in
 ICON_DRAW_SIZE = 44    # the size passed to a vector icon's draw_* function
@@ -28,7 +28,9 @@ TILE_HEIGHT = 214
 TILE_TEXT_WRAP = 190
 
 
-def make_game_tile(grid, row, col, icon, name, subtitle, unlocked, playable, command=None):
+def make_game_tile(grid, row, col, icon, name, subtitle, unlocked, playable, command=None, border_color=None,
+                    subtitle_font_size=9, subtitle_lines=2, pill_label="PLAY",
+                    tooltip_text=None, locked_command=None, disabled_pill_label=None):
     # theme.BG (the app's near-black, not MENU_BG) -- differentiates a tile
     # from a lighter MENU_BG page background; LOCK_BG for a still-locked
     # game instead, its dedicated dark-red tint (see ui/theme.py).
@@ -42,9 +44,15 @@ def make_game_tile(grid, row, col, icon, name, subtitle, unlocked, playable, com
         # soon" placeholder always had.
         fg, sub_fg = theme.GREY_BTN_TEXT, theme.GREY_BTN_TEXT
 
+    # border_color overrides the usual mint ACCENT border/pill for a tile
+    # that isn't a locked/unlocked GAME at all (see ui/main_menu.py's own
+    # Crowns Store tile, always playable, gold instead) -- every other
+    # tile leaves this None and gets the ordinary ACCENT treatment.
+    accent = border_color or theme.ACCENT
+
     tile = tk.Frame(
         grid, bg=bg, width=TILE_WIDTH, height=TILE_HEIGHT,
-        highlightbackground=theme.ACCENT if playable else bg,
+        highlightbackground=accent if playable else bg,
         highlightthickness=2 if playable else 0,
     )
     tile.grid(row=row, column=col, padx=14, pady=10)
@@ -84,9 +92,15 @@ def make_game_tile(grid, row, col, icon, name, subtitle, unlocked, playable, com
     name_lbl = tk.Label(tile, text=name, bg=bg, fg=fg, font=theme.font(13, weight="bold"),
                          wraplength=TILE_TEXT_WRAP, justify="center", height=2)
     name_lbl.pack()
-    # Same reasoning, for the subtitle underneath.
-    sub_lbl = tk.Label(tile, text=subtitle, bg=bg, fg=sub_fg,
-                        font=theme.font(9), wraplength=TILE_TEXT_WRAP, justify="center", height=2)
+    # Same reasoning, for the subtitle underneath. subtitle_font_size/
+    # subtitle_lines only ever move off their defaults (9pt, 2 lines) for a
+    # tile whose copy genuinely can't fit two lines at the normal size
+    # within the fixed width every tile shares (see ui/main_menu.py's own
+    # Crowns Store tile, whose description is a full sentence plus a live
+    # balance figure, needing 3 lines at a smaller size) -- every other
+    # caller leaves both at their defaults and looks exactly as before.
+    sub_lbl = tk.Label(tile, text=subtitle, bg=bg, fg=sub_fg, font=theme.font(subtitle_font_size),
+                        wraplength=TILE_TEXT_WRAP, justify="center", height=subtitle_lines)
     sub_lbl.pack(pady=(2, 0))
 
     status_widgets = [tile, icon_widget, name_lbl, sub_lbl]
@@ -95,16 +109,22 @@ def make_game_tile(grid, row, col, icon, name, subtitle, unlocked, playable, com
     if playable:
         # Same small rounded pill as "SOON" below, just in the tile's own
         # accent colour (matching its highlighted border) rather than the
-        # muted "not yet built" grey, and "PLAY" instead.
-        theme.pill(pill_canvas, TILE_TEXT_WRAP / 2, 12, "PLAY",
-                   fill=theme.ACCENT_DIM_BG, outline=theme.ACCENT, text_fg=theme.ACCENT)
+        # muted "not yet built" grey, and pill_label ("PLAY" for every
+        # actual game; ui/main_menu.py's Crowns Store tile is the one
+        # exception, "OPEN" instead -- it isn't a game to "play").
+        theme.pill(pill_canvas, TILE_TEXT_WRAP / 2, 12, pill_label,
+                   fill=theme.lerp_color(theme.BG, accent, 0.12), outline=accent, text_fg=accent)
     elif not unlocked:
         theme.pill(pill_canvas, TILE_TEXT_WRAP / 2, 12, "LOCKED",
                    fill=theme.LOCK_BG, outline=theme.LOCK_BORDER, text_fg=theme.LOCK_FG)
     else:
         # A small rounded "SOON" pill, matching the site's .link-btn__tag --
-        # replaces the old plain "COMING SOON" text label.
-        theme.pill(pill_canvas, TILE_TEXT_WRAP / 2, 12, "SOON")
+        # replaces the old plain "COMING SOON" text label. disabled_pill_label
+        # overrides this default only for a tile that's unlocked-but-inert
+        # for a reason OTHER than "not built yet" (ui/main_menu.py's own
+        # Crowns Store tile shows "N/A" here for a Sandbox player, whose
+        # achievements are switched off entirely).
+        theme.pill(pill_canvas, TILE_TEXT_WRAP / 2, 12, disabled_pill_label or "SOON")
     status_widgets.append(pill_canvas)
 
     if not unlocked:
@@ -119,3 +139,22 @@ def make_game_tile(grid, row, col, icon, name, subtitle, unlocked, playable, com
         for widget in status_widgets:
             widget.configure(cursor="hand2")
             widget.bind("<Button-1>", lambda _e: command())
+    elif not unlocked and locked_command:
+        # A locked tile's own click handler -- ui/main_menu.py's top-level
+        # game tiles offer an early-unlock-for-Crowns prompt here;
+        # ui/table_menu.py's sub-table tiles pass a plain "must be earned"
+        # info dialog instead (see decision #4 in the plan -- only
+        # main-menu-tile games can be bought early).
+        for widget in status_widgets:
+            widget.configure(cursor="hand2")
+            widget.bind("<Button-1>", lambda _e: locked_command())
+
+    if tooltip_text is not None:
+        # The whole status_widgets group (the outer tile Frame plus every
+        # child drawn on top of it) is treated as ONE hoverable region --
+        # see ui/tooltip.py's own attach(): shown once centred on the tile
+        # (status_widgets[0] is always the outer Frame, spanning the
+        # tile's full size) regardless of which child widget triggered it,
+        # and only hidden once the mouse has left the tile entirely, not
+        # every time it crosses from one child widget to another.
+        tooltip.attach(status_widgets, tooltip_text)

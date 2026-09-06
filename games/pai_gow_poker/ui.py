@@ -27,7 +27,7 @@ from games.pai_gow_poker.logic import (
     hand_outcome_label,
     house_way_set,
 )
-from ui import dialogs, theme
+from ui import achievement_banner, dialogs, theme
 from ui.card_widgets import CARD_HEIGHT, CARD_WIDTH, draw_card, draw_card_back
 from ui.chips import CHIP_DENOMINATIONS, CHIP_LAYER_MAX_R, CHIP_SIZE, draw_chip_face, draw_chip_stack
 from ui.jackpot_display import JackpotDisplay
@@ -437,6 +437,7 @@ class PaiGowPokerFrame(tk.Frame):
     def _build_ui(self):
         felt_theme = self.app.settings.theme()
         self._current_felt = felt_theme["felt"]
+        self._current_card_style = self.app.settings.card_style()
         self.configure(bg=felt_theme["felt"])
 
         top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
@@ -793,6 +794,7 @@ class PaiGowPokerFrame(tk.Frame):
             return
         self._bound_spot_tags.add(tag)
         self.canvas.tag_bind(tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
+        self.canvas.tag_bind(tag, "<Button-3>", lambda e, k=key: self._on_remove_chip(k))
         self.canvas.tag_bind(tag, "<Enter>", lambda e: self.canvas.configure(cursor="hand2"))
         self.canvas.tag_bind(tag, "<Leave>", lambda e: self.canvas.configure(cursor=""))
 
@@ -854,6 +856,17 @@ class PaiGowPokerFrame(tk.Frame):
             self._toggle_jackpot_bet()
         else:
             self._adjust_bet(key, self.selected_chip)
+
+    def _on_remove_chip(self, key):
+        """Right-click's mirror of _on_place_chip -- see blackjack/ui.py's
+        own _on_remove_chip for the full rationale (same pattern here)."""
+        if self.state != "betting":
+            return
+        if key == "jackpot":
+            if self.bets["jackpot"]:
+                self._toggle_jackpot_bet()
+        elif self.bets[key] > 0:
+            self._adjust_bet(key, -min(self.selected_chip, self.bets[key]))
 
     def _toggle_jackpot_bet(self):
         trial_bets = dict(self.bets)
@@ -1086,11 +1099,11 @@ class PaiGowPokerFrame(tk.Frame):
                 fw = max(4, w * squeeze)
                 fx = x + (w - fw) / 2
                 if flip_t >= 0.5:
-                    draw_card(self.canvas, fx, y, card, width=fw, height=h, tags=(tag,))
+                    draw_card(self.canvas, fx, y, card, width=fw, height=h, tags=(tag,), style=self._current_card_style)
                 else:
-                    draw_card_back(self.canvas, fx, y, self._current_felt, accent, width=fw, height=h, tags=(tag,))
+                    draw_card_back(self.canvas, fx, y, self._current_felt, accent, width=fw, height=h, tags=(tag,), style=self._current_card_style)
             else:
-                draw_card_back(self.canvas, x, y, self._current_felt, accent, width=w, height=h, tags=(tag,))
+                draw_card_back(self.canvas, x, y, self._current_felt, accent, width=w, height=h, tags=(tag,), style=self._current_card_style)
 
         def done():
             self.canvas.delete(tag)
@@ -1128,7 +1141,7 @@ class PaiGowPokerFrame(tk.Frame):
                             fill=felt_theme["felt_dark"], outline=theme.FG_DIM, width=1, tags=("zone_bg",))
         self.canvas.create_text(DECK_ZONE_CX, ZONE_TOP + ZONE_LABEL_Y_OFFSET, text="DECK", fill=theme.FG_DIM,
                                  font=theme.font(10, weight="bold"), tags=("zone_bg",))
-        draw_card_back(self.canvas, DECK_X1, DECK_Y, self._current_felt, felt_theme["accent"], tags=("zone_bg",))
+        draw_card_back(self.canvas, DECK_X1, DECK_Y, self._current_felt, felt_theme["accent"], tags=("zone_bg",), style=self._current_card_style)
 
     def _draw_dealer_cards(self):
         assert self.result is not None
@@ -1152,10 +1165,10 @@ class PaiGowPokerFrame(tk.Frame):
             x = _dealer_cluster_x(i)
             face_up = i < self._dealer_revealed
             if face_up:
-                draw_card(self.canvas, x, DEALER_Y, card, tags=(tag,))
+                draw_card(self.canvas, x, DEALER_Y, card, tags=(tag,), style=self._current_card_style)
             else:
                 draw_card_back(self.canvas, x, DEALER_Y, self._current_felt,
-                                self.app.settings.theme()["accent"], tags=(tag,))
+                                self.app.settings.theme()["accent"], tags=(tag,), style=self._current_card_style)
 
     def _draw_felt_mat(self):
         felt_theme = self.app.settings.theme()
@@ -1176,7 +1189,7 @@ class PaiGowPokerFrame(tk.Frame):
                 continue
             x = _felt_card_x(self.felt_slot_order.index(i) if i in self.felt_slot_order else i, 7,
                               FELT_MAT_X1, FELT_MAT_X2)
-            draw_card(self.canvas, x, FELT_Y, card, tags=(tag, "player_card", f"cardidx_{i}"))
+            draw_card(self.canvas, x, FELT_Y, card, tags=(tag, "player_card", f"cardidx_{i}"), style=self._current_card_style)
             self.canvas.tag_bind(tag, "<Button-1>", lambda e, idx=i: self._on_felt_card_click(idx))
             # xx=x (not just idx=i) -- x is the per-iteration loop variable,
             # so every one of these 7 lambdas needs its own default-arg
@@ -1223,7 +1236,7 @@ class PaiGowPokerFrame(tk.Frame):
             tag = f"frontcard_{idx}"
             self.canvas.delete(tag)
             x = front_start_x + pos * FRONT_CARD_OVERLAP_X
-            draw_card(self.canvas, x, row_y, cards[idx], tags=(tag, "player_card", f"cardidx_{idx}"))
+            draw_card(self.canvas, x, row_y, cards[idx], tags=(tag, "player_card", f"cardidx_{idx}"), style=self._current_card_style)
             # A later card overlaps the one before it, covering its right
             # portion -- so only THIS card's own exposed sliver (up to
             # where the next card starts covering it) should actually
@@ -1239,7 +1252,7 @@ class PaiGowPokerFrame(tk.Frame):
             tag = f"backcard_{idx}"
             self.canvas.delete(tag)
             x = start_x + pos * BACK_CARD_OVERLAP_X
-            draw_card(self.canvas, x, back_y, cards[idx], tags=(tag, "player_card", f"cardidx_{idx}"))
+            draw_card(self.canvas, x, back_y, cards[idx], tags=(tag, "player_card", f"cardidx_{idx}"), style=self._current_card_style)
             exposed_w = BACK_CARD_OVERLAP_X if pos < n_back - 1 else CARD_WIDTH
             self._bind_placed_card_hit(idx, x, back_y, exposed_w, CARD_HEIGHT)
 
@@ -1482,7 +1495,7 @@ class PaiGowPokerFrame(tk.Frame):
                 x = x0 + (x1 - x0) * t
                 tag = f"feltslot_{idx}"
                 self.canvas.delete(tag)
-                draw_card(self.canvas, x, FELT_Y, cards[idx], tags=("sortmove",))
+                draw_card(self.canvas, x, FELT_Y, cards[idx], tags=("sortmove",), style=self._current_card_style)
 
         def done():
             self.felt_slot_order = new_order
@@ -1576,9 +1589,9 @@ class PaiGowPokerFrame(tk.Frame):
             canvas.delete(tag)
             if squeeze > 0.35:
                 if t >= 0.5:
-                    draw_card(canvas, x, y, card, width=w, tags=(tag,))
+                    draw_card(canvas, x, y, card, width=w, tags=(tag,), style=self._current_card_style)
                 else:
-                    draw_card_back(canvas, x, y, self._current_felt, accent, width=w, tags=(tag,))
+                    draw_card_back(canvas, x, y, self._current_felt, accent, width=w, tags=(tag,), style=self._current_card_style)
             else:
                 canvas.create_rectangle(x, y, x + w, y + CARD_HEIGHT,
                                          fill="#fdfdf5", outline="#222222", tags=(tag,))
@@ -1640,7 +1653,7 @@ class PaiGowPokerFrame(tk.Frame):
         assert self.result is not None
         target_x = self._dealer_target_x()
         for card in self.result.dealer_cards:
-            draw_card(self.canvas, target_x[id(card)], DEALER_Y, card, tags=("dealer_settled",))
+            draw_card(self.canvas, target_x[id(card)], DEALER_Y, card, tags=("dealer_settled",), style=self._current_card_style)
         self._draw_dealer_group_labels()
 
     def _animate_dealer_separation(self):
@@ -1655,7 +1668,7 @@ class PaiGowPokerFrame(tk.Frame):
             self.canvas.delete("dealer_settled")
             for card in cards:
                 x = start_x[id(card)] + (target_x[id(card)] - start_x[id(card)]) * t
-                draw_card(self.canvas, x, DEALER_Y, card, tags=("dealer_settled",))
+                draw_card(self.canvas, x, DEALER_Y, card, tags=("dealer_settled",), style=self._current_card_style)
 
         def done():
             self._draw_dealer_group_labels()
@@ -1857,6 +1870,7 @@ class PaiGowPokerFrame(tk.Frame):
         self.app.finance.add_return(summary.total_returned)
         self.app.finance.record_round_played(summary.net_result)
         self.app.game_stats.record_round_net(self.GAME_KEY, summary.net_result)
+        pending = self.app.achievements.check_round(self.GAME_KEY, summary.net_result)
         if summary.jackpot_pool_won:
             self.app.jackpot.win()
         elif summary.jackpot_pool_partial_fraction is not None:
@@ -1866,6 +1880,9 @@ class PaiGowPokerFrame(tk.Frame):
         self.state = "resolved"
         self._show_result(summary)
         self._show_round_over_controls()
+        if pending:
+            achievement_banner.queue(self, self.app, pending)
+            self.app.on_crowns_changed()
 
     def _show_result(self, summary):
         # No separate "Ante: Win/Lose +£X" line, and no separate "Round Net"
@@ -2023,6 +2040,7 @@ class PaiGowPokerFrame(tk.Frame):
     def _apply_theme(self):
         felt_theme = self.app.settings.theme()
         new_felt = felt_theme["felt"]
+        self._current_card_style = self.app.settings.card_style()
         if new_felt == self._current_felt:
             return
         old_felt = self._current_felt

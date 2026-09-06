@@ -11,7 +11,7 @@ from games.baccarat.logic import (
     hand_outcome_label,
 )
 from games.baccarat import logic as bacc_logic
-from ui import dialogs, theme
+from ui import achievement_banner, dialogs, theme
 from ui.card_widgets import draw_card, draw_card_back, CARD_HEIGHT, CARD_WIDTH
 from ui.chips import CHIP_DENOMINATIONS, CHIP_SIZE, draw_chip_face, draw_chip_stack
 
@@ -236,6 +236,7 @@ class BaccaratFrame(tk.Frame):
         # above; never persisted, resets on every app restart.
         self.history = []
         self._bound_spot_tags = set()
+        self._pending_achievements = []
 
         self._build_ui()
 
@@ -243,6 +244,7 @@ class BaccaratFrame(tk.Frame):
     def _build_ui(self):
         felt_theme = self.app.settings.theme()
         self._current_felt = felt_theme["felt"]
+        self._current_card_style = self.app.settings.card_style()
         self.configure(bg=felt_theme["felt"])
 
         top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
@@ -500,7 +502,7 @@ class BaccaratFrame(tk.Frame):
         self.canvas.create_text(SHOE_ZONE_CX, SHOE_LABEL_Y, text="SHOE", fill=theme.FG_DIM,
                                  font=theme.font(9, weight="bold"), tags=("zone_bg",))
         draw_card_back(self.canvas, SHOE_ZONE_CX - CARD_WIDTH / 2, SHOE_Y, felt_theme["felt"],
-                        felt_theme["accent"], tags=("zone_bg",))
+                        felt_theme["accent"], tags=("zone_bg",), style=self._current_card_style)
 
         for key in SPOT_LAYOUT:
             self._draw_spot_bg(key)
@@ -524,6 +526,7 @@ class BaccaratFrame(tk.Frame):
         if hit_tag not in self._bound_spot_tags:
             self._bound_spot_tags.add(hit_tag)
             self.canvas.tag_bind(hit_tag, "<Button-1>", lambda e, k=key: self._on_place_chip(k))
+            self.canvas.tag_bind(hit_tag, "<Button-3>", lambda e, k=key: self._on_remove_chip(k))
             self.canvas.tag_bind(hit_tag, "<Enter>", lambda e: self.canvas.configure(cursor="hand2"))
             self.canvas.tag_bind(hit_tag, "<Leave>", lambda e: self.canvas.configure(cursor=""))
 
@@ -610,6 +613,24 @@ class BaccaratFrame(tk.Frame):
         self._update_total()
         self._persist_state()
 
+    def _on_remove_chip(self, key):
+        """Right-click's mirror of _on_place_chip: takes one chip of the
+        selected denomination back off this spot, clamped at £0 rather than
+        going negative -- the only other way to lower a bet used to be
+        Clear Bets and starting over. No affordability check needed here
+        (unlike _on_place_chip's), since removing money only ever lowers
+        the round's cost."""
+        if self.state != "betting":
+            return
+        if self.bets[key] <= 0:
+            return
+        trial_bets = dict(self.bets)
+        trial_bets[key] -= min(self.selected_chip, self.bets[key])
+        self.bets = trial_bets
+        self._redraw_spot_chips(key)
+        self._update_total()
+        self._persist_state()
+
     def _clear_bets(self):
         if self.state != "betting":
             return
@@ -667,10 +688,10 @@ class BaccaratFrame(tk.Frame):
         tag = f"{side}_card_{slot}"
         self.canvas.delete(tag)
         if face_up:
-            draw_card(self.canvas, x, y, card, tags=(tag, "hand_card"))
+            draw_card(self.canvas, x, y, card, tags=(tag, "hand_card"), style=self._current_card_style)
         else:
             draw_card_back(self.canvas, x, y, self._current_felt, self.app.settings.theme()["accent"],
-                            tags=(tag, "hand_card"))
+                            tags=(tag, "hand_card"), style=self._current_card_style)
 
     # ------------------------------------------------------------------ animation engine
     def _animate(self, duration_ms, on_frame, on_done=None):
@@ -809,6 +830,7 @@ class BaccaratFrame(tk.Frame):
         self.app.game_stats.record_round_net(GAME_KEY, result.net_result)
         self.app.game_stats.record_hand(GAME_KEY, hand_outcome_label(result))
         self.app.finance.record_round_played(result.net_result)
+        self._pending_achievements = self.app.achievements.check_round(GAME_KEY, result.net_result)
 
         payout_items = self._payout_chip_items(result)
         credit = sum(it["ret"] for it in payout_items)
@@ -1009,6 +1031,9 @@ class BaccaratFrame(tk.Frame):
         self._show_result(result)
         self._show_round_over_controls()
         self.state = "resolved"
+        if self._pending_achievements:
+            achievement_banner.queue(self, self.app, self._pending_achievements)
+            self.app.on_crowns_changed()
 
     def _show_result(self, result):
         self.result_lbl.configure(text=result.summary,
@@ -1085,6 +1110,7 @@ class BaccaratFrame(tk.Frame):
     def _apply_theme(self):
         felt_theme = self.app.settings.theme()
         new_felt = felt_theme["felt"]
+        self._current_card_style = self.app.settings.card_style()
         if new_felt == self._current_felt:
             return
         old_felt = self._current_felt
