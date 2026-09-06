@@ -1,7 +1,7 @@
 """
 Achievement definitions -- plain data, no tkinter/app dependency, following
 this codebase's "hardcoded Python constants" convention (see
-core/settings.py's TABLE_THEMES, core/unlocks.py's DEFAULT_UNLOCKS).
+core/themes.py's THEMES, core/unlocks.py's DEFAULT_UNLOCKS).
 Checking *whether* an achievement's condition is met is bespoke code in
 core/achievements.py, keyed by each Achievement's own `key` -- these vary
 too much (a deposit total, a cross-game round tally, a same-round multi-bet
@@ -326,7 +326,7 @@ STORE_UNLOCK_PRICE_CROWNS = 150  # a deliberately steep price relative to the
 # playing toward an unlock achievement. Easily retuned later; it's one
 # constant.
 THEME_UNLOCK_PRICE_CROWNS = 80  # one flat price for every premium theme in
-# core/unlocks.py's own PREMIUM_TABLE_THEMES catalog (used to be priced
+# core/themes.py's own PREMIUM_THEMES catalog (used to be priced
 # per-theme, all three happening to already be 80 -- flattened since there
 # was never a reason for two premium themes to cost different amounts, and
 # a flat price means adding a new one never means also deciding what to
@@ -336,7 +336,10 @@ CARD_STYLE_UNLOCK_PRICE_CROWNS = 80  # same flat-pricing reasoning as
 # PREMIUM_CARD_STYLES catalog -- kept at the same 80 since a card style is
 # the same kind of purely-cosmetic purchase a felt theme already is, not
 # because the two catalogs need to share one price forever.
-FEATURE_UNLOCK_PRICE_CROWNS = 200  # core/unlocks.py's own PREMIUM_FEATURES
-# catalog -- priced well above the purely-cosmetic themes/card styles
-# above since a feature is a functional gameplay aid (the Blackjack
-# Strategy Guide, today's only entry), not just a look.
+#
+# core/unlocks.py's own PREMIUM_FEATURES catalog is priced PER-ENTRY (its
+# own `price` key) rather than with a flat constant here -- unlike the
+# three interchangeable catalogs above, one feature can be a functional
+# gameplay aid (Blackjack Strategy Guide, 200) and the next a small
+# cosmetic toggle (Four Colour Deck, 20), with no one "fair" flat price
+# that fits both.

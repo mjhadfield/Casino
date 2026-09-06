@@ -20,6 +20,24 @@ Every style dict shares one shape:
   text_black/text_red    -- rank+suit colour for a black-suited/red-suited
                              card respectively (never card.color itself --
                              that only ever says "red" or "black").
+  text_blue/text_green    -- diamonds'/clubs' own colour when the Four
+                             Colour Deck feature (core/unlocks.py's
+                             PREMIUM_FEATURES) is active for this card --
+                             see the `four_colour` key below. Present on
+                             every style precisely so a style can still be
+                             picked as `style=None`/DEFAULT_CARD_STYLE
+                             without draw_card ever needing a fallback for
+                             a missing key; unused, like text_black/
+                             text_red, unless a card's own suit calls for it.
+  four_colour              -- not part of a style's own identity (never set
+                             by STANDARD_CARD_STYLES/PREMIUM_CARD_STYLES
+                             themselves) -- folded in as an extra key by
+                             AchievementsManager.resolve_card_style() when
+                             the player owns AND has enabled the feature.
+                             Kept on the style dict rather than threaded as
+                             its own draw_card() parameter so none of this
+                             module's ~150 existing call sites (every game's
+                             own ui.py) need to change to support it.
   outline                 -- None for a plain front (Light's own look), or
                              a colour for a front-highlight treatment: just
                              an inner accent border a little inside the
@@ -45,6 +63,8 @@ Every style dict shares one shape:
 """
 import math
 
+from core.cards import Suit
+
 CARD_WIDTH = 70
 CARD_HEIGHT = 100
 
@@ -53,9 +73,25 @@ DEFAULT_CARD_STYLE = {
     "front_border": "#222222",
     "text_black": "#1a1a1a",
     "text_red": "#ad291b",
+    "text_blue": "#1f5fa8",
+    "text_green": "#1f7a3d",
     "outline": None,
     "back": {"kind": "felt"},
 }
+
+# suit -> the style key its rank/suit text uses when four_colour is active
+# (see draw_card's own _suit_text_color). Spades/hearts are left out --
+# they fall through to the same text_black/text_red every style already
+# had, four_colour or not.
+_FOUR_COLOUR_KEYS = {Suit.DIAMONDS: "text_blue", Suit.CLUBS: "text_green"}
+
+
+def _suit_text_color(style, card):
+    if style.get("four_colour"):
+        key = _FOUR_COLOUR_KEYS.get(card.suit)
+        if key and key in style:
+            return style[key]
+    return style["text_red"] if card.color == "red" else style["text_black"]
 
 
 def _card_tags(tags):
@@ -92,7 +128,7 @@ def draw_card(canvas, x, y, card, width=CARD_WIDTH, height=CARD_HEIGHT, tags=(),
         return
     style = style or DEFAULT_CARD_STYLE
     tags = _card_tags(tags)
-    text_color = style["text_red"] if card.color == "red" else style["text_black"]
+    text_color = _suit_text_color(style, card)
     outline = style.get("outline")
     corner_font = max(8, round(13 * height / CARD_HEIGHT))
     symbol_font = max(10, round(55 * height / CARD_HEIGHT))

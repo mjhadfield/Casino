@@ -2,8 +2,10 @@ import tkinter as tk
 from tkinter import messagebox
 
 from core.cards import Card, Suit
-from core.settings import STANDARD_CARD_STYLES, TABLE_THEMES
-from core.unlocks import PREMIUM_CARD_STYLES, PREMIUM_FEATURES, PREMIUM_TABLE_THEMES
+from core.settings import STANDARD_CARD_STYLES
+from core.themes import THEMES, PREMIUM_THEMES
+from core.themes import resolve as resolve_theme
+from core.unlocks import PREMIUM_CARD_STYLES, PREMIUM_FEATURES
 from games.three_card_poker import logic as tcp_logic
 from games.pai_gow_poker import logic as pgp_logic
 from games.pai_gow_poker_face_up import logic as pgpfu_logic
@@ -22,6 +24,7 @@ from ui.scrollable import ScrollableFrame
 # feature is just one more tuple here.
 FEATURE_TOGGLES = [
     ("strategy_guide", "Strategy Guide", "strategy_guide_enabled"),
+    ("four_colour_deck", "Four Colour Deck", "four_colour_deck_enabled"),
 ]
 
 
@@ -36,7 +39,7 @@ class SettingsFrame(tk.Frame):
 
         self.sound_var = tk.BooleanVar(value=app.settings.get("sound_enabled"))
         self.anim_var = tk.BooleanVar(value=app.settings.get("animations_enabled"))
-        self.theme_var = tk.StringVar(value=app.settings.get("table_theme"))
+        self.theme_var = tk.StringVar(value=app.settings.get("theme"))
         self.card_style_var = tk.StringVar(value=app.settings.get("card_style"))
         self.jackpot_rate_var = tk.StringVar(value=f"{app.settings.get('jackpot_rate_per_second'):.2f}")
         self._original = self._snapshot()
@@ -278,7 +281,7 @@ class SettingsFrame(tk.Frame):
     def _make_theme_row(self, parent):
         row = tk.Frame(parent, bg=theme.BG_ELEVATED)
         row.pack(fill="x", pady=(6, 0))
-        tk.Label(row, text="Table Felt Theme", bg=theme.BG_ELEVATED, fg=theme.FG,
+        tk.Label(row, text="Theme", bg=theme.BG_ELEVATED, fg=theme.FG,
                  font=theme.font(12)).pack(anchor="w", pady=(0, 6))
 
         desc = tk.Frame(row, bg=theme.BG_ELEVATED)
@@ -295,19 +298,19 @@ class SettingsFrame(tk.Frame):
         self._draw_theme_swatches()
 
     def _owns_theme(self, name):
-        return name in TABLE_THEMES or self.app.achievements.owns_theme(name)
+        return name in THEMES or self.app.achievements.owns_theme(name)
 
     def _draw_theme_swatches(self):
         # Rebuilt from scratch on every call (initial build, on_show, and
         # after picking one) rather than a fixed set of widgets toggled in
         # place -- a theme bought in the Crowns Store mid-session needs to
         # newly APPEAR here on the very next on_show(), not just change
-        # colour, since a still-locked one is hidden entirely now (a felt
-        # theme is purely cosmetic with nothing worth previewing locked,
-        # unlike a game tile, which stays visible with a padlock).
+        # colour, since a still-locked one is hidden entirely now (a theme
+        # is purely cosmetic with nothing worth previewing locked, unlike a
+        # game tile, which stays visible with a padlock).
         for child in self.swatch_row.winfo_children():
             child.destroy()
-        all_themes = {**TABLE_THEMES, **PREMIUM_TABLE_THEMES}
+        all_themes = {**THEMES, **PREMIUM_THEMES}
         for name, colors in all_themes.items():
             if not self._owns_theme(name):
                 continue
@@ -325,7 +328,14 @@ class SettingsFrame(tk.Frame):
 
     def _select_theme(self, name):
         self.theme_var.set(name)
+        # Live preview -- the whole app reskins immediately (not just this
+        # swatch row), per the user's own choice; _on_cancel() is what
+        # reverts this if they leave without saving. Card style previews
+        # read a felt/accent too, so they need to track the theme being
+        # PREVIEWED, not the last-saved one -- see _draw_card_style_swatches.
+        self.app.apply_global_theme(preview_name=name)
         self._draw_theme_swatches()
+        self._draw_card_style_swatches()
 
     # ------------------------------------------------------------------ card style swatches
     _CARD_STYLE_PREVIEW = Card("K", Suit.SPADES)  # same rank/suit for every
@@ -373,9 +383,14 @@ class SettingsFrame(tk.Frame):
                                 highlightthickness=0, cursor="hand2")
             canvas.pack()
             canvas.bind("<Button-1>", lambda e, n=name: self._select_card_style(n))
+            # resolve_theme(self.theme_var.get()) rather than
+            # self.app.settings.theme() -- this needs to track whatever
+            # theme is currently being PREVIEWED (see _select_theme), which
+            # can differ from the last-saved one until Save is clicked.
+            previewed = resolve_theme(self.theme_var.get())
             card_widgets.draw_card(canvas, pad, pad, self._CARD_STYLE_PREVIEW, width=w, height=h, style=style)
-            card_widgets.draw_card_back(canvas, pad * 2 + w, pad, self.app.settings.theme()["felt"],
-                                         self.app.settings.theme()["accent"], width=w, height=h, style=style)
+            card_widgets.draw_card_back(canvas, pad * 2 + w, pad, previewed["felt"],
+                                         previewed["accent"], width=w, height=h, style=style)
             if name == self.card_style_var.get():
                 canvas.create_rectangle(1, 1, canvas_w - 1, canvas_h - 1, outline=theme.ACCENT, width=2)
             tk.Label(cell, text=name, bg=theme.BG_ELEVATED, fg=theme.FG_DIM,
@@ -538,7 +553,7 @@ class SettingsFrame(tk.Frame):
         return {
             "sound_enabled": self.sound_var.get(),
             "animations_enabled": self.anim_var.get(),
-            "table_theme": self.theme_var.get(),
+            "theme": self.theme_var.get(),
             "card_style": self.card_style_var.get(),
             "jackpot_rate_per_second": self.jackpot_rate_var.get(),
             # feature_vars is dynamic (rebuilt by _draw_features() from
@@ -561,7 +576,7 @@ class SettingsFrame(tk.Frame):
             return
         self.app.settings.set("sound_enabled", self.sound_var.get())
         self.app.settings.set("animations_enabled", self.anim_var.get())
-        self.app.settings.set("table_theme", self.theme_var.get())
+        self.app.settings.set("theme", self.theme_var.get())
         self.app.settings.set("card_style", self.card_style_var.get())
         for setting_key, var in self.feature_vars.items():
             self.app.settings.set(setting_key, var.get())
@@ -580,13 +595,18 @@ class SettingsFrame(tk.Frame):
                 return
             if choice != "discard":
                 return  # Cancel, or dismissed (Escape / closed) -- stay put either way
+        # Leaving without saving -- the theme swatches may have live-
+        # previewed a different theme (see _select_theme); revert the whole
+        # app back to whatever's actually persisted. A no-op (empty color
+        # map) if the theme was never touched this visit.
+        self.app.apply_global_theme()
         self.app.show_frame("menu")
 
     # ------------------------------------------------------------------ lifecycle
     def on_show(self):
         self.sound_var.set(self.app.settings.get("sound_enabled"))
         self.anim_var.set(self.app.settings.get("animations_enabled"))
-        self.theme_var.set(self.app.settings.get("table_theme"))
+        self.theme_var.set(self.app.settings.get("theme"))
         self.card_style_var.set(self.app.settings.get("card_style"))
         self.jackpot_rate_var.set(f"{self.app.settings.get('jackpot_rate_per_second'):.2f}")
         self.jackpot_debug_var.set(f"{self.app.jackpot.amount:.2f}")

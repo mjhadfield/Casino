@@ -2,18 +2,20 @@
 The Crowns Store -- reached from the Achievements screen. Sells four
 things, all really the same underlying mechanism (core/unlocks.py's own
 is_unlocked/set_unlocked) with a different catalog: early unlocks of a
-still-locked game, a small set of premium felt themes (see
-core/unlocks.py's PREMIUM_TABLE_THEMES) and premium card styles (its
-PREMIUM_CARD_STYLES) that then show up, once owned, in the Settings
-screen's own theme/card-style pickers, and premium FEATURES (its
-PREMIUM_FEATURES) -- functional additions to a game's own screen, toggled
-on/off in Settings' own "Features" category once owned.
+still-locked game, a small set of premium themes (see core/themes.py's
+PREMIUM_THEMES -- these now reskin the whole app, not just a table's felt)
+and premium card styles (core/unlocks.py's PREMIUM_CARD_STYLES) that then
+show up, once owned, in the Settings screen's own theme/card-style pickers,
+and premium FEATURES (its PREMIUM_FEATURES) -- functional additions to a
+game's own screen, toggled on/off in Settings' own "Features" category
+once owned.
 """
 import tkinter as tk
 
 from core import achievements_data
 from core.cards import Card, Suit
-from core.unlocks import PREMIUM_CARD_STYLES, PREMIUM_FEATURES, PREMIUM_TABLE_THEMES
+from core.themes import PREMIUM_THEMES
+from core.unlocks import PREMIUM_CARD_STYLES, PREMIUM_FEATURES
 from ui import card_widgets, dialogs, main_menu, theme
 from ui.scrollable import ScrollableFrame
 
@@ -64,7 +66,7 @@ class StoreFrame(tk.Frame):
         self.unlocks_body = tk.Frame(self.body, bg=theme.BG)
         self.unlocks_body.pack(fill="x")
 
-        tk.Label(self.body, text="PREMIUM FELT THEMES", bg=theme.BG, fg=theme.ACCENT,
+        tk.Label(self.body, text="PREMIUM THEMES", bg=theme.BG, fg=theme.ACCENT,
                  font=theme.font(11, weight="bold")).pack(anchor="w", pady=(24, 10))
         self.themes_body = tk.Frame(self.body, bg=theme.BG)
         self.themes_body.pack(fill="x")
@@ -128,7 +130,7 @@ class StoreFrame(tk.Frame):
     def _rebuild_themes(self):
         for child in self.themes_body.winfo_children():
             child.destroy()
-        for name, colors in PREMIUM_TABLE_THEMES.items():
+        for name, colors in PREMIUM_THEMES.items():
             owned = self.app.achievements.owns_theme(name)
             row = tk.Frame(self.themes_body, bg=theme.BG_ELEVATED, highlightbackground=theme.BORDER,
                             highlightthickness=1)
@@ -156,7 +158,7 @@ class StoreFrame(tk.Frame):
     def _buy_theme(self, name):
         price = achievements_data.THEME_UNLOCK_PRICE_CROWNS
         if not dialogs.confirm(
-            self, "$ store --theme", f"Buy the {name} table theme for {price} Crowns?",
+            self, "$ store --theme", f"Buy the {name} theme for {price} Crowns?",
         ):
             return
         if self.app.achievements.purchase_theme(name):
@@ -229,7 +231,7 @@ class StoreFrame(tk.Frame):
                      font=theme.font(11, weight="bold")).pack(anchor="w")
             tk.Label(text_col, text=info["description"], bg=theme.BG_ELEVATED, fg=theme.FG_DIM,
                      font=theme.font(9)).pack(anchor="w", pady=(2, 0))
-            price = achievements_data.FEATURE_UNLOCK_PRICE_CROWNS
+            price = info["price"]  # per-entry, not a flat catalog-wide price -- see PREMIUM_FEATURES' own docstring
             if owned:
                 tk.Label(inner, text="Owned", bg=theme.BG_ELEVATED, fg=theme.ACCENT,
                          font=theme.font(10, weight="bold")).pack(side="right")
@@ -239,11 +241,10 @@ class StoreFrame(tk.Frame):
                     fg=theme.SECONDARY, activebackground=theme.SECONDARY_DIM_BG_ELEVATED,
                     activeforeground=theme.SECONDARY, relief="flat", padx=12, pady=6, cursor="hand2",
                     highlightthickness=1, highlightbackground=theme.SECONDARY,
-                    command=lambda k=key, n=info["name"]: self._buy_feature(k, n),
+                    command=lambda k=key, n=info["name"], p=price: self._buy_feature(k, n, p),
                 ).pack(side="right")
 
-    def _buy_feature(self, key, name):
-        price = achievements_data.FEATURE_UNLOCK_PRICE_CROWNS
+    def _buy_feature(self, key, name, price):
         if not dialogs.confirm(
             self, "$ store --feature", f"Buy {name} for {price} Crowns?",
         ):

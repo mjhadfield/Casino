@@ -328,7 +328,7 @@ class UltimateTexasHoldemFrame(tk.Frame):
     def _build_ui(self):
         felt_theme = self.app.settings.theme()
         self._current_felt = felt_theme["felt"]
-        self._current_card_style = self.app.settings.card_style()
+        self._current_card_style = self.app.achievements.resolve_card_style()
         self.configure(bg=felt_theme["felt"])
 
         top_bar = tk.Frame(self, bg=theme.BG_ELEVATED)
@@ -1582,7 +1582,7 @@ class UltimateTexasHoldemFrame(tk.Frame):
     def _apply_theme(self):
         felt_theme = self.app.settings.theme()
         new_felt = felt_theme["felt"]
-        self._current_card_style = self.app.settings.card_style()
+        self._current_card_style = self.app.achievements.resolve_card_style()
         if new_felt == self._current_felt:
             return
         old_felt = self._current_felt

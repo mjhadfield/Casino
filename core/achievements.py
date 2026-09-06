@@ -34,7 +34,6 @@ from core.achievements_data import (
     ACHIEVEMENTS,
     CARD_STYLE_UNLOCK_PRICE_CROWNS,
     DEPOSIT_LADDER,
-    FEATURE_UNLOCK_PRICE_CROWNS,
     HANDS_LADDER,
     PER_GAME_HANDS_MILESTONES,
     STORE_UNLOCK_PRICE_CROWNS,
@@ -42,8 +41,9 @@ from core.achievements_data import (
     WITHDRAW_LADDER,
 )
 from core.persistence import load_json, save_json
-from core.settings import STANDARD_CARD_STYLES, TABLE_THEMES
-from core.unlocks import PREMIUM_CARD_STYLES, PREMIUM_FEATURES, PREMIUM_TABLE_THEMES
+from core.settings import STANDARD_CARD_STYLES
+from core.themes import THEMES, PREMIUM_THEMES
+from core.unlocks import PREMIUM_CARD_STYLES, PREMIUM_FEATURES
 
 DEFAULT_ACHIEVEMENTS_DATA = {
     "earned": [],              # achievement keys already earned, in earn order
@@ -207,13 +207,13 @@ class AchievementsManager:
         return self.data.get("streaks", {}).get(game_key, {"length": 0, "direction": None})
 
     def owns_theme(self, theme_name):
-        # TABLE_THEMES are always free, no unlock state needed at all; a
+        # THEMES are always free, no unlock state needed at all; a
         # premium one's ownership is just app.unlocks.is_unlocked, exactly
         # like a game's own lock state -- which already reports True
         # unconditionally for a Sandbox player (see UnlocksManager's own
         # always_unlocked), so there's no separate self.sandbox check to
         # make here any more.
-        return theme_name in TABLE_THEMES or self.app.unlocks.is_unlocked(theme_name)
+        return theme_name in THEMES or self.app.unlocks.is_unlocked(theme_name)
 
     def owns_card_style(self, style_name):
         # Exactly owns_theme's own reasoning, one catalog over: STANDARD_
@@ -379,7 +379,7 @@ class AchievementsManager:
         return True
 
     def purchase_theme(self, theme_name):
-        if (theme_name not in PREMIUM_TABLE_THEMES or self.owns_theme(theme_name)
+        if (theme_name not in PREMIUM_THEMES or self.owns_theme(theme_name)
                 or self.data["crowns"] < THEME_UNLOCK_PRICE_CROWNS):
             return False
         self.data["crowns"] -= THEME_UNLOCK_PRICE_CROWNS
@@ -397,13 +397,33 @@ class AchievementsManager:
         return True
 
     def purchase_feature(self, feature_key):
-        if (feature_key not in PREMIUM_FEATURES or self.owns_feature(feature_key)
-                or self.data["crowns"] < FEATURE_UNLOCK_PRICE_CROWNS):
+        # Priced per-entry (catalog_entry["price"]), unlike the flat prices
+        # purchase_theme/purchase_card_style check above -- see
+        # PREMIUM_FEATURES' own docstring for why.
+        catalog_entry = PREMIUM_FEATURES.get(feature_key)
+        if catalog_entry is None or self.owns_feature(feature_key) or self.data["crowns"] < catalog_entry["price"]:
             return False
-        self.data["crowns"] -= FEATURE_UNLOCK_PRICE_CROWNS
+        self.data["crowns"] -= catalog_entry["price"]
         self.app.unlocks.set_unlocked(feature_key, True)
         self._save()
         return True
+
+    def resolve_card_style(self):
+        """The active card_style() dict, with the Four Colour Deck feature
+        folded in as one extra `"four_colour": True` key if it's both
+        owned AND toggled on in Settings -- the one chokepoint every game's
+        own ui.py already caches self._current_card_style through (see
+        ui/card_widgets.py's own docstring), so none of the ~150 individual
+        draw_card()/draw_card_back() call sites across every game need to
+        know this feature exists at all; draw_card just checks
+        style.get("four_colour") like any other style detail. Returns a
+        NEW dict (never mutates the shared catalog entry itself) only when
+        the flag actually applies -- the plain settings.card_style() dict
+        otherwise, unchanged."""
+        style = self.app.settings.card_style()
+        if self.app.settings.get("four_colour_deck_enabled") and self.owns_feature("four_colour_deck"):
+            style = {**style, "four_colour": True}
+        return style
 
     # ------------------------------------------------------------ internal
     def _update_streak(self, game_key, net_result):

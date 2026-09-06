@@ -249,9 +249,46 @@ class CasinoApp(tk.Tk):
         # rather than merged in place, so a stale entry from a previously
         # active player can never leak through under the same name.
         self.frames = {"logon": self.frames["logon"], **self.sessions[slug]["frames"]}
+        # This player's own saved theme (or Terminal, for a first-ever
+        # session) needs to be live on their own frames before any of them
+        # are shown -- see apply_global_theme's own docstring for why a
+        # switch back to an already-built, cached session needs this too:
+        # whichever player was active most recently left the shared
+        # ui/theme.py globals pointed at THEIR theme.
+        self.apply_global_theme()
 
         self.show_frame("menu")
         self.deiconify()
+
+    def apply_global_theme(self, preview_name=None):
+        """Re-skins the WHOLE app -- not just a table's own felt -- to
+        either `preview_name` (an unsaved, in-progress pick from Settings'
+        theme swatches; see ui/settings_screen.py's _select_theme) or, by
+        default, whatever's actually persisted (self.settings.theme()).
+
+        ui/theme.py's own module-level palette (BG/ACCENT/etc.) is genuinely
+        SHARED, process-wide, mutable state -- there's only one "currently
+        active" theme at a time, applied here to only the CURRENTLY active
+        session's own self.frames (never other cached players' sessions,
+        which must keep looking like whatever THEY last saved until it's
+        their turn to be made active again, via this same method).
+
+        set_active_theme() does the actual reassignment + recomputation and
+        hands back a {old: new} color map; retheme_widget_tree() repaints
+        every already-built plain widget across every one of this session's
+        frames (logon included), and any frame with its own _apply_theme()
+        (every game table, for its felt-driven canvas panels) gets that
+        called too so those redraw in step with the same change."""
+        from core.themes import resolve as resolve_theme
+        palette = resolve_theme(preview_name or self.settings.get("theme"))
+        color_map = theme.set_active_theme(palette)
+        if not color_map:
+            return
+        for frame in self.frames.values():
+            theme.retheme_widget_tree(frame, color_map)
+            apply = getattr(frame, "_apply_theme", None)
+            if callable(apply):
+                apply()
 
     def show_frame(self, name):
         frame = self.frames[name]

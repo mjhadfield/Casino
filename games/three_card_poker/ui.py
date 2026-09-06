@@ -360,7 +360,7 @@ class ThreeCardPokerFrame(tk.Frame):
     def _build_ui(self):
         felt_theme = self.app.settings.theme()
         self._current_felt = felt_theme["felt"]
-        self._current_card_style = self.app.settings.card_style()
+        self._current_card_style = self.app.achievements.resolve_card_style()
         self.configure(bg=felt_theme["felt"])
 
         # Top bar is NOT felt-scoped -- it's this app's global chrome, so it
@@ -1765,7 +1765,7 @@ class ThreeCardPokerFrame(tk.Frame):
         everything from scratch."""
         felt_theme = self.app.settings.theme()
         new_felt = felt_theme["felt"]
-        self._current_card_style = self.app.settings.card_style()
+        self._current_card_style = self.app.achievements.resolve_card_style()
         if new_felt == self._current_felt:
             return
         old_felt = self._current_felt

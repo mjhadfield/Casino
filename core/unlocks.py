@@ -26,22 +26,22 @@ game's stats bucket (see games/blackjack_count/logic.py, games/blackjack_6_5
 unlocked without touching the base table's own state.
 
 This is also the one place any OTHER Crowns-gated unlockable lives -- not
-just games/tables. Premium table felt themes (PREMIUM_TABLE_THEMES below)
-work exactly like a game does: earned via an achievement's own
+just games/tables. Premium themes (core/themes.py's PREMIUM_THEMES) work
+exactly like a game does: earned via an achievement's own
 unlocks_game_keys (core/achievements.py's award()/_reconcile_unlocks
 already apply those through set_unlocked() with no idea whether the key
 they're flipping is a game or a theme), or bought outright in the Crowns
 Store (AchievementsManager.purchase_theme(), mirroring purchase_unlock()).
 A future unlockable of a new kind (a card back style, a bonus feature...)
-should follow the exact same shape: its own catalog dict here (plus
-whatever cosmetic/config data it carries), a flat Crowns price alongside
-the rest of the Store's pricing (core/achievements_data.py), and ownership
-tracked the same way, through this module's own is_unlocked/set_unlocked --
-never a bespoke owned-list of its own. core/settings.py's TABLE_THEMES is
-deliberately NOT here: those five are always free, need no unlock state at
-all, and READING that distinction (is this name always-free, or does it
-need an entry here) is what tells the rest of the app whether a given theme
-name needs an is_unlocked() check before it can be selected.
+should follow the exact same shape: its own catalog dict (plus whatever
+cosmetic/config data it carries), a flat Crowns price alongside the rest
+of the Store's pricing (core/achievements_data.py), and ownership tracked
+the same way, through this module's own is_unlocked/set_unlocked -- never
+a bespoke owned-list of its own. core/themes.py's own THEMES catalog is
+deliberately NOT here: those are always free, need no unlock state at all,
+and READING that distinction (is this name always-free, or does it need an
+entry in this module) is what tells the rest of the app whether a given
+theme name needs an is_unlocked() check before it can be selected.
 """
 from core.persistence import load_json, save_json
 
@@ -70,35 +70,14 @@ DEFAULT_UNLOCKS = {
     "high_card_flush": False,
 }
 
-# Premium, Crowns-gated felt themes -- purchased in the Crowns Store
-# (core/achievements.py's AchievementsManager.purchase_theme, priced via
-# core/achievements_data.py's THEME_UNLOCK_PRICE_CROWNS, one flat price for
-# all of them) or unlocked by a future achievement the same way any game is.
-# Not in DEFAULT_UNLOCKS above (that dict is specifically "every default a
-# brand-new save should be backfilled with", and every one of these
-# defaults to locked already via is_unlocked's own missing-key fallback) --
-# kept in its own dict purely so "is this name a real premium theme" is a
-# simple membership check for ui/store_screen.py and ui/settings_screen.py,
-# same reasoning core/settings.py's own always-free TABLE_THEMES follows.
-# Same exact 3-key shape as TABLE_THEMES -- chip colours (ui/chips.py's
-# CHIP_DENOMINATIONS) are a fixed, never-themed casino convention and are
-# explicitly NOT part of either. Adding a new one is exactly this: one more
-# entry here -- ui/store_screen.py, ui/settings_screen.py and
-# AchievementsManager.owns_theme/purchase_theme all already iterate or
-# check membership against this dict generically.
-PREMIUM_TABLE_THEMES = {
-    "Crimson Velvet": {"felt": "#3a0d14", "felt_dark": "#1f0509", "accent": "#ff4d6d"},
-    "Royal Gold": {"felt": "#1a1506", "felt_dark": "#0d0a02", "accent": "#ffd700"},
-    "Neon Void": {"felt": "#0a0018", "felt_dark": "#05000c", "accent": "#b026ff"},
-    "Blue Ice": {"felt": "#0d2a45", "felt_dark": "#071a2c", "accent": "#5fd4ff"},
-}
-
-# Premium, Crowns-gated card styles -- same story as PREMIUM_TABLE_THEMES
-# just above (bought via AchievementsManager.purchase_card_style, priced by
+# Premium, Crowns-gated card styles -- same story as core/themes.py's
+# PREMIUM_THEMES (bought via AchievementsManager.purchase_card_style, priced by
 # core/achievements_data.py's CARD_STYLE_UNLOCK_PRICE_CROWNS, or unlocked by
 # a future achievement), sitting alongside core/settings.py's own always-
-# free STANDARD_CARD_STYLES the same way TABLE_THEMES/PREMIUM_TABLE_THEMES
-# split. Dict shape is ui/card_widgets.py's own -- see that module's
+# free STANDARD_CARD_STYLES the same way THEMES/PREMIUM_THEMES split (just
+# across core/settings.py and here rather than both in core/themes.py --
+# a card style is still purely a card's own look, never the whole app's).
+# Dict shape is ui/card_widgets.py's own -- see that module's
 # docstring for what each of front_bg/front_border/text_black/text_red/
 # outline/back actually does. The two Gold styles deliberately SHARE one
 # back dict object (front is the only thing "Gold (Light)" vs "Gold
@@ -110,41 +89,56 @@ PREMIUM_CARD_STYLES = {
     "Gold (Light)": {
         "front_bg": "#fdfdf5", "front_border": "#d4af37",
         "text_black": "#1a1a1a", "text_red": "#c0392b",
+        "text_blue": "#1f5fa8", "text_green": "#1f7a3d",
         "outline": "#d4af37", "back": _GOLD_BACK,
     },
     "Gold (Dark)": {
         "front_bg": "#161616", "front_border": "#d4af37",
         "text_black": "#e8e8e8", "text_red": "#e83e3e",
+        "text_blue": "#4fa8f5", "text_green": "#4caf50",
         "outline": "#d4af37", "back": _GOLD_BACK,
     },
     "Crimson": {
         "front_bg": "#fdfdf5", "front_border": "#ff4d6d",
         "text_black": "#1a1a1a", "text_red": "#c0392b",
+        "text_blue": "#1f5fa8", "text_green": "#1f7a3d",
         "outline": "#ff4d6d", "back": {"kind": "fancy", "bg": "#3a0d14", "trim": "#ff4d6d", "emblem": "diamond"},
     },
     "Void": {
         "front_bg": "#161616", "front_border": "#b026ff",
         "text_black": "#e8e8e8", "text_red": "#e83e3e",
+        "text_blue": "#4fa8f5", "text_green": "#4caf50",
         "outline": "#b026ff", "back": {"kind": "fancy", "bg": "#0a0018", "trim": "#b026ff", "emblem": "hex"},
     },
 }
 
-# Premium, Crowns-gated FEATURES -- the first kind of unlockable that
-# isn't a cosmetic (a game, a felt theme, a card style): a functional
-# addition to a game's own screen, toggled on/off in Settings once owned
-# (see ui/settings_screen.py's own "Features" category, only ever built
-# for a key the player actually owns). Bought via
-# AchievementsManager.purchase_feature, priced by core/achievements_data
-# .py's FEATURE_UNLOCK_PRICE_CROWNS, or unlocked by a future achievement
-# the same way any game/theme/card style already can be. Keyed by a
-# stable internal id (not a display name, unlike the catalogs above) --
-# `name`/`description` are what ui/store_screen.py actually renders.
-# Adding a new one is exactly this: one more entry here, plus whatever
-# game-side code actually reads app.achievements.owns_feature(key).
+# Premium, Crowns-gated FEATURES -- distinct from a felt theme/card style
+# not because it can't be cosmetic (four_colour_deck below is), but because
+# it's TOGGLED on/off in Settings once owned rather than picked from a row
+# of swatches (see ui/settings_screen.py's own "Features" category, only
+# ever built for keys the player actually owns). Bought via
+# AchievementsManager.purchase_feature, priced individually by each entry's
+# own `price` (unlike the flat-priced catalogs above -- a feature can be
+# anything from a purely cosmetic toggle to a genuine gameplay aid, so
+# there's no one "fair" flat price the way there is for interchangeable
+# felt colours), or unlocked by a future achievement the same way any
+# game/theme/card style already can be. Keyed by a stable internal id (not
+# a display name, unlike the catalogs above) -- `name`/`description` are
+# what ui/store_screen.py actually renders. Adding a new one is exactly
+# this: one more entry here, plus whatever game-side code actually reads
+# app.achievements.owns_feature(key).
 PREMIUM_FEATURES = {
     "strategy_guide": {
         "name": "Blackjack Strategy Guide",
         "description": "Live basic-strategy recommendations on the Blackjack table.",
+        "price": 200,  # priced well above the purely-cosmetic entries below
+        # since this is a functional gameplay aid, not just a look.
+    },
+    "four_colour_deck": {
+        "name": "Four Colour Deck",
+        "description": "Diamonds render blue and clubs render green, for easier suit reading.",
+        "price": 20,  # a small, purely cosmetic toggle -- priced well under
+        # even the flat 80 Crowns a premium theme/card style costs.
     },
 }
 
