@@ -1,6 +1,6 @@
 # Hadfield Casino
 
-**Version 1.8.0**
+**Version 2.0.0**
 
 A small, extensible casino games library, built with Python's standard
 library only (`tkinter` — no extra installs needed).
@@ -26,6 +26,9 @@ sudo pacman -S tk                  # Arch/CachyOS
 All player information and statistics are held in the "data" folder which is generated on game launch and no longer included in the repo. If you are moving from a version earlier than 1.6, copy your data folder into the new folder. 
 
 ## Changelog
+
+**V1.9.0** - Cleanup
+- Honestly I'm really happy with how this project turned out, and it's in a state where I'm happy with it. There's still a lot more I would like to do at some point, expand on the achievements and implement more features across games other than blackjack - but for now I'm going to move on to other things and dip in and out to play.  
 
 **V1.9.0** - Achievements & Progression
 - New fake currency created - "Crowns" which can be earned through completing achievements.   

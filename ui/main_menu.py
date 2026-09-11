@@ -34,7 +34,7 @@ from ui import dialogs, game_icons, game_tile, theme, tooltip
 # multi-table game instead, add a row to that game's own TILES list (see
 # ui/blackjack_menu.py, ui/pai_gow_poker_menu.py) -- nothing here changes.
 
-VERSION = "1.9.0"
+VERSION = "2.0.0"
 
 GAMES = [
     (game_icons.draw_three_card_poker_icon, "Three Card Poker", "Ante, Play, Pair Plus & Prime side bets",
